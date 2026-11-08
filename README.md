@@ -18,4 +18,6 @@ The layout tracks the browser visual viewport for keyboard changes. Text wraps w
 
 Run `npm test`. Required Worker secrets: `OLLAMA_API_KEY`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`. Never commit secret values. GitHub callback: `/auth/callback`.
 
+`node browser-test.cjs` tests the served HTML with mocked API responses in Chromium. It covers search beyond page 1, session reopening after reload, and overflow at portrait, landscape, and keyboard-sized viewports. Install Playwright and set `CHROMIUM_PATH` if Chromium is elsewhere. This does not replace an authenticated GitHub/Ollama recovery test or physical iPhone keyboard testing.
+
 Deployment keeps the existing `ArnoProbe` Durable Object class and `PROBE` binding for compatibility. Configure its container with the pinned runner image and the `durable_object` scheduling policy. See `deployment.json`.
