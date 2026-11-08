@@ -9,6 +9,8 @@ const {chromium}=require('playwright');
  await page.route('**/api/**',async route=>{
   const u=new URL(route.request().url());let d;
   if(u.pathname==='/api/me')d={user:{login:'test'}};
+  else if(u.pathname==='/api/models')d={models:[{id:'m',name:'Model M'},{id:'gpt-oss:120b',name:'GPT OSS 120B'}]};
+  else if(u.pathname.endsWith('/model'))d={model:'gpt-oss:120b'};
   else if(u.pathname==='/api/sessions')d={sessions:[{id:'11111111-1111-1111-1111-111111111111',repo:'test/saved'}]};
   else if(u.pathname.startsWith('/api/sessions/'))d={repo:'test/saved',model:'m',history:[{prompt:'hello',summary:'x'.repeat(1000),diff:'y'.repeat(1000)}]};
   else {const n=Number(u.searchParams.get('page'));pages.push(n);d={repos:n===2?[{full_name:'test/target',private:true,default_branch:'main'}]:[],nextPage:n===1?2:null};}
@@ -20,6 +22,8 @@ const {chromium}=require('playwright');
  if(!pages.includes(2))throw Error('Did not search beyond page 1');
  await page.getByRole('button',{name:'test/saved'}).click();
  await page.locator('#composer').waitFor({state:'visible'});
+ await page.getByLabel('Session model').selectOption('gpt-oss:120b');
+ await page.waitForFunction(()=>!document.querySelector('#session-model').disabled);
  for(const size of [{width:390,height:844},{width:390,height:380},{width:844,height:390}]){
   await page.setViewportSize(size);
   const dims=await page.evaluate(()=>({width:innerWidth,scroll:document.documentElement.scrollWidth,shell:document.querySelector('#shell').getBoundingClientRect().height}));

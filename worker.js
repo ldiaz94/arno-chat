@@ -1,8 +1,8 @@
 import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers';
 import { modelRequest } from './gateway.mjs';
 import { HTML } from './ui-v2.mjs';
+import { catalog, modelAllowed } from './models.mjs';
 
-const MODELS = new Set(['mistral-large-4:cloud', 'devstral-2:123b-cloud', 'qwen3-coder:480b-cloud']);
 const COOKIE = 'arno_session';
 const MAX_ARCHIVE = 50 * 1024 * 1024;
 const SECURITY = {
@@ -73,6 +73,14 @@ export class ModelGateway extends WorkerEntrypoint {
 }
 
 export class ArnoProbe extends DurableObject {
+  async writeConfig(model) {
+    const config = `provider = ollama-cloud\nmodel = ${model}\nurl = http://model.internal/v1\nkey =\nexecution_boundary = outer-sandbox\nsafety = auto\ncontext_files = no\nproject_map = no\nmax_tokens = 4096\n`;
+    const p=await this.ctx.container.exec(['tee','/workspace/config/arno/config'],{stdin:'pipe',stdout:'ignore'});
+    const writer=p.stdin.getWriter();
+    await writer.write(new TextEncoder().encode(config));
+    await writer.close();
+    if(await p.exitCode!==0)throw Error('Could not update model config');
+  }
   async exec(argv, options = {}, seconds = 180) {
     const process = await this.ctx.container.exec(['timeout', '--kill-after=5', String(seconds), ...argv], options);
     const output = await process.output();
@@ -91,6 +99,21 @@ export class ArnoProbe extends DurableObject {
   }
   async fetch(request) {
     const url = new URL(request.url);
+    if (url.pathname === '/session/model' && request.method === 'POST') {
+      if(this.inFlight)return json({error:'Wait for the current turn to finish'},409);
+      this.inFlight=true;
+      try {
+        const session=await this.ctx.storage.get('session');
+        if(!session)return json({error:'Session not found'},404);
+        const {model}=await request.json();
+        if(!await modelAllowed(model))return json({error:'Unsupported model'},400);
+        await this.start(model);
+        await this.writeConfig(model);
+        const snapshot=await this.ctx.container.snapshotContainer({});
+        await this.ctx.storage.put({session:{...session,model},snapshot});
+        return json({model});
+      }finally{this.inFlight=false;}
+    }
     if (url.pathname === '/index/list') {
       const entries = await this.ctx.storage.list({ prefix: 'session:' });
       return json({ sessions: [...entries.values()].sort((a,b) => b.createdAt-a.createdAt) });
@@ -146,7 +169,7 @@ export class ArnoProbe extends DurableObject {
       const model = request.headers.get('X-Arno-Model');
       const repo = request.headers.get('X-Arno-Repo');
       const ref = request.headers.get('X-Arno-Ref');
-      if (!MODELS.has(model) || !repo || !ref || !request.body) return json({ error: 'Invalid session' }, 400);
+      if (!await modelAllowed(model) || !repo || !ref || !request.body) return json({ error: 'Invalid session' }, 400);
       await this.start(model);
       await this.exec(['sh', '-c', 'rm -rf /workspace/repo /workspace/config /workspace/data; mkdir -p /workspace/repo /workspace/config/arno /workspace/data'], {}, 30);
       const unpack = await this.exec(['tar', '-xz', '--strip-components=1', '-C', '/workspace/repo'], { stdin: request.body }, 120);
@@ -170,9 +193,11 @@ export class ArnoProbe extends DurableObject {
       if (!session) return json({ error: 'Session not found' }, 404);
       const { prompt } = await request.json();
       if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 8000) return json({ error: 'Invalid prompt' }, 400);
+      if(this.inFlight)return json({error:'Arno is already working'},409);
       this.inFlight = true;
       try {
         await this.start(session.model);
+        await this.writeConfig(session.model);
         await this.ctx.storage.put('modelQuota', { used: 0, deadline: Date.now() + 4 * 60 * 1000 });
         const process = await this.ctx.container.exec(['timeout', '--kill-after=5', '240', '/usr/local/bin/arno', prompt.trim()], {
           cwd: '/workspace/repo',
@@ -189,13 +214,14 @@ export class ArnoProbe extends DurableObject {
         const diffResult = await this.exec(['git', 'diff', '--', '.'], { cwd: '/workspace/repo' }, 30);
         const result = {
           exitCode: output.exitCode,
+          model: session.model,
           summary: (stdout || stderr || `Arno exited with code ${output.exitCode}`).slice(-12000),
           diff: diffResult.stdout.slice(-40000)
         };
         const history = (await this.ctx.storage.get('history')) || [];
         history.push({ prompt: prompt.trim(), ...result, at: Date.now() });
-        await this.ctx.storage.put('history', history.slice(-20));
-        await this.ctx.storage.put('snapshot', await this.ctx.container.snapshotContainer({}));
+        const snapshot=await this.ctx.container.snapshotContainer({});
+        await this.ctx.storage.put({history:history.slice(-20),snapshot});
         return json(result);
       } finally {
         this.inFlight = false;
@@ -263,6 +289,12 @@ export default {
       const auth = await currentAuth(request, env);
       if (url.pathname === '/api/me') return json({ user: auth?.user || null, githubConfigured: !!(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET) });
       if (!auth) return json({ error: 'Sign in required' }, 401);
+      if(url.pathname==='/api/models' && request.method==='GET')return json(await catalog());
+      const modelMatch=url.pathname.match(/^\/api\/sessions\/([0-9a-f-]{36})\/model$/);
+      if(modelMatch && request.method==='POST'){
+        const body=await boundedJson(request);
+        return env.PROBE.getByName('code:'+auth.user.id+':'+modelMatch[1]).fetch('https://internal/session/model',{method:'POST',body:JSON.stringify(body)});
+      }
       if (url.pathname === '/api/repos' && request.method === 'GET') {
         const page = Math.max(1, Math.min(10000, Number(url.searchParams.get('page')) || 1));
         const query = (url.searchParams.get('q') || '').trim().toLowerCase().slice(0,100);
@@ -280,7 +312,7 @@ export default {
       }
       if (url.pathname === '/api/sessions' && request.method === 'POST') {
         const body = await boundedJson(request);
-        if (typeof body.repo !== 'string' || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(body.repo) || typeof body.ref !== 'string' || body.ref.length > 200 || !MODELS.has(body.model)) return json({ error: 'Invalid repository or model' }, 400);
+        if (typeof body.repo !== 'string' || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(body.repo) || typeof body.ref !== 'string' || body.ref.length > 200 || !await modelAllowed(body.model)) return json({ error: 'Invalid repository or model' }, 400);
         const [owner, repo] = body.repo.split('/');
         const archive = await github(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tarball/${encodeURIComponent(body.ref)}`, auth.token);
         if (!archive.ok || !archive.body) return json({ error: 'Could not download repository from GitHub' }, 502);

@@ -14,6 +14,12 @@ Cloudflare snapshots expire after 30 days without restoration. An interrupted tu
 
 The layout tracks the browser visual viewport for keyboard changes. Text wraps within the viewport, and the composer shares its height with a scrollable transcript. Repository listing supports pagination; search runs at the server over successive authenticated repository pages, including organization and collaborator repositories.
 
+## Models
+
+The model selector loads Ollama Cloud's live catalog and includes models advertising both completion and tool support. Mistral Large 4 / Le Chonk remains the default. If the catalog fails, the UI identifies the fallback list. Catalog availability does not mean every model has been exercised with Arno.
+
+Use the model selector in an open session to change the next turn's model. The workspace and transcript remain in the same session. Switching is rejected while a turn is running; the chosen model is saved with the filesystem checkpoint and recorded on subsequent turns.
+
 ## Development
 
 Run `npm test`. Required Worker secrets: `OLLAMA_API_KEY`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`. Never commit secret values. GitHub callback: `/auth/callback`.

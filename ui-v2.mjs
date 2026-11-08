@@ -6,8 +6,30 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 async function api(path,opt={}){const r=await fetch(path,{...opt,headers:{'Content-Type':'application/json'}});const d=await r.json();if(!r.ok)throw Error(d.error||'Request failed');return d}
 function fit(){const v=window.visualViewport;$('#shell').style.height=(v?v.height:innerHeight)+'px';$('#shell').style.top=(v?v.offsetTop:0)+'px'}window.visualViewport?.addEventListener('resize',fit);window.visualViewport?.addEventListener('scroll',fit);window.addEventListener('resize',fit);fit();
 function error(e){app.insertAdjacentHTML('beforeend','<p class="error">'+esc(e.message)+'</p>')}
+async function modelPicker(select,id){
+ const current=id?session.model:'mistral-large-4:cloud';
+ try{
+  const d=await api('/api/models');
+  if(!select.isConnected)return;
+  const models=d.models.some(m=>m.id===current)?d.models:[{id:current,name:current},...d.models];
+  select.innerHTML=models.map(m=>'<option value="'+esc(m.id)+'">'+esc(m.name)+'</option>').join('');
+  select.value=current;
+  if(d.fallback)select.insertAdjacentHTML('afterend','<small class="muted">Catalog unavailable; showing saved models.</small>');
+  if(id)select.onchange=async()=>{
+   const old=session.model;select.disabled=true;$('#send').disabled=true;
+   try{const r=await api('/api/sessions/'+id+'/model',{method:'POST',body:JSON.stringify({model:select.value})});session.model=r.model}
+   catch(e){select.value=old;error(e)}
+   finally{select.disabled=false;$('#send').disabled=false}
+  };
+ }catch(e){error(e)}
+}
+new MutationObserver(()=>{
+ for(const select of document.querySelectorAll('select:not([data-loaded])')){
+  select.dataset.loaded='true';modelPicker(select,select.id==='session-model'?session?.id:null);
+ }
+}).observe(app,{childList:true,subtree:true});
 function message(role,text,diff){app.insertAdjacentHTML('beforeend','<div class="message '+(role==='You'?'user':'')+'"><strong>'+role+'</strong>\n'+esc(text)+(diff?'<details><summary>Working tree diff</summary><pre>'+esc(diff)+'</pre></details>':'')+'</div>');app.scrollTop=app.scrollHeight}
-async function resume(id){version++;form.hidden=true;app.textContent='Loading saved session…';try{session={id,...await api('/api/sessions/'+id)};sessionStorage.setItem('session',id);app.innerHTML='<p>'+esc(session.repo)+'<br><span class="muted">'+esc(session.model)+'</span></p>';for(const t of session.history||[]){message('You',t.prompt);message('Arno',t.summary,t.diff)}form.hidden=false}catch(e){error(e)}}
+async function resume(id){version++;form.hidden=true;app.textContent='Loading saved session…';try{session={id,...await api('/api/sessions/'+id)};sessionStorage.setItem('session',id);app.innerHTML='<p>'+esc(session.repo)+'</p><label>Model <select id="session-model" aria-label="Session model"><option>'+esc(session.model)+'</option></select></label>';for(const t of session.history||[]){message('You',t.prompt);message('Arno · '+esc(t.model||session.model),t.summary,t.diff)}form.hidden=false}catch(e){error(e)}}
 function repoRow(r,box){const row=document.createElement('div');row.className='repo';row.innerHTML='<span>'+esc(r.full_name)+'<br><small class="muted">'+(r.private?'private':'public')+'</small></span><button>Open</button>';row.querySelector('button').onclick=()=>openRepo(r);box.append(row)}
 async function pageRepos(q,page,box,v){try{const d=await api('/api/repos?page='+page+'&q='+encodeURIComponent(q));if(v!==version||!box.isConnected)return;for(const r of d.repos)repoRow(r,box);if(d.nextPage){if(q){await pageRepos(q,d.nextPage,box,v)}else{const b=document.createElement('button');b.textContent='Load more repositories';b.onclick=()=>{b.remove();pageRepos(q,d.nextPage,box,v)};box.append(b)}}else if(!box.children.length)box.textContent='No matching repositories.'}catch(e){if(v===version)box.textContent=e.message}}
 function search(q){const v=++version,box=$('#repos');box.textContent='';pageRepos(q,1,box,v)}
