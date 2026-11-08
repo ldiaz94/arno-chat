@@ -29,12 +29,32 @@ new MutationObserver(()=>{
  }
 }).observe(app,{childList:true,subtree:true});
 function message(role,text,diff){app.insertAdjacentHTML('beforeend','<div class="message '+(role==='You'?'user':'')+'"><strong>'+role+'</strong>\n'+esc(text)+(diff?'<details><summary>Working tree diff</summary><pre>'+esc(diff)+'</pre></details>':'')+'</div>');app.scrollTop=app.scrollHeight}
-async function resume(id){version++;form.hidden=true;app.textContent='Loading saved session…';try{session={id,...await api('/api/sessions/'+id)};sessionStorage.setItem('session',id);app.innerHTML='<p>'+esc(session.repo)+'</p><label>Model <select id="session-model" aria-label="Session model"><option>'+esc(session.model)+'</option></select></label>';for(const t of session.history||[]){message('You',t.prompt);message('Arno · '+esc(t.model||session.model),t.summary,t.diff)}form.hidden=false}catch(e){error(e)}}
+async function resume(id){version++;form.hidden=true;app.textContent='Loading saved session…';try{session={id,...await api('/api/sessions/'+id)};sessionStorage.setItem('session',id);app.innerHTML='<p>'+esc(session.repo)+'</p><label>Model <select id="session-model" aria-label="Session model"><option>'+esc(session.model)+'</option></select></label>';for(const t of session.history||[]){message('You',t.prompt);message('Arno · '+esc(t.model||session.model),t.summary,t.diff)}form.hidden=false;watchJob(id)}catch(e){error(e)}}
 function repoRow(r,box){const row=document.createElement('div');row.className='repo';row.innerHTML='<span>'+esc(r.full_name)+'<br><small class="muted">'+(r.private?'private':'public')+'</small></span><button>Open</button>';row.querySelector('button').onclick=()=>openRepo(r);box.append(row)}
 async function pageRepos(q,page,box,v){try{const d=await api('/api/repos?page='+page+'&q='+encodeURIComponent(q));if(v!==version||!box.isConnected)return;for(const r of d.repos)repoRow(r,box);if(d.nextPage){if(q){await pageRepos(q,d.nextPage,box,v)}else{const b=document.createElement('button');b.textContent='Load more repositories';b.onclick=()=>{b.remove();pageRepos(q,d.nextPage,box,v)};box.append(b)}}else if(!box.children.length)box.textContent='No matching repositories.'}catch(e){if(v===version)box.textContent=e.message}}
 function search(q){const v=++version,box=$('#repos');box.textContent='';pageRepos(q,1,box,v)}
 async function home(){version++;session=null;form.hidden=true;sessionStorage.removeItem('session');app.textContent='Loading…';try{const me=await api('/api/me');if(!me.user){app.innerHTML='<p>Remote coding with Arno and Ollama Cloud.</p><a href="/auth/github">Continue with GitHub</a>';return}const d=await api('/api/sessions');app.innerHTML='<h2>Recent sessions</h2><div id="sessions"></div><h2>Open repository</h2><label>Model <select id="model"><option>mistral-large-4:cloud</option><option>devstral-2:123b-cloud</option><option>qwen3-coder:480b-cloud</option></select></label><input id="search" type="search" placeholder="Search all accessible repositories" aria-label="Search repositories"><div id="repos"></div>';for(const s of d.sessions){const b=document.createElement('button');b.textContent=s.repo;b.onclick=()=>resume(s.id);$('#sessions').append(b)}let timer;$('#search').oninput=()=>{version++;clearTimeout(timer);timer=setTimeout(()=>search($('#search').value),300)};search('')}catch(e){error(e)}}
 async function openRepo(r){const model=$('#model').value;version++;app.textContent='Preparing workspace and saving checkpoint…';try{const s=await api('/api/sessions',{method:'POST',body:JSON.stringify({repo:r.full_name,ref:r.default_branch,model})});await resume(s.id)}catch(e){error(e)}}
-form.onsubmit=async e=>{e.preventDefault();const text=prompt.value.trim();if(!text||!session)return;const id=session.id;message('You',text);prompt.value='';$('#send').disabled=true;const status=document.createElement('p');status.className='muted';status.textContent='Arno is working. Restoring workspace if needed…';app.append(status);try{const d=await api('/api/sessions/'+id+'/messages',{method:'POST',body:JSON.stringify({prompt:text})});if(session?.id===id)message('Arno',d.summary,d.diff)}catch(e){error(e)}finally{status.remove();$('#send').disabled=false}};
+function busy(value){$('#send').disabled=value;if($('#session-model'))$('#session-model').disabled=value}
+async function watchJob(id,expected){
+ const status=document.createElement('p');status.className='muted';let active=false;
+ try{
+  for(let attempts=0;attempts<200&&session?.id===id;attempts++){
+   let job;
+   try{job=await api('/api/sessions/'+id+'/job')}
+   catch{if(!active){app.append(status);active=true}busy(true);status.textContent='Connection interrupted. Reconnecting to your saved task…';await new Promise(r=>setTimeout(r,3000));continue}
+   if(!expected&&!['queued','running'].includes(job.status))return;
+   if(job.status==='idle'){status.textContent='The message was not received. Please submit it again.';app.append(status);prompt.value=expected?.prompt||'';return}
+   if(expected&&job.id!==expected.id)return;
+   if(!active){app.append(status);active=true}
+   if(job.status==='completed'){message('Arno · '+esc(job.result.model||session.model),job.result.summary,job.result.diff);status.remove();return}
+   if(job.status==='failed'){status.textContent=job.result?.error||'Task failed. You can retry.';status.className='error';return}
+   busy(true);status.textContent=job.status==='queued'?'Task saved. Starting Arno…':'Arno is working. You can leave and reopen this session.';
+   await new Promise(r=>setTimeout(r,3000));
+  }
+  if(session?.id===id)status.textContent='Still waiting. Reopen this session to check the saved task.';
+ }finally{if(session?.id===id)busy(false)}
+}
+form.onsubmit=async e=>{e.preventDefault();const text=prompt.value.trim();if(!text||!session||$('#send').disabled)return;const id=session.id,body={id:crypto.randomUUID(),prompt:text};message('You',text);prompt.value='';busy(true);try{await api('/api/sessions/'+id+'/messages',{method:'POST',body:JSON.stringify(body)})}catch(e){error({message:'Submission connection interrupted. Checking whether the task was saved…'})}await watchJob(id,body)};
 prompt.oninput=()=>{prompt.style.height='auto';prompt.style.height=Math.min(prompt.scrollHeight,100)+'px'};$('#home').onclick=home;const saved=sessionStorage.getItem('session');if(saved)resume(saved);else home();
 </script></body></html>`;

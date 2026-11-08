@@ -6,6 +6,8 @@ The Worker preserves GitHub and Ollama credentials outside coding containers. Th
 
 ## Session recovery
 
+Message submission returns a saved task ID immediately. A Durable Object alarm runs the coding turn independently of the phone connection; the interface polls saved status and reconnects after a lost response or page reload. Duplicate submissions with the same ID do not rerun a task. Interrupted tasks are marked as failed rather than replayed automatically.
+
 Repository metadata and the last 20 turns live in Durable Object storage. Full filesystem checkpoints are saved after initialization and each completed turn. A stopped container restarts from its last checkpoint. Sessions can be reopened from the recent-session list after reload or sign-in.
 
 Cloudflare snapshots expire after 30 days without restoration. An interrupted turn may require retrying; only completed, checkpointed turns guarantee saved filesystem changes. Earlier prototype sessions without checkpoints cannot be recovered after their container has stopped.

@@ -99,7 +99,33 @@ export class ArnoProbe extends DurableObject {
   }
   async fetch(request) {
     const url = new URL(request.url);
+    if(url.pathname==='/session/suspend' && request.method==='POST'){
+      const job=await this.ctx.storage.get('job');
+      if(this.inFlight||job&&['queued','running'].includes(job.status))return json({error:'Task is running'},409);
+      if(this.ctx.container?.running)await this.ctx.container.destroy();
+      await this.ctx.storage.deleteAlarm();
+      return json({stopped:true});
+    }
+    if(url.pathname==='/session/job' && request.method==='GET'){
+      const job=await this.ctx.storage.get('job');
+      return json(job||{status:'idle'});
+    }
+    if(url.pathname==='/session/enqueue' && request.method==='POST'){
+      const body=await request.json();
+      if(typeof body.prompt!=='string'||!body.prompt.trim()||body.prompt.length>8000||!/^[-a-f0-9]{36}$/.test(body.id||''))return json({error:'Invalid message'},400);
+      return this.ctx.storage.transaction(async txn=>{
+        const current=await txn.get('job');
+        if(current?.id===body.id)return json(current,202);
+        if(current&&['queued','running'].includes(current.status))return json({error:'A turn is already running'},409);
+        if(!await txn.get('session'))return json({error:'Session not found'},404);
+        const job={id:body.id,prompt:body.prompt,status:'queued',createdAt:Date.now()};
+        await txn.put('job',job);await txn.setAlarm(Date.now()+100);
+        return json(job,202);
+      });
+    }
     if (url.pathname === '/session/model' && request.method === 'POST') {
+      const job=await this.ctx.storage.get('job');
+      if(job && ['queued','running'].includes(job.status))return json({error:'Wait for the current turn to finish'},409);
       if(this.inFlight)return json({error:'Wait for the current turn to finish'},409);
       this.inFlight=true;
       try {
@@ -232,6 +258,25 @@ export class ArnoProbe extends DurableObject {
     return new Response('Not found', { status: 404 });
   }
   async alarm() {
+    const job=await this.ctx.storage.get('job');
+    if(job?.status==='queued'){
+      await this.ctx.storage.put('job',{...job,status:'running'});
+      try{
+        const r=await this.fetch(new Request('https://internal/session/run',{method:'POST',body:JSON.stringify({prompt:job.prompt})}));
+        const result=await r.json();
+        const ok=r.ok&&(!result.exitCode||result.exitCode===0);
+        if(!ok&&!result.error)result.error=result.summary||'The coding task failed.';
+        await this.ctx.storage.put('job',{...job,status:ok?'completed':'failed',result,finishedAt:Date.now()});
+      }catch(e){
+        console.error(JSON.stringify({event:'turn_failed',error:String(e)}));
+        await this.ctx.storage.put('job',{...job,status:'failed',result:{error:'The coding task failed. Your last checkpoint is preserved.'}});
+      }
+      await this.ctx.storage.setAlarm(Date.now()+35*60*1000);
+      return;
+    }
+    if(job?.status==='running'){
+      await this.ctx.storage.put('job',{...job,status:'failed',result:{error:'The task was interrupted. Retry from the last saved checkpoint.'}});
+    }
     await this.ctx.storage.delete('modelQuota');
     if (this.ctx.container?.running) await this.ctx.container.destroy();
   }
@@ -335,10 +380,12 @@ export default {
         return json({ id, ...result }, 201);
       }
       const match = url.pathname.match(/^\/api\/sessions\/([0-9a-f-]{36})\/messages$/);
+      const jobMatch=url.pathname.match(/^\/api\/sessions\/([0-9a-f-]{36})\/job$/);
+      if(jobMatch && request.method==='GET')return env.PROBE.getByName('code:'+auth.user.id+':'+jobMatch[1]).fetch('https://internal/session/job');
       if (match && request.method === 'POST') {
         const body = await boundedJson(request);
         const object = env.PROBE.getByName(`code:${auth.user.id}:${match[1]}`);
-        const response = await object.fetch('https://internal/session/run', { method: 'POST', body: JSON.stringify(body) });
+        const response = await object.fetch('https://internal/session/enqueue', { method: 'POST', body: JSON.stringify(body) });
         return new Response(response.body, { status: response.status, headers: { 'Content-Type': 'application/json', ...SECURITY } });
       }
       return new Response('Not found', { status: 404, headers: SECURITY });

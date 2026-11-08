@@ -19,6 +19,7 @@ function fixture(values={}){
  const ctx={storage:{get:async k=>map.get(k),put:async(k,v)=>typeof k==='string'?map.set(k,v):Object.entries(k).forEach(([key,value])=>map.set(key,value)),setAlarm:async()=>{}},
  container:{running:false,images:{runner:'pinned'},start:o=>starts.push(o),interceptOutboundHttp:async()=>{},setInactivityTimeout:async()=>{}},
  exports:{ModelGateway:()=>({})},id:{toString:()=> 'id'}};
+ ctx.storage.transaction=async fn=>fn(ctx.storage);
  return {obj:new ArnoProbe(ctx,{}),ctx,starts};
 }
 test('cold session starts from saved checkpoint, with internet disabled',async()=>{
@@ -48,4 +49,21 @@ test('model cannot be changed during an active turn',async()=>{
  const f=fixture();f.obj.inFlight=true;
  const r=await f.obj.fetch(new Request('https://internal/session/model',{method:'POST',body:'{}'}));
  assert.equal(r.status,409);
+});
+test('submission saves a job, deduplicates retries and rejects a concurrent prompt',async()=>{
+ const f=fixture({session:{repo:'test/repo'}});
+ const submit=id=>f.obj.fetch(new Request('https://internal/session/enqueue',{method:'POST',body:JSON.stringify({id,prompt:'inspect repository'})}));
+ const id='11111111-1111-1111-1111-111111111111';
+ assert.equal((await submit(id)).status,202);
+ assert.equal((await submit(id)).status,202);
+ assert.equal((await submit('22222222-2222-2222-2222-222222222222')).status,409);
+ assert.equal((await f.ctx.storage.get('job')).status,'queued');
+});
+test('alarm runs a saved job and persists its result without the submitting request',async()=>{
+ const f=fixture({job:{id:'one',prompt:'hello',status:'queued'}});
+ const original=f.obj.fetch.bind(f.obj);
+ f.obj.fetch=async req=>new URL(req.url).pathname==='/session/run'?Response.json({summary:'completed offline'}):original(req);
+ await f.obj.alarm();
+ assert.equal((await f.ctx.storage.get('job')).status,'completed');
+ assert.equal((await f.ctx.storage.get('job')).result.summary,'completed offline');
 });
