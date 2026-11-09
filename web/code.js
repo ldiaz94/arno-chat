@@ -1,9 +1,11 @@
-/** The code dialog: file browser, diff tab and the review-and-publish flow.
- * Depends on core, render.mjs and highlight.mjs.
+/** The code dialog: file browser, changes, the checkout's commit history and
+ * the review-and-publish flow. Depends on core, render.mjs, highlight.mjs and
+ * today.mjs.
  */
 import { diffHtml } from './render.mjs';
 import { highlight, detect } from './highlight.mjs';
 import { $, state, esc, icon, num, api, toast, copy } from './core.js';
+import { ago } from './today.mjs';
 export function openCode(tab = 'files') {
   if (!state.session || state.session.kind === 'chat')
     return toast('Open a repository to browse its code');
@@ -14,7 +16,10 @@ export function openCode(tab = 'files') {
       document.body.classList.add('code-open');
     } else dialog.showModal();
   }
-  if (tab === 'diff') {
+  for (const t of ['files', 'diff', 'history'])
+    $('#' + t + '-tab').setAttribute('aria-pressed', String(t === tab));
+  if (tab === 'history') history();
+  else if (tab === 'diff') {
     const diff = state.session.history?.filter(t => t.diff).at(-1)?.diff;
     $('#code-body').innerHTML = diff
       ? '<div class="caption" style="padding:12px">Cumulative working-tree changes from the last completed turn</div><div class="diff-view panel-diff">' +
@@ -22,6 +27,91 @@ export function openCode(tab = 'files') {
         '</div>'
       : '<div class="empty">No recorded changes yet. Ask Arno to make a change first.</div>';
   } else browse('');
+}
+/** The History tab: the checkout's newest commits, newest first; those not
+ * yet on GitHub are marked. */
+async function history() {
+  const id = state.session.id;
+  $('#code-body').innerHTML = '<div class="loading">Reading the history…</div>';
+  try {
+    const d = await api('/api/sessions/' + id + '/history');
+    if (state.session?.id !== id) return;
+    $('#code-body').innerHTML =
+      (d.uncommitted
+        ? '<p class="history-note">' +
+          num(d.uncommitted) +
+          ' file' +
+          (d.uncommitted === 1 ? '' : 's') +
+          ' changed since the last commit</p>'
+        : '') +
+      '<ol class="commit-list">' +
+      d.commits.map(commitRow).join('') +
+      '</ol>';
+  } catch (e) {
+    $('#code-body').innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
+  }
+}
+// The branch and tag names git decorates a commit with, as tags.
+function refTags(refs) {
+  return (refs || '')
+    .split(', ')
+    .filter(r => r && r !== 'HEAD' && !r.endsWith('/HEAD'))
+    .map(
+      r => '<span class="tag">' + esc(r.replace(/^HEAD -> /, '').replace(/^tag: /, '')) + '</span>',
+    )
+    .join('');
+}
+function commitRow(c) {
+  return (
+    '<li><button type="button" class="commit-row" data-commit="' +
+    esc(c.sha) +
+    '"><span class="commit-dot' +
+    (c.local ? ' local' : '') +
+    '"></span><span class="commit-main"><span class="commit-subject">' +
+    esc(c.subject) +
+    '</span><span class="commit-meta"><code>' +
+    esc(c.sha.slice(0, 7)) +
+    '</code> ' +
+    esc(c.author) +
+    ' · <time title="' +
+    esc(new Date(c.at).toLocaleString()) +
+    '">' +
+    esc(ago(c.at)) +
+    '</time>' +
+    (c.local ? '<span class="tag local-tag">Not pushed</span>' : '') +
+    refTags(c.refs) +
+    '</span></span></button></li>'
+  );
+}
+/** One commit: its message, who and when, and its changes. */
+export async function showCommit(sha) {
+  const id = state.session.id;
+  $('#code-body').innerHTML = '<div class="loading">Opening ' + esc(sha.slice(0, 7)) + '…</div>';
+  try {
+    const c = await api('/api/sessions/' + id + '/commit?sha=' + sha);
+    if (state.session?.id !== id) return;
+    const [subject, ...body] = c.message.split('\n');
+    $('#code-body').innerHTML =
+      '<div class="commit-view"><button type="button" class="ghost history-back">← History</button><h3>' +
+      esc(subject) +
+      '</h3>' +
+      (body.join('\n').trim()
+        ? '<pre class="commit-body">' + esc(body.join('\n').trim()) + '</pre>'
+        : '') +
+      '<p class="caption"><code>' +
+      esc(c.sha.slice(0, 12)) +
+      '</code> · ' +
+      esc(c.author) +
+      ' · ' +
+      esc(new Date(c.at).toLocaleString()) +
+      '</p></div>' +
+      (c.patch.trim()
+        ? '<div class="diff-view panel-diff">' + diffHtml(c.patch) + '</div>'
+        : '<div class="empty">No changes in this commit.</div>');
+    $('#code-body .history-back').onclick = () => openCode('history');
+  } catch (e) {
+    $('#code-body').innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
+  }
 }
 export async function browse(path) {
   if (!state.session) return;

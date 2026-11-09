@@ -75,50 +75,38 @@
             <strong id="title">Your workspace</strong>
             <small id="subtitle">Connecting…</small>
           </div>
-          <div id="workspace-pill" class="pill" hidden>
-            <span class="dot"> </span>
-            <span id="workspace-label">Workspace saved</span>
+          <div class="topbar-actions">
+            <button
+              id="publish"
+              class="ghost icon"
+              aria-label="Review and publish"
+              title="Review and publish"
+            ></button>
+            <button
+              id="code"
+              class="ghost icon"
+              aria-label="Browse code and changes"
+              title="Code, changes and history"
+            ></button>
+            <button
+              id="actions"
+              class="ghost icon"
+              aria-label="Session actions"
+              title="Session actions"
+            ></button>
+            <button
+              id="export"
+              class="ghost icon"
+              aria-label="Export conversation"
+              title="Export conversation"
+            ></button>
+            <button
+              id="usage"
+              class="ghost icon"
+              aria-label="Usage and session details"
+              title="Conversation details"
+            ></button>
           </div>
-          <button
-            id="publish"
-            class="ghost icon"
-            aria-label="Review and publish"
-            title="Review and publish"
-          >
-            ↗
-          </button>
-          <button
-            id="code"
-            class="ghost icon"
-            aria-label="Browse code and changes"
-            title="Browse code and changes"
-          >
-            ⌘
-          </button>
-          <button
-            id="actions"
-            class="ghost icon"
-            aria-label="Session actions"
-            title="Session actions"
-          >
-            ⋯
-          </button>
-          <button
-            id="export"
-            class="ghost icon"
-            aria-label="Export conversation"
-            title="Export conversation"
-          >
-            ↧
-          </button>
-          <button
-            id="usage"
-            class="ghost icon"
-            aria-label="Usage and session details"
-            title="Usage and session details"
-          >
-            ▥
-          </button>
         </header>
         <div id="offline-banner" class="offline-banner" role="status" hidden>
           Offline · showing saved conversations
@@ -316,12 +304,13 @@
     </dialog>
     <dialog id="code-dialog" class="modal code-dialog" aria-label="Code and changes">
       <div class="modal-head">
-        <h2>Code & changes</h2>
+        <h2>Code, changes & history</h2>
         <button data-close class="ghost icon" aria-label="Close code">×</button>
       </div>
       <div class="code-tabs">
-        <button id="files-tab">Files</button>
-        <button id="diff-tab">Changes</button>
+        <button id="files-tab" aria-pressed="true">Files</button>
+        <button id="diff-tab" aria-pressed="false">Changes</button>
+        <button id="history-tab" aria-pressed="false">History</button>
       </div>
       <div id="code-body" class="code-body"></div>
     </dialog>

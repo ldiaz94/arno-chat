@@ -447,6 +447,20 @@ export class ArnoProbe extends DurableObject {
       this.gitOpen = null;
     }
   }
+  /** Starts a coding session's workspace for a look at its files or history:
+   * a refusal (Response) when it is no coding session or a turn is starting
+   * it, else null. */
+  async wake() {
+    const session = await this.ctx.storage.get('session');
+    if (!session || session.kind === 'chat')
+      return json({ error: 'Open a repository to browse code' }, 400);
+    if (this.ctx.container.running) return null;
+    const job = await this.ctx.storage.get('job');
+    if (job && ['queued', 'running'].includes(job.status))
+      return json({ error: 'Workspace is starting. Try again shortly.' }, 409);
+    await this.start(session.model);
+    return null;
+  }
   /** The branches on GitHub as the clone last saw them, to tell after a turn
    * which the model pushed. */
   async remoteRefs() {

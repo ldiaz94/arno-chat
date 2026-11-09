@@ -36,7 +36,7 @@ import {
   deleteConversation,
   anotherSession,
 } from './sessions.js';
-import { openCode, browse, reviewPublish } from './code.js';
+import { openCode, browse, reviewPublish, showCommit } from './code.js';
 import { submit, resizePrompt } from './turns.js';
 import './attach.js'; // wires the paperclip, paste and drop
 import './options.js'; // wires the options button, its popover and chips
@@ -72,6 +72,7 @@ $('#list-delete').onclick = () => deleteConversation(state.menuTarget);
 $('#code').onclick = () => openCode();
 $('#files-tab').onclick = () => openCode('files');
 $('#diff-tab').onclick = () => openCode('diff');
+$('#history-tab').onclick = () => openCode('history');
 $('#code-dialog').addEventListener('close', () => {
   if (!$('#code-dialog').open) document.body.classList.remove('code-open');
 });
@@ -143,6 +144,8 @@ document.addEventListener('click', e => {
   if (model) chooseModel(model.dataset.model);
   const file = e.target.closest('[data-file]');
   if (file) browse(file.dataset.file);
+  const commit = e.target.closest('[data-commit]');
+  if (commit) showCommit(commit.dataset.commit);
   const citation = e.target.closest('[data-citation]');
   if (citation)
     openSources(citation.closest('.turn')._sources || [], Number(citation.dataset.citation));
@@ -205,8 +208,9 @@ async function boot() {
 for (const [id, name] of [
   ['menu', 'menu'],
   ['theme', 'sun'],
-  ['usage', 'chart'],
+  ['usage', 'panel'],
   ['code', 'code'],
+  ['actions', 'dots'],
 ])
   $('#' + id).innerHTML = icon(name);
 $('#new-session').innerHTML = icon('plus') + ' New session';

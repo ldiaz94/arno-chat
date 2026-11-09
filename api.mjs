@@ -413,6 +413,15 @@ export async function sessionPaths(request, env, url, auth) {
       'https://internal/session/files?path=' +
         encodeURIComponent(url.searchParams.get('path') || ''),
     );
+  const gitMatch = url.pathname.match(/^\/api\/sessions\/([0-9a-f-]{36})\/(history|commit)$/);
+  if (gitMatch && request.method === 'GET')
+    return env.PROBE.getByName('code:' + auth.user.id + ':' + gitMatch[1]).fetch(
+      'https://internal/session/' +
+        gitMatch[2] +
+        (gitMatch[2] === 'commit'
+          ? '?sha=' + encodeURIComponent(url.searchParams.get('sha') || '')
+          : ''),
+    );
   const cancelMatch = url.pathname.match(/^\/api\/sessions\/([0-9a-f-]{36})\/cancel$/);
   if (cancelMatch && request.method === 'POST')
     return env.PROBE.getByName('code:' + auth.user.id + ':' + cancelMatch[1]).fetch(

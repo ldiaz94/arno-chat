@@ -54,25 +54,43 @@ export function busy(value) {
   $('#send').hidden = value;
   controls(); // send and model change wait while busy; offline, attaching too
 }
+/** The header: the page's or conversation's name and a line under it. A coding
+ * session's name is its repository, owner muted, and its line the branch, the
+ * commit it started from and whether its workspace is warm; subtitle is used
+ * otherwise. */
 export function title(name, subtitle) {
   const t = $('#title'),
-    open = !!state.session;
-  t.textContent = name;
+    open = !!state.session,
+    s = state.session,
+    coding = !!s && s.kind !== 'chat';
+  const [owner, repo] = coding && name === s.repo ? name.split('/') : [];
+  t.innerHTML = repo
+    ? '<span class="title-owner">' + esc(owner) + ' / </span>' + esc(repo)
+    : esc(name);
   // On a conversation the title opens its details panel (wired in app.js).
   if (open) t.setAttribute('aria-label', 'Conversation details: ' + name);
   else t.removeAttribute('aria-label');
   t.setAttribute('role', open ? 'button' : 'presentation');
   if (open) t.tabIndex = 0;
   else t.removeAttribute('tabindex');
-  $('#subtitle').textContent = subtitle;
+  $('#subtitle').innerHTML = coding
+    ? '<span class="crumb">' +
+      icon('branch') +
+      esc(s.ref || 'main') +
+      '</span>' +
+      (s.sourceSha ? '<span class="crumb sha">' + esc(s.sourceSha.slice(0, 7)) + '</span>' : '') +
+      (name === s.repo ? '' : '<span class="crumb">' + esc(s.repo) + '</span>') +
+      '<span class="crumb ws-state' +
+      (s.workspaceState === 'warm' ? ' warm' : '') +
+      '"><span class="dot"></span>' +
+      (s.workspaceState === 'warm' ? 'Warm' : 'Saved') +
+      '</span>'
+    : esc(subtitle);
+  $('#subtitle').title = coding ? 'Branch, starting commit and workspace' : '';
   // Header buttons that only mean something in a conversation (actions, export,
   // details) or only in a coding one (code browser, publish).
-  const coding = !!state.session && state.session.kind !== 'chat';
   for (const id of ['actions', 'export', 'usage']) $('#' + id).hidden = !state.session;
   for (const id of ['code', 'publish']) $('#' + id).hidden = !coding;
-  $('#workspace-pill').hidden = !state.session || state.session.kind === 'chat';
-  $('#workspace-label').textContent =
-    state.session?.workspaceState === 'warm' ? 'Workspace warm' : 'Workspace saved';
 }
 export function sidebar() {
   $('#account').textContent = state.user?.login || 'Guest';

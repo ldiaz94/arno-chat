@@ -175,6 +175,18 @@ const { chromium } = require('playwright'),
       assert.equal(await page.locator('.panel-diff .remove .hl-c').count(), 1);
       assert.ok(await fits());
       await shot('code-diff-' + width);
+      // History: the checkout's commits, the unpushed one marked; one opens with its patch.
+      await page.getByRole('button', { name: 'History', exact: true }).click();
+      await page.locator('.commit-row').first().waitFor();
+      assert.equal(await page.locator('.commit-row .local-tag').count(), 1);
+      assert.match(await page.locator('.history-note').innerText(), /2 files/);
+      assert.ok(await fits());
+      await shot('code-history-' + width);
+      await page.locator('.commit-row').first().click();
+      await page.locator('.commit-view h3', { hasText: 'Add the framing tests' }).waitFor();
+      await page.locator('.panel-diff .add').first().waitFor();
+      await page.locator('.history-back').click();
+      await page.locator('.commit-row').first().waitFor();
     };
     // The answer's raz and JS code blocks: highlighted, the long line scrolling inside its
     // block, and the header's Wrap toggle.
@@ -299,7 +311,38 @@ const { chromium } = require('playwright'),
           title: 'General chat',
           model,
         };
-      } else if (u.pathname.endsWith('/files'))
+      } else if (u.pathname.endsWith('/history'))
+        d = {
+          uncommitted: 2,
+          commits: [
+            {
+              sha: 'c'.repeat(40),
+              author: 'ldiaz94',
+              at: Date.now() - 60000,
+              subject: 'Add the framing tests',
+              refs: 'HEAD -> feat',
+              local: true,
+            },
+            {
+              sha: 'd'.repeat(40),
+              author: 'Luis',
+              at: Date.now() - 86400000 * 3,
+              subject: 'Wire framing',
+              refs: 'origin/main, main',
+              local: false,
+            },
+          ],
+        };
+      else if (u.pathname.endsWith('/commit'))
+        d = {
+          sha: 'c'.repeat(40),
+          author: 'ldiaz94',
+          at: Date.now() - 60000,
+          message: 'Add the framing tests\n\nCovers split frames.',
+          patch:
+            'diff --git a/t.raz b/t.raz\n--- a/t.raz\n+++ b/t.raz\n@@ -1 +1,2 @@\n module T;\n+(* split frames *)\n',
+        };
+      else if (u.pathname.endsWith('/files'))
         d =
           u.searchParams.get('path') === 'src/demo.raz'
             ? { directory: false, path: 'src/demo.raz', content: demoRaz, bytes: demoRaz.length }

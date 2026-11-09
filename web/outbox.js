@@ -472,7 +472,7 @@ function showTitle(id, name) {
   state.sessions = state.sessions.map(s => (s.id === id ? { ...s, title: name } : s));
   if (state.session?.id === id) {
     state.session.title = name;
-    title(name, $('#subtitle').textContent);
+    title(name, $('#subtitle').textContent); // a coding session's line is rebuilt
   }
   sidebar();
 }

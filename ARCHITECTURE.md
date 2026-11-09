@@ -42,7 +42,7 @@ Arno Chat turns a GitHub repository clone into a resumable remote coding workspa
 | web/info.js | Conversation details panel (title or usage button): context, usage, sources, links, images, repository |
 | web/usage.js | Usage view: per-request report, spend summaries, by-model totals and the Ollama account card |
 | web/artifacts.js | Artifact dialog (versions, Copy, .md and first-table .csv download, Print), turn cards, click handler |
-| web/code.js | Code dialog: file browser (numbered, highlighted lines; Wrap; Copy), diff, review and publish |
+| web/code.js | Code dialog: file browser (numbered, highlighted lines; Wrap; Copy), changes, commit history (unpushed commits marked; a commit opens with its patch), review and publish |
 | web/attach.js | Composer attachments: upload on pick/paste/drop, chips, attachment rendering for messages and details |
 | web/turns.js | Sending, editing, job polling and live output |
 | web/options.js | Composer options: the sliders button, its popover, chips, per-conversation storage |
@@ -136,6 +136,8 @@ All API routes require the GitHub-authenticated session cookie except GET /api/m
 | PATCH | /api/sessions/:id | Rename a conversation |
 | DELETE | /api/sessions/:id | Delete an idle conversation and its saved workspace reference |
 | GET | /api/sessions/:id/files?path=... | Browse directories or preview a regular UTF-8 file |
+| GET | /api/sessions/:id/history | The checkout's newest 100 commits, which are not on GitHub yet, and how many files are uncommitted |
+| GET | /api/sessions/:id/commit?sha=... | One commit's message and patch (up to 120 KB); a partial clone may fetch its files through the git gateway |
 | POST | /api/sessions/:id/messages | Save a task from id and prompt; returns HTTP 202 |
 | GET | /api/sessions/:id/job | Latest durable task state and completed result |
 | GET | /api/sessions/:id/events | Server-sent events: live preview of the running task |

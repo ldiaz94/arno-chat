@@ -27,7 +27,62 @@ export function hostCommand(prompt) {
     return '/' + name + ' is not available here';
   return '';
 }
+/** git log's fields for a commit, parted by unit separators. */
+const LOG_FORMAT = '%H%x1f%an%x1f%at%x1f%s%x1f%D';
+
 export const sessionRoutes = {
+  /** The newest commits of the session's checkout: each with its author, time,
+   * subject and refs, and whether it is only here (not yet on GitHub); and
+   * how many files have uncommitted changes. */
+  async 'GET /session/history'() {
+    const refused = await this.wake();
+    if (refused) return refused;
+    const cwd = { cwd: '/workspace/repo' };
+    const [log, local, status] = await Promise.all([
+      this.exec(['git', 'log', '-n', '100', '--format=' + LOG_FORMAT, 'HEAD'], cwd, 20),
+      this.exec(['git', 'rev-list', '-n', '100', 'HEAD', '--not', '--remotes'], cwd, 20),
+      this.exec(['git', 'status', '--porcelain'], cwd, 20),
+    ]);
+    if (log.exitCode !== 0) return json({ error: 'Could not read the history' }, 500);
+    const only = new Set(local.stdout.split('\n').filter(Boolean));
+    const commits = log.stdout
+      .split('\n')
+      .filter(Boolean)
+      .map(line => {
+        const [sha, author, at, subject, refs] = line.split('\x1f');
+        return { sha, author, at: Number(at) * 1000, subject, refs, local: only.has(sha) };
+      });
+    return json({ commits, uncommitted: status.stdout.split('\n').filter(Boolean).length });
+  },
+  /** One commit: its message and its patch, cut at 120 KB. Its files' contents
+   * may still be on GitHub (a partial clone), so git may fetch them. */
+  async 'GET /session/commit'(request, url) {
+    const sha = url.searchParams.get('sha') || '';
+    if (!/^[0-9a-f]{7,40}$/.test(sha)) return json({ error: 'Invalid commit' }, 400);
+    const refused = await this.wake();
+    if (refused) return refused;
+    const session = await this.ctx.storage.get('session');
+    this.gitOpen = { repo: session.repo, ownerId: session.ownerId };
+    try {
+      const r = await this.exec(
+        ['git', 'show', '--no-color', '--patch', '--format=%H%x1f%an%x1f%at%x1f%B%x1e', sha],
+        { cwd: '/workspace/repo' },
+        60,
+      );
+      if (r.exitCode !== 0) return json({ error: 'Could not read that commit' }, 404);
+      const [head, ...rest] = r.stdout.split('\x1e'),
+        [full, author, at, message] = head.split('\x1f');
+      return json({
+        sha: full,
+        author,
+        at: Number(at) * 1000,
+        message: message.trim(),
+        patch: rest.join('').replace(/^\n+/, '').slice(0, 120000),
+      });
+    } finally {
+      this.gitOpen = null;
+    }
+  },
   async 'POST /session/rename'(request) {
     const { title } = await request.json();
     if (typeof title !== 'string' || !title.trim() || title.length > 100)
@@ -71,15 +126,8 @@ export const sessionRoutes = {
   async 'GET /session/files'(request, url) {
     const name = url.searchParams.get('path') || '';
     if (!validPath(name)) return json({ error: 'Invalid file path' }, 400);
-    const session = await this.ctx.storage.get('session');
-    if (!session || session.kind === 'chat')
-      return json({ error: 'Open a repository to browse code' }, 400);
-    if (!this.ctx.container.running) {
-      const job = await this.ctx.storage.get('job');
-      if (job && ['queued', 'running'].includes(job.status))
-        return json({ error: 'Workspace is starting. Try again shortly.' }, 409);
-      await this.start(session.model);
-    }
+    const refused = await this.wake();
+    if (refused) return refused;
     const p = await this.ctx.container.exec(['node', '-e', READ_FILE, name], {
       cwd: '/workspace/repo',
     });
