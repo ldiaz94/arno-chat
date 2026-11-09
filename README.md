@@ -10,7 +10,6 @@ A responsive chat and remote coding workspace built around [Arno](https://github
 2. Choose **New chat** for a regular conversation with web research and persistent context; no coding container starts.
 3. Choose **New session** for coding. Connect GitHub repository access, search your visible repositories, or paste an exact GitHub repository URL.
 4. Ask Arno to inspect, edit, or test. The activity indicator separates workspace preparation, execution, and checkpointing.
-
 5. Browse **Code & changes** to navigate files or inspect highlighted diffs. Use **Session actions → Review & publish** to create a new branch/commit and pull request.
 6. Open your **avatar/name** for provider keys, system instructions, skills, MCP, and connection settings.
 
