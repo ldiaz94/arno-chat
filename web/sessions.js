@@ -130,6 +130,8 @@ function setMode(mode) {
 export async function switchMode(mode) {
   const open = shell.classList.contains('drawer-open') && mode !== state.mode;
   setMode(mode);
+  state.editing = false; // selection is per list; switching modes leaves edit mode
+  state.selected.clear();
   await home();
   if (open) drawer(true);
 }
@@ -544,4 +546,48 @@ export async function deleteConversation(id = state.session?.id) {
   } catch (e) {
     showError(e);
   }
+}
+/** Enters or leaves the sidebar's multi-select mode. */
+export function toggleEdit() {
+  state.editing = !state.editing;
+  if (!state.editing) state.selected.clear();
+  sidebar();
+}
+/** Selects or deselects one conversation row in edit mode. */
+export function togglePick(id) {
+  if (!state.editing) return;
+  state.selected.has(id) ? state.selected.delete(id) : state.selected.add(id);
+  sidebar();
+}
+/** Deletes every selected conversation, one server call each, then leaves edit mode. */
+export async function deleteSelected() {
+  const ids = [...state.selected];
+  if (!ids.length) return;
+  const blocked = state.busy && ids.includes(state.session?.id);
+  if (blocked) return toast('Stop the active task before deleting this conversation');
+  const what =
+    'Delete ' +
+    ids.length +
+    (ids.length === 1 ? ' conversation' : ' conversations') +
+    ' and their saved workspaces? This cannot be undone.';
+  if (!confirm(what)) return;
+  const failed = [];
+  for (const id of ids) {
+    try {
+      if (isLocal(id)) await dropSession(id);
+      else await api('/api/sessions/' + id, { method: 'DELETE' });
+    } catch (e) {
+      failed.push(id);
+      console.error('bulk delete failed for ' + id, e);
+    }
+  }
+  state.sessions = state.sessions.filter(s => !ids.includes(s.id));
+  state.selected.clear();
+  state.editing = false;
+  $('#actions-dialog').close();
+  $('#conversation-dialog').close();
+  if (state.session && ids.includes(state.session.id)) await home();
+  else sidebar();
+  if (failed.length) toast(ids.length - failed.length + ' deleted · ' + failed.length + ' failed');
+  else toast(ids.length === 1 ? 'Conversation deleted' : ids.length + ' conversations deleted');
 }

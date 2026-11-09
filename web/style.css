@@ -1790,6 +1790,88 @@ body.light {
 .session-more:hover {
   background: var(--line);
 }
+/* Multi-select edit mode in the sidebar list. */
+.list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+}
+.list-edit {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 4px 8px;
+  border-radius: 6px;
+  min-height: 28px;
+}
+.list-edit:hover {
+  background: var(--line);
+  color: var(--text);
+}
+.list-edit[aria-pressed='true'] {
+  color: var(--accent);
+}
+.bulk-bar {
+  display: flex;
+  gap: 8px;
+  padding: 10px 10px 2px;
+  border-top: 1px solid var(--line);
+}
+.bulk-bar button {
+  flex: 1;
+  min-height: 40px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--raised);
+  padding: 6px 10px;
+  font-weight: 600;
+}
+.bulk-bar .danger {
+  color: var(--red);
+  border-color: transparent;
+  background: transparent;
+}
+.bulk-bar .danger:not(:disabled):hover {
+  background: var(--line);
+}
+.bulk-bar .danger:disabled {
+  opacity: 0.45;
+}
+.session-pick {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  left: 10px;
+  z-index: 1;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1.5px solid var(--muted);
+  background: transparent;
+  color: transparent;
+  font-size: 14px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.session-pick.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #10251e;
+  font-weight: 800;
+}
+.session-row.picked .session-item {
+  background: var(--accent-bg);
+  box-shadow: inset 2px 0 var(--accent);
+}
+.session-row .session-item.picking {
+  padding-left: 46px;
+  padding-right: 12px;
+}
 .account-trigger {
   flex: 1;
   justify-content: flex-start;

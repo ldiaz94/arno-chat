@@ -41,8 +41,17 @@
         >
           ＋ New session
         </button>
-        <div id="list-heading" class="eyebrow" style="padding: 0 10px">Chats</div>
+        <div class="list-head">
+          <div id="list-heading" class="eyebrow">Chats</div>
+          <button id="list-edit" class="ghost list-edit" type="button" aria-pressed="false">
+            Edit
+          </button>
+        </div>
         <nav id="session-list" class="session-list"></nav>
+        <div id="bulk-bar" class="bulk-bar" hidden>
+          <button id="bulk-delete" class="danger" type="button" disabled>Delete selected</button>
+          <button id="bulk-done" class="ghost" type="button">Done</button>
+        </div>
         <button id="usage-view" class="ghost" type="button">Usage</button>
         <div class="sidebar-foot">
           <button

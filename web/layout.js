@@ -101,36 +101,75 @@ export function sidebar() {
   $('#new-chat').hidden = code;
   $('#new-session').hidden = !code;
   $('#list-heading').textContent = code ? 'Coding sessions' : 'Chats';
+  const edit = state.editing;
+  const editBtn = $('#list-edit');
+  editBtn.textContent = edit ? 'Done' : 'Edit';
+  editBtn.setAttribute('aria-pressed', String(edit));
+  $('#bulk-bar').hidden = !edit;
+  $('#bulk-delete').disabled = state.selected.size === 0;
+  $('#bulk-delete').textContent =
+    'Delete selected' + (state.selected.size ? ' (' + state.selected.size + ')' : '');
   const rows = byRecent(state.sessions.filter(s => modeOf(s) === state.mode));
+  const row = s => {
+    const name = esc(s.title || s.repo),
+      picked = state.selected.has(s.id),
+      marks =
+        (chatFailure(s.id)
+          ? ' · <span class="failed-mark">Not created</span>'
+          : waiting(s.id)
+            ? ' · <span class="queued-mark">Queued</span>'
+            : '');
+    return (
+      '<div class="session-row' +
+      (edit && picked ? ' picked' : '') +
+      '">' +
+      (edit
+        ? '<button class="session-pick' +
+          (picked ? ' on' : '') +
+          '" type="button" data-pick="' +
+          esc(s.id) +
+          '" aria-pressed="' +
+          picked +
+          '" aria-label="Select ' +
+          name +
+          '">' +
+          (picked ? '✓' : '') +
+          '</button>'
+        : '') +
+      '<button class="session-item ' +
+      (s.id === state.session?.id ? 'active' : '') +
+      (edit ? ' picking' : '') +
+      '" data-session="' +
+      esc(s.id) +
+      '"><strong>' +
+      name +
+      '</strong><small>' +
+      (code ? esc(s.ref || 'main') + ' · ' : '') +
+      '<time>' +
+      ago(activeAt(s)) +
+      '</time>' +
+      marks +
+      '</small></button>' +
+      (edit
+        ? ''
+        : '<button class="session-more" type="button" data-session-menu="' +
+          esc(s.id) +
+          '" aria-label="Conversation actions for ' +
+          name +
+          '">⋯</button>') +
+      '</div>'
+    );
+  };
   $('#session-list').innerHTML = rows.length
-    ? rows
-        .map(
-          s =>
-            '<div class="session-row"><button class="session-item ' +
-            (s.id === state.session?.id ? 'active' : '') +
-            '" data-session="' +
-            esc(s.id) +
-            '"><strong>' +
-            esc(s.title || s.repo) +
-            '</strong><small>' +
-            (code ? esc(s.ref || 'main') + ' · ' : '') +
-            '<time>' +
-            ago(activeAt(s)) +
-            '</time>' +
-            (chatFailure(s.id)
-              ? ' · <span class="failed-mark">Not created</span>'
-              : waiting(s.id)
-                ? ' · <span class="queued-mark">Queued</span>'
-                : '') +
-            '</small></button><button class="session-more" type="button" data-session-menu="' +
-            esc(s.id) +
-            '" aria-label="Conversation actions for ' +
-            esc(s.title || s.repo) +
-            '">⋯</button></div>',
-        )
-        .join('')
+    ? rows.map(row).join('')
     : '<div class="empty caption">' +
-      (code ? 'Your coding sessions will appear here.' : 'Your chats will appear here.') +
+      (code
+        ? edit
+          ? 'No coding sessions to select.'
+          : 'Your coding sessions will appear here.'
+        : edit
+          ? 'No chats to select.'
+          : 'Your chats will appear here.') +
       '</div>';
 }
 /** Marks a conversation active now, so it moves to the top of the list. */

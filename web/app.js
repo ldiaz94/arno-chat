@@ -34,6 +34,9 @@ import {
   exportChat,
   renameConversation,
   deleteConversation,
+  toggleEdit,
+  togglePick,
+  deleteSelected,
   anotherSession,
 } from './sessions.js';
 import { openCode, browse, reviewPublish, showCommit } from './code.js';
@@ -69,6 +72,9 @@ $('#rename-conversation').onclick = () => renameConversation();
 $('#delete-conversation').onclick = () => deleteConversation();
 $('#list-rename').onclick = () => renameConversation(state.menuTarget);
 $('#list-delete').onclick = () => deleteConversation(state.menuTarget);
+$('#list-edit').onclick = toggleEdit;
+$('#bulk-done').onclick = toggleEdit;
+$('#bulk-delete').onclick = deleteSelected;
 $('#code').onclick = () => openCode();
 $('#files-tab').onclick = () => openCode('files');
 $('#diff-tab').onclick = () => openCode('diff');
@@ -131,8 +137,13 @@ document.addEventListener('keydown', e => {
   }
 });
 document.addEventListener('click', e => {
+  const pick = e.target.closest('[data-pick]');
+  if (pick) return togglePick(pick.dataset.pick);
   const session = e.target.closest('[data-session]');
-  if (session) resume(session.dataset.session);
+  if (session) {
+    if (state.editing) togglePick(session.dataset.session);
+    else resume(session.dataset.session);
+  }
   const sessionMenu = e.target.closest('[data-session-menu]');
   if (sessionMenu) {
     state.menuTarget = sessionMenu.dataset.sessionMenu;

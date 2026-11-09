@@ -18,6 +18,8 @@ export const state = {
   modelTarget: null,
   avatar: 0, // cache-busting stamp of the profile picture; 0 when there is none
   offline: false, // no network: showing saved conversations (offline.js)
+  editing: false, // the sidebar's multi-select mode (Edit button)
+  selected: new Set(), // conversation ids picked in edit mode
   mode: localStorage.getItem('mode') === 'code' ? 'code' : 'chat', // the sidebar's Chat | Code
   profile: {}, // the account's preferences (GET /api/account): home, enterSends, defaultModel
 };
