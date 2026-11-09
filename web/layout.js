@@ -45,7 +45,15 @@ export function busy(value) {
     : icon('arrow') + '<span>Send</span>';
 }
 export function title(name, subtitle) {
-  $('#title').textContent = name;
+  const t = $('#title'),
+    open = !!state.session;
+  t.textContent = name;
+  // On a conversation the title opens its details panel (wired in app.js).
+  if (open) t.setAttribute('aria-label', 'Conversation details: ' + name);
+  else t.removeAttribute('aria-label');
+  t.setAttribute('role', open ? 'button' : 'presentation');
+  if (open) t.tabIndex = 0;
+  else t.removeAttribute('tabindex');
   $('#subtitle').textContent = subtitle;
   $('#workspace-pill').hidden = !state.session || state.session.kind === 'chat';
   $('#workspace-label').textContent =

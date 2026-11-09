@@ -189,6 +189,7 @@ export async function plainChat({
       total.cachedTokens += t.cached;
       total.cacheWriteTokens += t.write;
       total.outputTokens += t.output;
+      total.lastInputTokens = t.input + t.cached + t.write;
     }
     if (!reply.calls.length) {
       if (!reply.summary.trim())

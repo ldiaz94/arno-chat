@@ -43,7 +43,7 @@ const { chromium } = require('playwright'),
     summary:
       'safety: auto, working on a copy at /cache\n' +
       answer +
-      '\n\nSee the original specification [1].',
+      '\n\nSee the original specification [1]. Notes: https://example.com/guide/start.\n\n![Diagram](https://example.com/img/diagram.png)',
     sources: [
       {
         id: 1,
@@ -56,7 +56,13 @@ const { chromium } = require('playwright'),
     model,
     at: Date.now(),
     diff,
-    usage: { calls: 2, measuredCalls: 2, inputTokens: 4200, outputTokens: 350 },
+    usage: {
+      calls: 2,
+      measuredCalls: 2,
+      inputTokens: 4200,
+      outputTokens: 350,
+      lastInputTokens: 3200,
+    },
     timing: {
       startupMs: 150,
       executionMs: 5600,
@@ -72,6 +78,7 @@ const { chromium } = require('playwright'),
     sourceSha: 'a'.repeat(40),
     model,
     workspaceState: 'warm',
+    contextWindow: 4000,
     history: [turn],
     stats: {
       turns: 1,
@@ -259,7 +266,23 @@ const { chromium } = require('playwright'),
   await page.waitForFunction(() => !document.querySelector('#send').disabled);
   await page.getByRole('button', { name: 'Usage and session details' }).click();
   await page.getByText('4,200', { exact: true }).waitFor();
+  const info = page.locator('#usage-dialog');
+  await info.getByText('3,200 of 4,000 tokens (80%)').waitFor();
+  assert.equal(await info.locator('.meter').getAttribute('aria-valuenow'), '80');
+  await info.getByRole('heading', { name: 'Sources' }).waitFor();
+  assert.ok(
+    (await info.locator('[data-info-source]').textContent()).includes('microsoft.github.io'),
+  );
+  assert.equal(
+    await info.locator('a[href="https://example.com/guide/start"]').getAttribute('rel'),
+    'noopener noreferrer',
+  );
+  assert.equal(await info.locator('.info-images img').count(), 1);
+  await info.getByRole('heading', { name: 'Repository identity' }).waitFor();
   await page.screenshot({ path: '/tmp/arno-usage-mobile.png', fullPage: true });
+  await page.getByRole('button', { name: 'Close usage' }).click();
+  await page.getByRole('button', { name: /^Conversation details/ }).press('Enter');
+  await info.getByRole('heading', { name: 'Context' }).waitFor();
   await page.getByRole('button', { name: 'Close usage' }).click();
   await page.getByRole('button', { name: 'Browse code and changes' }).click();
   await page.locator('[data-file="README.md"]').click();

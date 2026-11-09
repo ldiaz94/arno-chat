@@ -9,10 +9,10 @@ import { $, state, esc, icon, api, toast, showError, copy, main, prompt } from '
 import { drawer, title, sidebar, theme } from './layout.js';
 import { loadModels, openModels, renderModels, chooseModel } from './models.js';
 import { openSources } from './thread.js';
+import { openInfo } from './info.js';
 import {
   resume,
   newChat,
-  openUsage,
   home,
   exportChat,
   renameConversation,
@@ -27,7 +27,14 @@ $('#menu').onclick = () => drawer(true);
 $('#overlay').onclick = () => drawer(false);
 $('#new-session').onclick = home;
 $('#theme').onclick = theme;
-$('#usage').onclick = openUsage;
+$('#usage').onclick = openInfo;
+$('#title').onclick = () => state.session && openInfo();
+$('#title').onkeydown = e => {
+  if (state.session && (e.key === 'Enter' || e.key === ' ')) {
+    e.preventDefault();
+    openInfo();
+  }
+};
 $('#export').onclick = exportChat;
 $('#model-button').onclick = () => openModels('session');
 $('#model-search').oninput = renderModels;

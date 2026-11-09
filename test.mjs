@@ -202,9 +202,18 @@ test('transcript and repository survive object recreation without container', as
     session: { repo: 'owner/repo', model: 'm' },
     history: [{ prompt: 'hello', summary: 'done' }],
   });
-  const r = await f.obj.fetch(new Request('https://internal/session/get'));
-  assert.equal(r.status, 200);
-  assert.deepEqual((await r.json()).history, [{ prompt: 'hello', summary: 'done' }]);
+  // The context-window lookup must not reach the network from a test.
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response('{}', { status: 404 });
+  try {
+    const r = await f.obj.fetch(new Request('https://internal/session/get'));
+    assert.equal(r.status, 200);
+    const body = await r.json();
+    assert.deepEqual(body.history, [{ prompt: 'hello', summary: 'done' }]);
+    assert.equal(body.contextWindow, null);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
 test('catalog includes only completion models with tools and retains Le Chonk default', async () => {
   const d = await catalog(async () =>

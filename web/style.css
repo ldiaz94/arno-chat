@@ -9,6 +9,7 @@
   --accent: #a5e8ce;
   --accent-bg: #17372e;
   --red: #ffafa8;
+  --warn: #f0b84a;
   --shadow: 0 24px 80px #0005;
   font-family:
     Inter,
@@ -966,6 +967,7 @@ body.light {
   --accent: #157452;
   --accent-bg: #e1f3e9;
   --red: #b33232;
+  --warn: #a8660a;
 }
 .light .prose strong {
   color: #101e2a;
@@ -1778,5 +1780,75 @@ body.light {
   max-width: 100%;
   height: auto;
   border-radius: 10px;
+  border: 1px solid var(--line);
+}
+
+#title[role='button'] {
+  cursor: pointer;
+}
+#title[role='button']:hover {
+  text-decoration: underline;
+}
+.context-fill {
+  margin: 8px 0 6px;
+}
+.meter {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+.meter span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.meter.warn span {
+  background: var(--warn);
+}
+.info-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+}
+.info-row a {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.info-row .info-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.info-row small {
+  color: var(--muted);
+  flex: none;
+}
+.info-images {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+.info-images img {
+  display: block;
+  width: 100%;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 8px;
   border: 1px solid var(--line);
 }

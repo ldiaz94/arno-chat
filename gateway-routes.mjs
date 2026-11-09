@@ -71,6 +71,7 @@ export const gatewayRoutes = {
       q.inputTokens = (q.inputTokens || 0) + safe(usage.prompt_tokens);
       q.outputTokens = (q.outputTokens || 0) + safe(usage.completion_tokens);
       q.cachedTokens = (q.cachedTokens || 0) + safe(usage.cached_tokens);
+      q.lastInputTokens = safe(usage.prompt_tokens);
       q.cacheWriteTokens = (q.cacheWriteTokens || 0) + safe(usage.cache_write_tokens);
       q.measuredCalls = (q.measuredCalls || 0) + 1;
       await txn.put('modelQuota', q);

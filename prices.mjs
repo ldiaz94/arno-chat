@@ -131,6 +131,7 @@ export function parseOpenRouter(data) {
       cached: perM(p.input_cache_read) ?? perM(p.prompt),
       write: perM(p.input_cache_write) ?? perM(p.prompt),
       out: perM(p.completion),
+      window: m.context_length || null,
     });
   }
   return rows;
@@ -155,7 +156,8 @@ export async function prices(upstream = fetch) {
     get('https://openrouter.ai/api/v1/models', parseOpenRouter, 'json'),
     get('https://aistudio.google.com/docs/pricing.md', parseGemini, 'text'),
   ]);
-  const rows = new Map([...ollama, ...router, ...gemini]);
+  const rows = new Map([...ollama, ...router]);
+  for (const [k, row] of gemini) rows.set(k, { window: router.get(k)?.window ?? null, ...row });
   if (rows.size) memo = { at: Date.now(), rows };
   return rows;
 }

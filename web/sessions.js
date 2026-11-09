@@ -1,5 +1,5 @@
 /** Sessions and the home page: open, create, list, search, export, rename and delete
- * conversations, and the usage dialog. Depends on core, layout, models, thread, turns and render.mjs.
+ * conversations, and rename. Depends on core, layout, models, thread, turns and render.mjs.
  */
 import { cleanOutput } from './render.mjs';
 import {
@@ -7,13 +7,10 @@ import {
   state,
   esc,
   icon,
-  num,
-  duration,
   modelName,
   api,
   toast,
   showError,
-  money,
   main,
   composer,
   prompt,
@@ -78,18 +75,6 @@ export async function resume(id) {
     $('#retry-open').onclick = () => resume(id);
   }
 }
-function sessionStats() {
-  return (
-    state.session?.stats || {
-      turns: state.session?.history?.length || 0,
-      calls: null,
-      inputTokens: null,
-      outputTokens: null,
-      measuredCalls: 0,
-      totalMs: null,
-    }
-  );
-}
 export async function newChat() {
   const model = state.session?.model || state.selectedModel || 'mistral-large-4:cloud';
   try {
@@ -99,62 +84,6 @@ export async function newChat() {
   } catch (e) {
     showError(e);
   }
-}
-export function openUsage() {
-  const s = state.session,
-    stats = sessionStats(),
-    history = s?.history || [],
-    last = history.at(-1);
-  $('#usage-body').innerHTML =
-    '<div class="eyebrow">This session</div><h3>' +
-    esc(s?.repo || s?.title || 'No session selected') +
-    '</h3><div class="stat-grid">' +
-    [
-      ['Completed turns', num(stats.turns)],
-      ['Model requests', num(stats.calls)],
-      ['Input tokens', stats.measuredCalls ? num(stats.inputTokens) : '—'],
-      ['Output tokens', stats.measuredCalls ? num(stats.outputTokens) : '—'],
-      [
-        'Cost',
-        stats.cost || stats.turns
-          ? money(stats.cost || 0) +
-            (stats.unpriced ? ' + ' + num(stats.unpriced) + ' unpriced' : '')
-          : '—',
-      ],
-    ]
-      .map(
-        ([name, value]) =>
-          '<div class="metric"><b>' + value + '</b><span>' + name + '</span></div>',
-      )
-      .join('') +
-    '</div><p class="caption">Tokens are reported by the selected provider. A dash means usage was not recorded. Historical turns may have incomplete usage. Cost uses each model’s list price on the day of the turn (Ollama’s and Google’s pricing pages; Anthropic and OpenAI via OpenRouter); unpriced turns used a model missing from those tables. Ollama’s off-peak rates apply to turns saved off-peak. Web searches are not included.</p>' +
-    (last?.timing
-      ? '<div class="eyebrow">Last turn</div>' +
-        [
-          ['Workspace', last.timing.workspace || '—'],
-          ['Preparation', duration(last.timing.startupMs)],
-          ['Agent execution', duration(last.timing.executionMs)],
-          ['Checkpoint', duration(last.timing.checkpointMs)],
-          ['Total', duration(last.timing.totalMs)],
-        ]
-          .map(
-            ([k, v]) =>
-              '<div class="timing-row"><span>' + k + '</span><strong>' + v + '</strong></div>',
-          )
-          .join('')
-      : '<p class="caption">Timing measurements will appear after a new turn.</p>') +
-    (s && s.kind !== 'chat'
-      ? '<div class="section-title"><h2>Repository identity</h2></div><p><a href="' +
-        esc(s.remoteUrl || 'https://github.com/' + s.repo) +
-        '" target="_blank" rel="noopener noreferrer">' +
-        esc(s.repo) +
-        '</a></p><div class="timing-row"><span>Branch</span><strong>' +
-        esc(s.ref || 'main') +
-        '</strong></div><div class="timing-row"><span>Source commit</span><strong>' +
-        esc(s.sourceSha?.slice(0, 12) || 'Not recorded for this session') +
-        '</strong></div><p class="caption">The workspace is imported from a GitHub snapshot. Git history and GitHub writes require the publishing workflow.</p>'
-      : '');
-  $('#usage-dialog').showModal();
 }
 export async function home() {
   $('#code-dialog').close();

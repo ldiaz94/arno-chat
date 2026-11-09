@@ -2,7 +2,7 @@
  * lifecycle, turns, live events, file preview and publishable changes.
  * Called with this = the ArnoProbe instance. */
 import { json } from './http.mjs';
-import { modelAllowed } from './models.mjs';
+import { modelAllowed, contextWindow } from './models.mjs';
 import { EXPORT_FILES, validateFiles, WORKTREE_DIFF } from './publish.mjs';
 import { buildPrompt } from './context.mjs';
 import { READ_FILE, validPath } from './files.mjs';
@@ -207,6 +207,7 @@ export const sessionRoutes = {
       workspaceState: this.ctx.container?.running ? 'warm' : 'sleeping',
       stats: (await this.ctx.storage.get('stats')) || null,
       history: await this.history(true),
+      contextWindow: await contextWindow(meta.model),
     });
   },
   async 'POST /session/init'(request) {
@@ -350,6 +351,7 @@ export const sessionRoutes = {
         outputTokens: q?.measuredCalls ? q.outputTokens : null,
         cachedTokens: q?.cachedTokens || 0,
         cacheWriteTokens: q?.cacheWriteTokens || 0,
+        lastInputTokens: q?.lastInputTokens ?? null,
       };
       result.sources = citedSources(result.summary, q?.sources || [], previous);
       result.webUsage = q?.webCounts || { searches: 0, reads: 0 };

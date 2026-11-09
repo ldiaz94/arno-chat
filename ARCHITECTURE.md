@@ -31,7 +31,8 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 | web/layout.js | Viewport fit, drawer, busy flag, title bar, sidebar, theme |
 | web/models.js | Model catalog and picker |
 | web/thread.js | Message rendering, follow-the-stream scroll, sources, suggestions |
-| web/sessions.js | Open, create, search, export, rename and delete sessions; home and usage |
+| web/sessions.js | Open, create, search, export, rename and delete sessions; home |
+| web/info.js | Conversation details panel (title or usage button): context, usage, sources, links, images, repository |
 | web/code.js | Code dialog: file browser, diff, review and publish |
 | web/turns.js | Sending, editing, job polling and live output |
 | web/settings.js | Account settings dialog |
