@@ -25,8 +25,16 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 | mcp.mjs | Account-approved HTTPS MCP proxy and initialization test |
 | files.mjs | Read-only directory and UTF-8 code navigation |
 | publish.mjs | Worktree export, host-side validation, cumulative diff including new files |
-| web/index.html | The page's static markup; DOM IDs form the contract with app.js |
-| web/app.js | Browser state machine, responsive workspace, search, dialogs, task polling, then account settings |
+| web/index.html | The page's static markup; DOM IDs form the contract with the web/*.js modules |
+| web/app.js | Entry: event wiring, icon setup and boot |
+| web/core.js | DOM references, `state`, formatting helpers, API client, toast |
+| web/layout.js | Viewport fit, drawer, busy flag, title bar, sidebar, theme |
+| web/models.js | Model catalog and picker |
+| web/thread.js | Message rendering, follow-the-stream scroll, sources, suggestions |
+| web/sessions.js | Open, create, search, export, rename and delete sessions; home and usage |
+| web/code.js | Code dialog: file browser, diff, review and publish |
+| web/turns.js | Sending, editing, job polling and live output |
+| web/settings.js | Account settings dialog |
 | web/style.css | Responsive dark/light design tokens, layout, typography, reduced-motion rules |
 | web/render.mjs | Escaping Markdown renderer, table sizing, CLI-banner cleanup, safe diff rendering (shared by browser and tests) |
 | web/_headers | Security headers for the static files, including the page's CSP |
@@ -208,7 +216,7 @@ Remote coding is presented as a workspace, not a terminal transcript.
 - Honest state: search reports progress until every page is scanned; task activity distinguishes restoring, preparing, execution and checkpointing; a warm workspace is labeled apart from a saved sleeping one. No account balances, live tool traces or completion percentages are invented.
 - Accessibility: descriptive button names, decorative SVGs hidden, native modal focus management, named dialog headings, visible focus outlines, role=status toasts, explicit form buttons.
 
-Client state: drafts and the last selected session ID live in sessionStorage; repository and conversation state stay server-owned. web/app.js increments a generation when navigation changes, and async results and job polls check it before repainting. Repository search has its own generation so an old query cannot overwrite a new one.
+Client state: drafts and the last selected session ID live in sessionStorage; repository and conversation state stay server-owned. Navigation (resume in web/sessions.js) increments a generation when navigation changes, and async results and job polls check it before repainting. Repository search has its own generation so an old query cannot overwrite a new one.
 
 ## Limits and retention
 

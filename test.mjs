@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { readdirSync } from 'node:fs';
 import { catalog } from './models.mjs';
 import { markdown, cleanOutput } from './web/render.mjs';
 import { buildPrompt } from './context.mjs';
@@ -19,8 +20,10 @@ import {
 import { testMcp } from './mcp.mjs';
 import { research, citedSources } from './web.mjs';
 import { ArnoProbe, default as worker } from './worker.js';
-test('browser script parses', () => {
-  execFileSync(process.execPath, ['--check', new URL('./web/app.js', import.meta.url).pathname]);
+test('browser scripts parse', () => {
+  const dir = new URL('./web/', import.meta.url).pathname;
+  for (const f of readdirSync(dir).filter(f => f.endsWith('.js')))
+    execFileSync(process.execPath, ['--check', dir + f]);
 });
 function fixture(values = {}) {
   const map = new Map(Object.entries(values)),
