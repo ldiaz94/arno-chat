@@ -2615,3 +2615,6 @@ details.setting-card.collapsible[open] > summary {
     justify-content: space-between;
   }
 }
+.brand[role='button'] {
+  cursor: pointer;
+}

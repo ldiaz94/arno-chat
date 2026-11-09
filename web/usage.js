@@ -256,7 +256,6 @@ export async function openUsage() {
   drawer(false);
   $('#code-dialog').close();
   composer.hidden = true;
-  sessionStorage.removeItem('session:' + state.mode);
   title('Usage', 'Requests and spend');
   sidebar();
   view = { requests: [], ollama: null, note: '', range: '7d', filter: 'all', shown: PageSize };

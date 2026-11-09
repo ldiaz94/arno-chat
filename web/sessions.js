@@ -59,7 +59,6 @@ export async function resume(id) {
     state.busy = false;
     setMode(modeOf(s));
     clearAttachments();
-    sessionStorage.setItem('session:' + state.mode, id);
     sidebar();
     $('.composer-hint').textContent = composerHint(s);
     prompt.placeholder =
@@ -125,15 +124,13 @@ function setMode(mode) {
   state.mode = mode;
   localStorage.setItem('mode', mode);
 }
-/** Shows the other mode: its last open conversation, else its home. On a phone
- * the drawer stays open, so its list of conversations is what you see. */
+/** Shows a mode's home page: switching modes, or tapping the current one to
+ * get back home. On a phone the drawer stays open when switching, so that
+ * mode's list of conversations is what you see. */
 export async function switchMode(mode) {
-  if (mode === state.mode && state.session) return;
-  const open = shell.classList.contains('drawer-open'),
-    last = sessionStorage.getItem('session:' + mode);
+  const open = shell.classList.contains('drawer-open') && mode !== state.mode;
   setMode(mode);
-  if (last && state.sessions.some(s => s.id === last)) await resume(last);
-  else await home();
+  await home();
   if (open) drawer(true);
 }
 /** Starts a chat with the default model; with `text`, sends it as the first message. */
@@ -169,7 +166,6 @@ export async function home() {
   busy(false);
   drawer(false);
   composer.hidden = true;
-  sessionStorage.removeItem('session:' + state.mode);
   sidebar();
   if (state.mode === 'chat') chatHome();
   else codeHome();

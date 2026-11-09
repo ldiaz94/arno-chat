@@ -110,6 +110,7 @@ prompt.onkeydown = e => {
 };
 for (const b of document.querySelectorAll('[data-mode]'))
   b.onclick = () => switchMode(b.dataset.mode);
+$('#brand').onclick = () => switchMode(state.mode);
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') drawer(false);
   if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -176,10 +177,9 @@ async function boot() {
     // A notification links to /?session=<id>: open it, then tidy the address.
     const linked = new URLSearchParams(location.search).get('session');
     if (linked) history.replaceState(null, '', location.pathname);
-    const saved = /^[0-9a-f-]{36}$/.test(linked || '')
-      ? linked
-      : sessionStorage.getItem('session:' + state.mode);
-    if (saved) await resume(saved);
+    // The app opens on its home page, like starting a new chat; only a link
+    // (from a notification) opens a conversation.
+    if (/^[0-9a-f-]{36}$/.test(linked || '')) await resume(linked);
     else await home();
     flush(); // whatever waited from an earlier visit
     if (!state.offline) setTimeout(warm, 2000); // after the page settles

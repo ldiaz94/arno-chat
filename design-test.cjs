@@ -468,6 +468,11 @@ const { chromium } = require('playwright'),
       return m.scrollHeight - m.scrollTop - m.clientHeight < 80;
     }),
   );
+  // The brand goes back to the home page; the conversation reopens from the list.
+  await page.evaluate(() => document.querySelector('#brand').click());
+  await page.locator('.today-tile').first().waitFor();
+  await page.evaluate(sid => document.querySelector('[data-session="' + sid + '"]').click(), id);
+  await page.locator('#thread .turn').first().waitFor();
   await page.getByRole('button', { name: 'Session actions' }).click();
   await page.getByRole('button', { name: 'Review and publish' }).click();
   await page.locator('#publish-title').fill('Improve example');
