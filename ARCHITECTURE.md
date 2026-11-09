@@ -34,6 +34,7 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 | web/thread.js | Message rendering, follow-the-stream scroll, sources, suggestions |
 | web/sessions.js | Open, create, search, export, rename and delete sessions; home |
 | web/info.js | Conversation details panel (title or usage button): context, usage, sources, links, images, repository |
+| web/usage.js | Usage view: per-request report, spend summaries, by-model totals and the Ollama account card |
 | web/artifacts.js | Artifact dialog (versions, Copy, .md and first-table .csv download, Print), turn cards, click handler |
 | web/code.js | Code dialog: file browser, diff, review and publish |
 | web/attach.js | Composer attachments: upload on pick/paste/drop, chips, attachment rendering for messages and details |
@@ -202,6 +203,8 @@ Statistics are cumulative from when measurement was added. Missing provider usag
 ## Web research and citations
 
 Regular and coding conversations both have search and page-reading tools. The host calls Ollama's POST /api/web_search and /api/web_fetch at fixed URLs, so source sites never see the Ollama key. A personal Ollama key is used when configured, otherwise the deployment fallback.
+
+Bring-your-own search: an account can save its own SearXNG (Settings › Providers › Web search) as `{url, auth: none|access|bearer, clientId, secret}`. The URL must be public HTTPS (at most 500 characters, no credentials, query or fragment); the Cloudflare Access client secret or bearer token is sealed like provider keys (field `search:secret`), and reads return only url, auth, clientId and `hasSecret`. `POST /api/account/search` saves (`{remove: true}` removes); `POST /api/account/search-test` runs one query and reports the result count and latency. With a connection saved, web_search sends `GET <url>/search?q=…&format=json&language=auto&safesearch=0` with `CF-Access-Client-Id`/`CF-Access-Client-Secret` or `Authorization: Bearer`, no redirects, 10 s timeout and the bounded JSON reader, and maps the top six `results[]` into the same source records. On an error, timeout, non-JSON answer (403 usually means `format=json` is disabled) or no results, it falls back to Ollama search. Per turn `webUsage.searxng` counts SearXNG searches (free) and `webUsage.searches` only Ollama's (billed); the three-search limit counts both. web_read always uses Ollama.
 
 - Search returns up to six results. The model is told to compare them, prefer primary documentation, read original pages, and read at least two credible pages for a comparison.
 - Per turn: up to three searches and six page reads. Regular chat allows up to eight model rounds, the last one without tools. Coding uses Arno's MCP tool loop with its usual call and process limits.

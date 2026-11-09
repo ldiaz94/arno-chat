@@ -34,7 +34,7 @@ Basic sign-in requests read:user. The separate repository connection requests re
 
 ## Remote tools
 
-Enabled custom MCP connections use only account-approved public HTTPS endpoints. Private/loopback addresses, credential-bearing URLs, and redirects are rejected. Only selected protocol/session headers are forwarded, and tokens are injected outside the VM. Built-in web research uses fixed Ollama search/fetch endpoints, so source sites never see the key, and bounded source records; web content is treated as evidence, not instructions. MCP tools are off until enabled in account preferences: enable only trusted servers and narrowly scoped tokens.
+Enabled custom MCP connections use only account-approved public HTTPS endpoints. Private/loopback addresses, credential-bearing URLs, and redirects are rejected. Only selected protocol/session headers are forwarded, and tokens are injected outside the VM. Built-in web research uses fixed Ollama search/fetch endpoints, so source sites never see the key, and bounded source records; web content is treated as evidence, not instructions. An account's own SearXNG must be a public HTTPS URL without credentials, query or fragment (private, loopback and plain-HTTP hosts are refused on save); its Access client secret or bearer token is sealed like provider keys, never returned, and sent only to that URL, with redirects refused so it cannot be forwarded elsewhere. MCP tools are off until enabled in account preferences: enable only trusted servers and narrowly scoped tokens.
 
 Remote content and tool output remain untrusted. MCP services can perform remote actions; stopping a local task cannot undo an action already accepted by an external service.
 

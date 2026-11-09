@@ -2089,3 +2089,96 @@ body.light {
     background: none;
   }
 }
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chip {
+  border: 1px solid var(--line);
+  background: none;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.chip[aria-pressed='true'] {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+button.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.link:hover {
+  text-decoration: underline;
+}
+.ollama-card {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 14px;
+  padding: 18px;
+  margin: 20px 0;
+}
+.usage-view .section-title {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.usage-view td button.link {
+  max-width: 40ch;
+  overflow-wrap: anywhere;
+}
+/* Setup guides in account settings: a collapsed, numbered list of steps. */
+.guide {
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  font-size: 13px;
+}
+.guide summary {
+  cursor: pointer;
+  color: var(--accent);
+  font-size: 12px;
+}
+.guide-steps {
+  margin: 10px 0 0;
+  padding-left: 22px;
+  line-height: 1.55;
+  color: var(--text);
+}
+.guide-steps li {
+  margin: 0 0 12px;
+  padding-left: 4px;
+  overflow-wrap: anywhere;
+}
+.guide-steps li::marker {
+  color: var(--muted);
+  font-weight: 600;
+}
+.guide-steps code {
+  font:
+    12px ui-monospace,
+    monospace;
+  background: var(--raised);
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+.guide .codeblock {
+  margin: 8px 0;
+}
+.guide .codeblock pre {
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.guide .codeblock pre code {
+  background: none;
+  padding: 0;
+}

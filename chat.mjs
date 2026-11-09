@@ -153,6 +153,8 @@ export async function plainChat({
     cacheWriteTokens: 0,
     outputTokens: 0,
   };
+  // One entry per model request, for the account's request log.
+  const requestLog = [];
   for (let round = 0; round < 8; round++) {
     await onRound();
     const tools =
@@ -213,6 +215,7 @@ export async function plainChat({
       total.cacheWriteTokens += t.write;
       total.outputTokens += t.output;
       total.lastInputTokens = t.input + t.cached + t.write;
+      requestLog.push({ at: Date.now(), ...t });
     }
     if (!reply.calls.length) {
       if (!reply.summary.trim())
@@ -223,6 +226,7 @@ export async function plainChat({
         summary: reply.summary.trim(),
         reasoning: reply.reasoning,
         diff: '',
+        requestLog,
         usage: {
           ...total,
           inputTokens: total.measuredCalls ? total.inputTokens : null,

@@ -6,10 +6,10 @@ import { DurableObject } from 'cloudflare:workers';
 import { SECURITY, json } from './http.mjs';
 import { plainChat } from './chat.mjs';
 import { modelInput } from './attachments.mjs';
-import { profile, credential, instructions, providerModel } from './account.mjs';
+import { profile, credential, instructions, providerModel, searchConnection } from './account.mjs';
 import { WEB_INSTRUCTIONS, WEB_TOOLS, research, citedSources } from './web.mjs';
 import { ARTIFACT_INSTRUCTIONS, ARTIFACT_TOOLS, artifactTool } from './artifacts.mjs';
-import { prices, priceOf, cost, costParts, webRates } from './prices.mjs';
+import { prices, priceOf, cost, costParts, webRates, WEB_RATES } from './prices.mjs';
 import { storeRoutes } from './store-routes.mjs';
 import { gatewayRoutes } from './gateway-routes.mjs';
 import { sessionRoutes } from './session-routes.mjs';
@@ -141,12 +141,8 @@ export class ArnoProbe extends DurableObject {
               'ollama',
             )
           : null,
-      parts = costParts(
-        price,
-        result.usage,
-        result.webUsage,
-        webKey ? await webRates(webKey) : undefined,
-      ),
+      rates = webKey ? await webRates(webKey) : WEB_RATES,
+      parts = costParts(price, result.usage, result.webUsage, rates),
       web = parts.search + parts.reads;
     result.usage.costParts = parts;
     result.usage.cost = modelCost == null && !web ? null : (modelCost || 0) + web;
@@ -156,6 +152,8 @@ export class ArnoProbe extends DurableObject {
     );
     stats.unpriced =
       (stats.unpriced || 0) + Number(modelCost == null && !!result.usage.measuredCalls);
+    await this.logRequests(session, result, price, rates);
+    delete result.requestLog;
     stats.turns++;
     stats.calls += result.usage.calls;
     stats.measuredCalls += result.usage.measuredCalls;
@@ -182,6 +180,63 @@ export class ArnoProbe extends DurableObject {
     await this.ctx.storage.put(records);
     if (legacy) await this.ctx.storage.delete('history');
     await this.trimTurns();
+  }
+  /** Add this turn's requests (each model call, search and page read) to the
+   * owner's request log in their index object; best effort, never fails a turn. */
+  async logRequests(session, result, price, rates) {
+    if (!session?.ownerId) return;
+    const base = {
+        sessionId: session.id || null,
+        title: session.title || session.repo || '',
+        model: result.model,
+      },
+      at = Date.now(),
+      web = result.webUsage || {};
+    const callCost = r => {
+      if (!price) return null;
+      const p = costParts(price, {
+        measuredCalls: 1,
+        inputTokens: r.input + r.cached + r.write,
+        cachedTokens: r.cached,
+        cacheWriteTokens: r.write,
+        outputTokens: r.output,
+      });
+      return p.input + p.cached + p.cacheWrite + p.output;
+    };
+    const tool = (n, kind, model, cost) =>
+      Array.from({ length: n || 0 }, () => ({
+        ...base,
+        at,
+        kind,
+        model,
+        input: null,
+        cached: null,
+        output: null,
+        cost,
+      }));
+    const requests = [
+      ...(result.requestLog || []).map(r => ({
+        ...base,
+        at: r.at,
+        kind: 'model',
+        input: r.input + r.cached + r.write,
+        cached: r.cached,
+        output: r.output,
+        cost: callCost(r),
+      })),
+      ...tool(web.searches, 'search', 'web_search', rates.search),
+      ...tool(web.searxng, 'search', 'searxng', 0),
+      ...tool(web.reads, 'read', 'web_fetch', rates.fetch),
+    ];
+    if (!requests.length) return;
+    try {
+      await this.env.PROBE.getByName('index:' + session.ownerId).fetch(
+        'https://internal/usage/log',
+        { method: 'POST', body: JSON.stringify({ requests }) },
+      );
+    } catch (e) {
+      console.error(JSON.stringify({ event: 'usage_log_failed', error: String(e) }));
+    }
   }
   /** Keep a failed or stopped turn in the transcript so it survives a reload
    * and can be retried. It never enters model context (see history). */
@@ -222,8 +277,9 @@ export class ArnoProbe extends DurableObject {
       const p = await profile(this.env, session.ownerId),
         selected = providerModel(session.model);
       const sources = [...(session.sources || [])],
-        counts = { searches: 0, reads: 0 },
-        webKey = await credential(this.env, session.ownerId, p, 'ollama');
+        counts = { searches: 0, searxng: 0, reads: 0 },
+        webKey = await credential(this.env, session.ownerId, p, 'ollama'),
+        search = await searchConnection(this.env, session.ownerId, p);
       const previous = (await this.history()).filter(t => !editAt || t.at < editAt);
       const job = await this.ctx.storage.get('job'),
         jobId = job?.id,
@@ -247,7 +303,7 @@ export class ArnoProbe extends DurableObject {
         runTool: async (name, args) => {
           if (/_artifact$/.test(name)) return artifactTool(this.ctx.storage, name, args, artifacts);
           await this.phase(name === 'web_search' ? 'searching' : 'reading', { workspace: 'chat' });
-          const data = await research(name, args, { key: webKey, sources, counts });
+          const data = await research(name, args, { key: webKey, search, sources, counts });
           await this.phase('thinking', {
             workspace: 'chat',
             webCounts: { ...counts },

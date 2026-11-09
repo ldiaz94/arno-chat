@@ -1155,3 +1155,138 @@ test('cost parts: model tokens by kind plus searches; unpriced models still coun
     reads: 0,
   });
 });
+test('request log: a turn becomes per-request entries; the index keeps them newest first', async () => {
+  const f = fixture({ session: { id: 's1', title: 'Trip', ownerId: 'u' } });
+  let sent;
+  f.obj.env = {
+    PROBE: { getByName: () => ({ fetch: async (u, init) => (sent = JSON.parse(init.body)) }) },
+  };
+  await f.obj.logRequests(
+    { id: 's1', title: 'Trip', ownerId: 'u' },
+    {
+      model: 'm',
+      requestLog: [{ at: 1, input: 100, cached: 50, write: 0, output: 10 }],
+      webUsage: { searches: 2, reads: 1, searxng: 1 },
+    },
+    { inp: 1, cached: 0.1, out: 10 },
+    { search: 0.011, fetch: 0.001 },
+  );
+  assert.deepEqual(
+    sent.requests.map(r => [r.kind, r.model, r.input, r.cost]),
+    [
+      ['model', 'm', 150, (100 * 1 + 50 * 0.1 + 10 * 10) / 1e6],
+      ['search', 'web_search', null, 0.011],
+      ['search', 'web_search', null, 0.011],
+      ['search', 'searxng', null, 0],
+      ['read', 'web_fetch', null, 0.001],
+    ],
+  );
+  const index = fixture({});
+  await index.obj.fetch(
+    new Request('https://internal/usage/log', { method: 'POST', body: JSON.stringify(sent) }),
+  );
+  const list = await (await index.obj.fetch(new Request('https://internal/usage/list'))).json();
+  assert.equal(list.requests.length, 5);
+  assert.equal(list.requests.at(-1).kind, 'model'); // at: 1 is the oldest
+});
+test('SearXNG serves web_search with Access headers and costs no Ollama search', async () => {
+  const sources = [],
+    counts = { searches: 0, searxng: 0, reads: 0 };
+  let seen;
+  const data = await research(
+    'web_search',
+    { query: 'raz language' },
+    {
+      key: 'test',
+      search: { url: 'https://search.example.com', auth: 'access', clientId: 'id', secret: 's' },
+      sources,
+      counts,
+      upstream: async (url, init) => {
+        seen = { url, init };
+        return Response.json({
+          results: [{ url: 'https://one.example.com/', title: 'One', content: 'Snippet' }],
+        });
+      },
+    },
+  );
+  const u = new URL(seen.url);
+  assert.equal(u.origin + u.pathname, 'https://search.example.com/search');
+  assert.equal(u.searchParams.get('format'), 'json');
+  assert.equal(seen.init.redirect, 'manual');
+  assert.equal(seen.init.headers['CF-Access-Client-Id'], 'id');
+  assert.equal(seen.init.headers['CF-Access-Client-Secret'], 's');
+  assert.equal(data.sources[0].title, 'One');
+  assert.equal(sources[0].excerpt, 'Snippet');
+  assert.deepEqual(counts, { searches: 0, searxng: 1, reads: 0 });
+});
+test('SearXNG failures and empty results fall back to billed Ollama search', async () => {
+  for (const answer of [
+    () => new Response('format not allowed', { status: 403 }),
+    () => Response.json({ results: [] }),
+    () => new Response('<html>', { status: 200 }),
+  ]) {
+    const counts = { searches: 0, searxng: 0, reads: 0 },
+      hosts = [];
+    const data = await research(
+      'web_search',
+      { query: 'q' },
+      {
+        key: 'test',
+        search: { url: 'https://search.example.com', auth: 'bearer', secret: 't' },
+        sources: [],
+        counts,
+        upstream: async url => {
+          hosts.push(new URL(url).hostname);
+          return hosts.length === 1
+            ? answer()
+            : Response.json({ results: [{ url: 'https://two.example.com/', title: 'Two' }] });
+        },
+      },
+    );
+    assert.deepEqual(hosts, ['search.example.com', 'ollama.com']);
+    assert.equal(data.sources[0].title, 'Two');
+    assert.deepEqual(counts, { searches: 1, searxng: 0, reads: 0 });
+  }
+});
+test('account saves a SearXNG connection sealed and refuses private or plain-HTTP URLs', async () => {
+  const f = fixture(),
+    env = {
+      ACCOUNT_ENCRYPTION_KEY: btoa(String.fromCharCode(...new Uint8Array(32).fill(9))),
+      PROBE: { getByName: () => ({ fetch: (url, opt) => f.obj.fetch(new Request(url, opt)) }) },
+    };
+  const save = body =>
+    accountRoute(
+      new Request('https://arno.test/api/account/search', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+      env,
+      1,
+    );
+  for (const url of [
+    'http://search.example.com',
+    'https://localhost/',
+    'https://127.0.0.1',
+    'https://u:p@search.example.com',
+  ])
+    assert.equal((await save({ url, auth: 'none' })).status, 400, url);
+  const r = await save({
+    url: 'https://search.example.com/',
+    auth: 'access',
+    clientId: 'id.access',
+    secret: 'client-secret-value',
+  });
+  assert.equal(r.status, 200);
+  const text = await r.text();
+  assert.equal(text.includes('client-secret-value'), false);
+  assert.deepEqual(JSON.parse(text).search, {
+    url: 'https://search.example.com',
+    auth: 'access',
+    clientId: 'id.access',
+    hasSecret: true,
+  });
+  const stored = (await (await f.obj.fetch(new Request('https://internal/profile/get'))).json())
+    .search;
+  assert.notEqual(stored.secret.value, 'client-secret-value');
+  assert.equal((await save({ remove: true })).status, 200);
+});

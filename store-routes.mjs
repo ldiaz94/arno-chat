@@ -15,7 +15,35 @@ async function patchProfile(request, url) {
   return new Response(null, { status: 204 });
 }
 
+// The request log on 'index:<user>': one record per model request, search or
+// page read, 'req:<time>:<n>', newest 1,000 kept.
+const LOG_KEEP = 1000;
+
 export const storeRoutes = {
+  async 'POST /usage/log'(request) {
+    const { requests } = await request.json();
+    if (!Array.isArray(requests) || requests.length > 200)
+      return json({ error: 'Invalid log' }, 400);
+    const records = {};
+    requests.forEach((r, i) => {
+      records[
+        'req:' +
+          String(r.at || Date.now()).padStart(16, '0') +
+          ':' +
+          crypto.randomUUID().slice(0, 8) +
+          i
+      ] = r;
+    });
+    await this.ctx.storage.put(records);
+    const all = await this.ctx.storage.list({ prefix: 'req:' });
+    if (all.size > LOG_KEEP)
+      await this.ctx.storage.delete([...all.keys()].slice(0, all.size - LOG_KEEP));
+    return json({ logged: requests.length }, 201);
+  },
+  async 'GET /usage/list'() {
+    const rows = await this.ctx.storage.list({ prefix: 'req:', reverse: true, limit: LOG_KEEP });
+    return json({ requests: [...rows.values()] });
+  },
   async 'POST /index/remove'(request) {
     const { id } = await request.json();
     await this.ctx.storage.delete('session:' + id);

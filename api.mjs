@@ -100,6 +100,8 @@ export const apiRoutes = {
   '* /api/account': account,
   '* /api/account/key': account,
   '* /api/account/test': account,
+  '* /api/account/search': account,
+  '* /api/account/search-test': account,
   async 'POST /api/chats'(request, env, url, auth) {
     const { model } = await boundedJson(request),
       id = crypto.randomUUID();
@@ -115,6 +117,35 @@ export const apiRoutes = {
       body: JSON.stringify({ id, ...meta }),
     });
     return json({ id, ...meta }, 201);
+  },
+  async 'GET /api/usage/requests'(request, env, url, auth) {
+    return env.PROBE.getByName('index:' + auth.user.id).fetch('https://internal/usage/list');
+  },
+  /** Ollama's own account data, read with the key this user's requests use:
+   * the included balance and 7 days of spend per model. Both endpoints are
+   * undocumented (Ollama's usage page uses them), so failure is expected. */
+  async 'GET /api/usage/ollama'(request, env, url, auth) {
+    const p = await profile(env, auth.user.id),
+      key = await credential(env, auth.user.id, p, 'ollama');
+    if (!key) return json({ error: 'No Ollama key' }, 404);
+    const get = async path => {
+      const r = await fetch('https://ollama.com' + path, {
+        headers: { Authorization: 'Bearer ' + key },
+        redirect: 'manual',
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!r.ok) throw Error('Ollama returned ' + r.status);
+      return r.json();
+    };
+    try {
+      const [balance, usage] = await Promise.all([
+        get('/api/balance').catch(() => null),
+        get('/api/usage?group_by=model'),
+      ]);
+      return json({ balance, usage, source: p.keys?.ollama ? 'account' : 'deployment' });
+    } catch (e) {
+      return json({ error: 'Ollama usage is unavailable: ' + e.message }, 502);
+    }
   },
   async 'GET /api/models'(request, env, url, auth) {
     const base = await catalog(),

@@ -3,7 +3,14 @@
  * through ctx.exports, so worker.js re-exports both classes. */
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { modelRequest } from './gateway.mjs';
-import { profile, credential, instructions, providerModel, unseal } from './account.mjs';
+import {
+  profile,
+  credential,
+  instructions,
+  providerModel,
+  unseal,
+  searchConnection,
+} from './account.mjs';
 import { proxyMcp } from './mcp.mjs';
 import { WEB_INSTRUCTIONS, webMcp } from './web.mjs';
 
@@ -52,7 +59,11 @@ export class McpGateway extends WorkerEntrypoint {
       p = await profile(this.env, ownerId),
       connection = p.mcp?.find(m => m.id === id && m.enabled);
     if (id === 'web')
-      return webMcp(request, { task, key: await credential(this.env, ownerId, p, 'ollama') });
+      return webMcp(request, {
+        task,
+        key: await credential(this.env, ownerId, p, 'ollama'),
+        search: await searchConnection(this.env, ownerId, p),
+      });
     if (!connection) return new Response('MCP connection not enabled', { status: 403 });
     const token = await unseal(this.env, ownerId, 'mcp:' + id, connection.token);
     return proxyMcp(request, connection, token);

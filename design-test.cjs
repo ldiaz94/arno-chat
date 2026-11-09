@@ -147,6 +147,39 @@ const { chromium } = require('playwright'),
     let d;
     if (u.pathname.endsWith('/artifacts/' + artId)) d = artifact;
     else if (u.pathname.endsWith('/artifacts')) d = { artifacts: [artifact] };
+    else if (u.pathname === '/api/usage/requests')
+      d = {
+        requests: [
+          ['model', 'kimi-k3.1-pro', 1200, 600, 80, 0.004],
+          ['search', 'web_search', null, null, null, 0.01],
+          ['read', 'web_fetch', null, null, null, 0.005],
+        ].map(([kind, m, input, cached, output, cost], i) => ({
+          at: Date.now() - i * 3600000,
+          sessionId: '11111111-1111-1111-1111-111111111111',
+          title: 'Usage <b>fixture</b>',
+          kind,
+          model: m,
+          input,
+          cached,
+          output,
+          cost,
+        })),
+      };
+    else if (u.pathname === '/api/usage/ollama')
+      d = {
+        balance: {
+          included: {
+            balance_usd: 59.34,
+            allowance_usd: 60,
+            period: { from: Date.now() - 86400000, until: Date.now() + 86400000 * 20 },
+          },
+          purchased: { balance_usd: 0 },
+        },
+        usage: {
+          buckets: [{ groups: [{ model: 'web_search', usage_usd: 0.02 }] }],
+        },
+        source: 'account',
+      };
     else if (u.pathname === '/api/me') d = { user: { login: 'ldiaz94' } };
     else if (u.pathname === '/api/account') {
       if (route.request().method() === 'POST')
@@ -159,6 +192,13 @@ const { chromium } = require('playwright'),
     } else if (u.pathname === '/api/account/test') d = { ok: true, models: 3 };
     else if (u.pathname === '/api/account/mcp-test')
       d = { ok: true, protocol: '2025-03-26', server: 'Fixture' };
+    else if (u.pathname === '/api/account/search') {
+      const b = route.request().postDataJSON();
+      preferences.search = b.remove
+        ? null
+        : { url: b.url, auth: b.auth, clientId: b.clientId || '', hasSecret: !!b.secret };
+      d = preferences;
+    } else if (u.pathname === '/api/account/search-test') d = { ok: true, results: 9, ms: 412 };
     else if (u.pathname === '/api/chats') {
       plain = true;
       submitted = null;
@@ -464,6 +504,25 @@ const { chromium } = require('playwright'),
     document.querySelector('[data-provider-status="openai"]').textContent.includes('Key saved'),
   );
   assert.equal(await page.locator('[data-provider-input="openai"]').inputValue(), '');
+  assert.equal(await page.locator('.setting-card .guide').count(), 4); // 3 providers + search
+  assert.equal(await page.locator('#search-state').textContent(), 'Ollama (default)');
+  await page.locator('#search-card .guide summary').click();
+  await page.getByText('Turn on JSON answers.').waitFor();
+  await page.locator('#search-url').fill('https://search.example.com');
+  await page.locator('#search-client-id').fill('abc.access');
+  await page.locator('#search-secret').fill('secret-value');
+  await page.locator('#search-save').click();
+  await page.waitForFunction(
+    () => document.querySelector('#search-state').textContent === 'Your SearXNG · connected',
+  );
+  assert.equal(preferences.search.clientId, 'abc.access');
+  assert.equal(await page.locator('#search-secret').inputValue(), '');
+  assert.equal(
+    await page.locator('#search-secret').getAttribute('placeholder'),
+    'Saved · leave blank to keep',
+  );
+  await page.locator('#search-test').click();
+  await page.getByText('Connected · 9 results in 412 ms', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'MCP tools', exact: true }).click();
   await page.getByRole('button', { name: 'Add MCP connection', exact: false }).click();
   await page.locator('.mcp-id').fill('fixture');
@@ -489,6 +548,18 @@ const { chromium } = require('playwright'),
   page.once('dialog', d => d.accept());
   await page.locator('#list-delete').click();
   await page.waitForFunction(id => !document.querySelector('[data-session-menu="' + id + '"]'), id);
+  await page.locator('#usage-view').click();
+  await page.getByText('$59.34 of $60.00 left').waitFor();
+  assert.equal(await page.locator('#recent-requests tbody tr').count(), 3);
+  assert.ok(
+    (await page.locator('#recent-requests tbody tr').first().textContent()).includes('<$0.01'),
+  );
+  await page.getByRole('button', { name: 'Search & reads' }).click();
+  assert.equal(await page.locator('#recent-requests tbody tr').count(), 2);
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  assert.equal(await page.locator('#title').textContent(), 'Usage');
   assert.deepEqual(errors, []);
   await page.evaluate(() => {
     const span = document.createElement('span');

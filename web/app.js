@@ -10,6 +10,7 @@ import { drawer, title, sidebar, theme } from './layout.js';
 import { loadModels, openModels, renderModels, chooseModel } from './models.js';
 import { openSources } from './thread.js';
 import { openInfo } from './info.js';
+import { openUsage } from './usage.js';
 import { artifactClick } from './artifacts.js';
 import {
   resume,
@@ -30,6 +31,7 @@ $('#overlay').onclick = () => drawer(false);
 $('#new-session').onclick = home;
 $('#theme').onclick = theme;
 $('#usage').onclick = openInfo;
+$('#usage-view').onclick = openUsage;
 $('#title').onclick = () => state.session && openInfo();
 $('#title').onkeydown = e => {
   if (state.session && (e.key === 'Enter' || e.key === ' ')) {

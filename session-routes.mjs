@@ -428,6 +428,7 @@ export const sessionRoutes = {
         cacheWriteTokens: q?.cacheWriteTokens || 0,
         lastInputTokens: q?.lastInputTokens ?? null,
       };
+      result.requestLog = q?.requestLog || [];
       result.sources = citedSources(result.summary, q?.sources || [], previous);
       result.attachments = attached;
       result.webUsage = q?.webCounts || { searches: 0, reads: 0 };

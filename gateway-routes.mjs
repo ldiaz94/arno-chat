@@ -72,6 +72,20 @@ export const gatewayRoutes = {
       q.outputTokens = (q.outputTokens || 0) + safe(usage.completion_tokens);
       q.cachedTokens = (q.cachedTokens || 0) + safe(usage.cached_tokens);
       q.lastInputTokens = safe(usage.prompt_tokens);
+      // Per-request entries for the account's request log (bounded per turn).
+      q.requestLog = [
+        ...(q.requestLog || []),
+        {
+          at: Date.now(),
+          input: Math.max(
+            0,
+            safe(usage.prompt_tokens) - safe(usage.cached_tokens) - safe(usage.cache_write_tokens),
+          ),
+          cached: safe(usage.cached_tokens),
+          write: safe(usage.cache_write_tokens),
+          output: safe(usage.completion_tokens),
+        },
+      ].slice(-50);
       q.cacheWriteTokens = (q.cacheWriteTokens || 0) + safe(usage.cache_write_tokens);
       q.measuredCalls = (q.measuredCalls || 0) + 1;
       await txn.put('modelQuota', q);

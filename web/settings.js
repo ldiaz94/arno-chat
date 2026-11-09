@@ -1,5 +1,6 @@
 /** Account settings dialog: instructions, skills, MCP connections, custom models,
- * provider keys and notifications. Depends on core, layout, models and push.
+ * provider keys with setup guides, the account's own SearXNG web search, and
+ * notifications. Depends on core, layout, models and push.
  */
 import { $, state, esc, api, toast } from './core.js';
 import { fit } from './layout.js';
@@ -80,6 +81,160 @@ function customModelCard(m = {}) {
   node.querySelector('.remove-setting').onclick = () => node.remove();
   return node;
 }
+/** Setup guides: collapsed step lists written for someone doing this the first time. */
+const link = (url, text) =>
+  '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + text + ' ↗</a>';
+const code = (text, lang = 'shell') =>
+  '<div class="codeblock"><div class="codehead"><span>' +
+  lang +
+  '</span><button type="button" class="copy-code">Copy</button></div><pre><code>' +
+  esc(text) +
+  '</code></pre></div>';
+const guide = (title, steps) =>
+  '<details class="guide"><summary>' +
+  title +
+  '</summary><ol class="guide-steps">' +
+  steps.map(step => '<li>' + step + '</li>').join('') +
+  '</ol></details>';
+const keySteps = (where, extra = []) => [
+  'Sign in at ' + where + '.',
+  'Create a new API key. Give it a name you will recognise, such as “Arno”.',
+  'Copy the key. Most sites show it only once, so paste it straight away.',
+  'Paste it in the API key field above and press <b>Save key</b>.',
+  ...extra,
+  'Press <b>Test connection</b>. It should report how many models your key can use.',
+];
+const PROVIDER_GUIDES = {
+  ollama: keySteps(link('https://ollama.com/settings/keys', 'ollama.com › Settings › Keys')),
+  openai: keySteps(link('https://platform.openai.com/api-keys', 'platform.openai.com › API keys'), [
+    'Set up billing under ' +
+      link('https://platform.openai.com/settings/organization/billing/overview', 'Billing') +
+      ': the API is paid separately from a ChatGPT subscription, and keys without credit are refused.',
+  ]),
+  anthropic: keySteps(
+    link('https://platform.claude.com/settings/keys', 'platform.claude.com › API keys'),
+    [
+      'Add credit under Billing in the same console: the API is paid separately from a Claude subscription.',
+    ],
+  ),
+  gemini: keySteps(link('https://aistudio.google.com/apikey', 'Google AI Studio › Get API key'), [
+    'The free tier may use your prompts to improve Google’s products (' +
+      link('https://aistudio.google.com/docs/terms', 'terms') +
+      '). For private work, turn on billing for the key’s project (' +
+      link('https://aistudio.google.com/docs/billing', 'billing') +
+      ').',
+  ]),
+};
+const SEARCH_GUIDE = guide('How to set up your own SearXNG, step by step', [
+  '<b>Run SearXNG with Docker.</b> SearXNG is a free search engine you run yourself; it asks Google, Bing, DuckDuckGo and others for you. Install ' +
+    link('https://docs.docker.com/get-started/get-docker/', 'Docker') +
+    ', then in a terminal run:' +
+    code(
+      'mkdir -p searxng/config && cd searxng\ndocker run -d --name searxng -p 127.0.0.1:8888:8080 \\\n  -v "./config/:/etc/searxng/" searxng/searxng',
+    ) +
+    'It now answers on this computer only, at http://localhost:8888. See ' +
+    link('https://docs.searxng.org/admin/installation-docker.html', 'Installation with Docker') +
+    '.',
+  '<b>Turn on JSON answers.</b> Arno reads results as JSON, which is off by default. On first start SearXNG writes <code>config/settings.yml</code>. Open it, find these keys and set them (keep the rest of the file):' +
+    code('search:\n  formats:\n    - html\n    - json\nserver:\n  limiter: false', 'yaml') +
+    'The limiter guards public instances from bots; yours is private, so it would only block Arno. Restart and check that JSON comes back:' +
+    code("docker restart searxng\ncurl 'http://localhost:8888/search?q=test&format=json'") +
+    'See the ' +
+    link('https://docs.searxng.org/dev/search_api.html', 'Search API') +
+    '.',
+  '<b>Reach it from the Internet with Cloudflare Tunnel.</b> Arno runs in Cloudflare, so it cannot see your localhost. ' +
+    link(
+      'https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/',
+      'Install cloudflared',
+    ) +
+    ' on the same computer, then ' +
+    link(
+      'https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/',
+      'create a tunnel',
+    ) +
+    ' in the Cloudflare dashboard with a public hostname in your own domain (for example <code>search.example.com</code>) pointing to <code>http://localhost:8888</code>. Just trying it out? A ' +
+    link('https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/', 'quick tunnel') +
+    ' needs no account:' +
+    code('cloudflared tunnel --url http://localhost:8888') +
+    'It prints a temporary trycloudflare.com address that changes every run and is open to anyone, so do not keep it.',
+  '<b>Lock it with Cloudflare Access.</b> In Cloudflare Zero Trust, ' +
+    link(
+      'https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/',
+      'add a self-hosted application',
+    ) +
+    ' for your hostname. Then ' +
+    link(
+      'https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/',
+      'create a service token',
+    ) +
+    ' and copy its Client ID and Client Secret (the secret is shown only once). Give the application a policy with action <b>Service Auth</b> that includes that token. Choose “Cloudflare Access service token” above and paste both.',
+  '<b>Save and Test.</b> Test runs one search and shows how many results came back and how long it took. If your SearXNG is unreachable, errors or finds nothing, Arno falls back to Ollama web search, which is billed per search. Result quality depends on the engines your SearXNG uses (set under <code>engines:</code> in settings.yml).',
+]);
+const AUTH_LABELS = { access: 'Client Secret', bearer: 'Bearer token' };
+function searchCard() {
+  return (
+    '<section class="setting-card" id="search-card"><div class="setting-row"><strong>Web search</strong><span class="tag" id="search-state"></span></div><p class="caption">Searches go to Ollama web search (billed per search) unless you connect your own SearXNG. Page reading always uses Ollama.</p><label>SearXNG URL<input class="field" id="search-url" type="url" maxlength="500" placeholder="https://search.example.com"></label><label>Authentication<select class="field" id="search-auth"><option value="access">Cloudflare Access service token</option><option value="bearer">Bearer token</option><option value="none">None</option></select></label><label data-auth="access">Client ID<input class="field" id="search-client-id" maxlength="200" autocomplete="off" placeholder="xxxx.access"></label><label data-auth="access bearer"><span id="search-secret-label"></span><input class="field" id="search-secret" type="password" autocomplete="new-password"></label><div class="setting-row"><button id="search-save" type="button">Save</button><button id="search-test" type="button">Test</button><button id="search-remove" class="ghost" type="button">Remove</button></div><p class="caption" id="search-status"></p>' +
+    SEARCH_GUIDE +
+    '</section>'
+  );
+}
+/** Shows the saved connection: masked secret, fields for its auth type. */
+function showSearch(search) {
+  $('#search-state').textContent = search ? 'Your SearXNG · connected' : 'Ollama (default)';
+  $('#search-url').value = search?.url || '';
+  $('#search-auth').value = search?.auth || 'access';
+  $('#search-client-id').value = search?.clientId || '';
+  $('#search-secret').value = '';
+  $('#search-secret').placeholder = search?.hasSecret
+    ? 'Saved · leave blank to keep'
+    : 'Paste it here';
+  $('#search-remove').hidden = !search;
+  $('#search-test').hidden = !search;
+  showAuth();
+}
+function showAuth() {
+  const auth = $('#search-auth').value;
+  document
+    .querySelectorAll('#search-card [data-auth]')
+    .forEach(n => (n.hidden = !n.dataset.auth.split(' ').includes(auth)));
+  $('#search-secret-label').textContent = AUTH_LABELS[auth] || '';
+}
+async function saveSearch(remove = false) {
+  const status = $('#search-status');
+  if (remove && !confirm('Remove your SearXNG connection? Searches go back to Ollama.')) return;
+  status.textContent = remove ? 'Removing…' : 'Saving…';
+  try {
+    account = await api('/api/account/search', {
+      method: 'POST',
+      body: JSON.stringify(
+        remove
+          ? { remove: true }
+          : {
+              url: $('#search-url').value,
+              auth: $('#search-auth').value,
+              clientId: $('#search-client-id').value,
+              secret: $('#search-secret').value || undefined,
+            },
+      ),
+    });
+    showSearch(account.search);
+    status.textContent = remove
+      ? 'Removed. Web search uses Ollama.'
+      : 'Saved, secret encrypted. Press Test to check it answers.';
+  } catch (e) {
+    status.textContent = e.message;
+  }
+}
+async function testSearch() {
+  const status = $('#search-status');
+  status.textContent = 'Searching…';
+  try {
+    const d = await api('/api/account/search-test', { method: 'POST', body: '{}' });
+    status.textContent = 'Connected · ' + d.results + ' results in ' + d.ms + ' ms';
+  } catch (e) {
+    status.textContent = e.message;
+  }
+}
 async function openAccount() {
   $('#account-body').innerHTML = '<p class="muted">Loading account settings…</p>';
   $('#account-dialog').showModal();
@@ -111,13 +266,16 @@ async function openAccount() {
             : '') +
           '</div><p class="caption" data-provider-status="' +
           id +
-          '"></p></section>',
+          '"></p>' +
+          guide('How to get a ' + esc(p.label) + ' key', PROVIDER_GUIDES[id] || []) +
+          '</section>',
       )
       .join('');
     $('#account-body').innerHTML =
       '<div class="account-tabs"><button data-account-tab="providers">Providers</button><button data-account-tab="instructions">Instructions & skills</button><button data-account-tab="mcp">MCP tools</button><button data-account-tab="connections">Connections</button></div>' +
       '<section data-account-panel="providers"><p class="caption">Keys are encrypted and kept outside coding workspaces. OpenAI, Anthropic and Google Gemini models appear after you save a key. API billing is separate from ChatGPT/Claude app subscriptions.</p>' +
       providers +
+      searchCard() +
       '<h3>Custom model IDs</h3><p class="caption">Use this when a provider’s model discovery does not list a model available to your key.</p><div id="custom-models"></div><button id="add-custom-model" type="button" class="ghost">＋ Add model</button></section>' +
       '<section data-account-panel="instructions" hidden><label>Account system prompt<textarea id="system-prompt" class="field" rows="7" maxlength="12000" placeholder="How should Arno work with you?">' +
       esc(account.systemPrompt) +
@@ -147,6 +305,11 @@ async function openAccount() {
       .querySelectorAll('[data-provider-test]')
       .forEach(b => (b.onclick = () => testProvider(b.dataset.providerTest)));
     $('#push-toggle').onchange = togglePush;
+    $('#search-auth').onchange = showAuth;
+    $('#search-save').onclick = () => saveSearch();
+    $('#search-remove').onclick = () => saveSearch(true);
+    $('#search-test').onclick = testSearch;
+    showSearch(account.search);
     showPush();
     settingsTabs('providers');
   } catch (e) {

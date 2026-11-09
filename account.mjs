@@ -2,6 +2,7 @@
  * Provider/MCP secrets are encrypted with AES-GCM and user/field-bound AAD.
  * Only masked connection metadata is ever returned by public GET routes.
  */
+import { publicWebUrl, searxngSearch } from './web.mjs';
 /** Each provider's API: where models are listed and where chat requests go.
  * Gemini is reached through its OpenAI-compatible endpoint. */
 export const PROVIDERS = {
@@ -102,25 +103,54 @@ export function publicProfile(env, p) {
       ]),
     ),
     mcp: (p.mcp || []).map(({ token, ...m }) => ({ ...m, hasToken: !!token })),
+    search: p.search
+      ? {
+          url: p.search.url,
+          auth: p.search.auth,
+          clientId: p.search.clientId || '',
+          hasSecret: !!p.search.secret,
+        }
+      : null,
   };
 }
+/** The account's own SearXNG, with its secret unsealed, or null. */
+export async function searchConnection(env, userId, p) {
+  if (!p.search) return null;
+  const { secret, ...rest } = p.search;
+  return { ...rest, secret: await unseal(env, userId, 'search:secret', secret) };
+}
+/** Checks and seals a search connection; a blank secret keeps the saved one
+ * while the URL and auth type stay the same. */
+async function searchRecord(env, userId, body, old) {
+  const url = typeof body.url === 'string' ? body.url.trim().replace(/\/+$/, '') : '';
+  if (url.length > 500 || !validMcpUrl(url))
+    throw Error('SearXNG needs a public HTTPS URL without credentials or query parameters');
+  if (!['none', 'access', 'bearer'].includes(body.auth)) throw Error('Unknown authentication type');
+  const line = (v, max) => typeof v === 'string' && v.length <= max && !/[\r\n]/.test(v);
+  if (body.secret && !line(body.secret, 2000))
+    throw Error('The secret must be a single line up to 2,000 characters');
+  if (body.auth === 'access' && !(line(body.clientId, 200) && body.clientId.trim()))
+    throw Error('Cloudflare Access needs the service token Client ID');
+  const keep = old && old.url === url && old.auth === body.auth ? old.secret : null,
+    secret = body.secret
+      ? await seal(env, userId, 'search:secret', body.secret.trim())
+      : body.auth === 'none'
+        ? null
+        : keep;
+  if (body.auth !== 'none' && !secret)
+    throw Error(body.auth === 'access' ? 'Paste the Client Secret' : 'Paste the bearer token');
+  return {
+    url,
+    auth: body.auth,
+    clientId: body.auth === 'access' ? body.clientId.trim() : undefined,
+    secret,
+  };
+}
+/** MCP servers and SearXNG: public HTTPS without credentials, query or fragment. */
 export function validMcpUrl(value) {
-  try {
-    const u = new URL(value);
-    return (
-      u.protocol === 'https:' &&
-      !u.username &&
-      !u.password &&
-      !u.search &&
-      !u.hash &&
-      u.hostname.includes('.') &&
-      !/^[\d.]+$/.test(u.hostname) &&
-      !u.hostname.includes(':') &&
-      !/(^|\.)(localhost|local|internal|invalid|test)$/.test(u.hostname)
-    );
-  } catch {
-    return false;
-  }
+  if (!publicWebUrl(value)) return false;
+  const u = new URL(value);
+  return u.protocol === 'https:' && !u.search && !u.hash;
 }
 /** Fixed provider origins only. The caller never supplies an arbitrary API URL. */
 export async function providerModels(provider, key) {
@@ -215,6 +245,14 @@ export async function accountRoute(request, env, userId) {
         method: 'POST',
         body: JSON.stringify({ provider: body.provider, value: encrypted }),
       });
+    } else if (u.pathname.endsWith('/search')) {
+      await save({ search: body.remove ? null : await searchRecord(env, userId, body, p.search) });
+    } else if (u.pathname.endsWith('/search-test')) {
+      const search = await searchConnection(env, userId, p);
+      if (!search) throw Error('Save a SearXNG connection first');
+      const start = Date.now(),
+        results = await searxngSearch(search, 'searxng');
+      return Response.json({ ok: true, results: results.length, ms: Date.now() - start });
     } else if (u.pathname.endsWith('/test')) {
       const key = await credential(env, userId, p, body.provider);
       if (!key) throw Error('Save an API key first');
