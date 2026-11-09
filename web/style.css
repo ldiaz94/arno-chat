@@ -2182,3 +2182,26 @@ button.link:hover {
   background: none;
   padding: 0;
 }
+
+/* Collapsible settings cards: the header row (name and status) is the toggle. */
+details.setting-card.collapsible > summary {
+  list-style: none;
+  cursor: pointer;
+  margin: 0;
+}
+details.setting-card.collapsible > summary::-webkit-details-marker {
+  display: none;
+}
+details.setting-card.collapsible > summary strong::before {
+  content: '▸';
+  display: inline-block;
+  width: 1.1em;
+  color: var(--muted);
+  transition: transform 0.15s;
+}
+details.setting-card.collapsible[open] > summary strong::before {
+  transform: rotate(90deg);
+}
+details.setting-card.collapsible[open] > summary {
+  margin-bottom: 10px;
+}

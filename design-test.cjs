@@ -498,6 +498,9 @@ const { chromium } = require('playwright'),
   assert.equal(preferences.systemPrompt, 'Be concise');
   assert.equal(preferences.skills[0].enabled, true);
   await page.getByRole('button', { name: 'Providers', exact: true }).click();
+  // Provider and search cards start collapsed; the header row opens them.
+  assert.equal(await page.locator('#account-dialog details.collapsible[open]').count(), 0);
+  await page.locator('details:has([data-provider-input="openai"]) > summary').click();
   await page.locator('[data-provider-input="openai"]').fill('sk-test-placeholder');
   await page.locator('[data-key-save="openai"]').click();
   await page.waitForFunction(() =>
@@ -506,6 +509,7 @@ const { chromium } = require('playwright'),
   assert.equal(await page.locator('[data-provider-input="openai"]').inputValue(), '');
   assert.equal(await page.locator('.setting-card .guide').count(), 4); // 3 providers + search
   assert.equal(await page.locator('#search-state').textContent(), 'Ollama (default)');
+  await page.locator('#search-card > summary').click();
   await page.locator('#search-card .guide summary').click();
   await page.getByText('Turn on JSON answers.').waitFor();
   await page.locator('#search-url').fill('https://search.example.com');

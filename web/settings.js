@@ -173,9 +173,9 @@ const SEARCH_GUIDE = guide('How to set up your own SearXNG, step by step', [
 const AUTH_LABELS = { access: 'Client Secret', bearer: 'Bearer token' };
 function searchCard() {
   return (
-    '<section class="setting-card" id="search-card"><div class="setting-row"><strong>Web search</strong><span class="tag" id="search-state"></span></div><p class="caption">Searches go to Ollama web search (billed per search) unless you connect your own SearXNG. Page reading always uses Ollama.</p><label>SearXNG URL<input class="field" id="search-url" type="url" maxlength="500" placeholder="https://search.example.com"></label><label>Authentication<select class="field" id="search-auth"><option value="access">Cloudflare Access service token</option><option value="bearer">Bearer token</option><option value="none">None</option></select></label><label data-auth="access">Client ID<input class="field" id="search-client-id" maxlength="200" autocomplete="off" placeholder="xxxx.access"></label><label data-auth="access bearer"><span id="search-secret-label"></span><input class="field" id="search-secret" type="password" autocomplete="new-password"></label><div class="setting-row"><button id="search-save" type="button">Save</button><button id="search-test" type="button">Test</button><button id="search-remove" class="ghost" type="button">Remove</button></div><p class="caption" id="search-status"></p>' +
+    '<details class="setting-card collapsible" id="search-card"><summary class="setting-row"><strong>Web search</strong><span class="tag" id="search-state"></span></summary><p class="caption">Searches go to Ollama web search (billed per search) unless you connect your own SearXNG. Page reading always uses Ollama.</p><label>SearXNG URL<input class="field" id="search-url" type="url" maxlength="500" placeholder="https://search.example.com"></label><label>Authentication<select class="field" id="search-auth"><option value="access">Cloudflare Access service token</option><option value="bearer">Bearer token</option><option value="none">None</option></select></label><label data-auth="access">Client ID<input class="field" id="search-client-id" maxlength="200" autocomplete="off" placeholder="xxxx.access"></label><label data-auth="access bearer"><span id="search-secret-label"></span><input class="field" id="search-secret" type="password" autocomplete="new-password"></label><div class="setting-row"><button id="search-save" type="button">Save</button><button id="search-test" type="button">Test</button><button id="search-remove" class="ghost" type="button">Remove</button></div><p class="caption" id="search-status"></p>' +
     SEARCH_GUIDE +
-    '</section>'
+    '</details>'
   );
 }
 /** Shows the saved connection: masked secret, fields for its auth type. */
@@ -244,7 +244,7 @@ async function openAccount() {
     const providers = Object.entries(account.providers)
       .map(
         ([id, p]) =>
-          '<section class="setting-card"><div class="setting-row"><strong>' +
+          '<details class="setting-card collapsible"><summary class="setting-row"><strong>' +
           esc(p.label) +
           '</strong><span class="tag">' +
           (p.saved
@@ -252,7 +252,7 @@ async function openAccount() {
             : p.available
               ? 'Shared deployment key'
               : 'Not configured') +
-          '</span></div><label>API key<input type="password" autocomplete="new-password" class="field provider-key" data-provider-input="' +
+          '</span></summary><label>API key<input type="password" autocomplete="new-password" class="field provider-key" data-provider-input="' +
           id +
           '" placeholder="' +
           (p.saved ? 'Saved · enter a replacement' : 'Paste your API key') +
@@ -268,7 +268,7 @@ async function openAccount() {
           id +
           '"></p>' +
           guide('How to get a ' + esc(p.label) + ' key', PROVIDER_GUIDES[id] || []) +
-          '</section>',
+          '</details>',
       )
       .join('');
     $('#account-body').innerHTML =
