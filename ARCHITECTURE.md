@@ -6,7 +6,15 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 
 | File | Responsibility |
 | --- | --- |
-| worker.js | Public authenticated routes, OAuth, session coordination, task alarms, repository import, GitHub publication |
+| worker.js | Entry: /auth/ sign-in, /api/ guard (same origin, sign-in, allowlist), route dispatch; re-exports the classes below |
+| http.mjs | Shared response helpers: JSON, cookies, security headers, bounded request bodies |
+| auth.mjs | GitHub OAuth, session cookies, GitHub API calls |
+| api.mjs | The signed-in /api/ routes as a table, plus the ordered /api/sessions/:id/… paths |
+| session.mjs | ArnoProbe Durable Object: turn lifecycle, workspace container, alarms; dispatches its internal routes |
+| session-routes.mjs | Internal /session/* routes of a coding or chat session object |
+| store-routes.mjs | Internal routes of the per-user index/profile and auth/OAuth store objects |
+| gateway-routes.mjs | Internal callbacks from the model and MCP gateways (permits, progress, usage, research state) |
+| gateways.mjs | ModelGateway and McpGateway entrypoints the container's traffic is routed through |
 | prices.mjs | Daily-cached list prices (Ollama pricing page, OpenRouter for Anthropic/OpenAI) and turn cost |
 | gateway.mjs | Fixed-destination Ollama gateway, bounded payloads, streaming usage observation |
 | context.mjs | Repository provenance and bounded conversation context for every Arno invocation |
