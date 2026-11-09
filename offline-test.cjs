@@ -289,7 +289,10 @@ function serve(port) {
     await page.waitForSelector('.turn.queued');
     assert.match(await banner(), /Offline · 4 waiting to send/);
     // They survive a reload: the new chat opens again with its message waiting.
+    // The app opens on its home page; the offline chat is in the list.
     await page.reload();
+    await page.waitForSelector('[data-session^="local-"]', { state: 'attached' });
+    await page.evaluate(() => document.querySelector('[data-session^="local-"]').click());
     await page.waitForSelector('.turn.queued >> text=Hello from a new chat');
     await page.click('[data-session="' + two + '"]');
     await page.waitForFunction(() => document.querySelectorAll('.turn.queued').length === 2);
