@@ -1,5 +1,5 @@
 import { tokens } from './prices.mjs';
-import { PROVIDERS } from './account.mjs';
+import { PROVIDERS, requestFields } from './account.mjs';
 const MAX_BODY = 1024 * 1024;
 
 async function readBounded(body) {
@@ -41,6 +41,50 @@ export function displayDelta(data) {
             ? d.thinking
             : '',
   };
+}
+/** Mistral streams thinking as a list of content chunks ({type: "thinking",
+ * thinking: [{type: "text", text}]} and {type: "text", text}) where others
+ * stream strings; rewrite such deltas as content and reasoning_content, so
+ * the runner and the display read Mistral like the rest. Other lines pass
+ * unchanged. */
+export function mistralDeltas() {
+  const decoder = new TextDecoder(),
+    encoder = new TextEncoder();
+  let buffer = '';
+  const rewrite = line => {
+    if (!line.startsWith('data:')) return line;
+    try {
+      const data = JSON.parse(line.slice(5)),
+        d = data.choices?.[0]?.delta;
+      if (!Array.isArray(d?.content)) return line;
+      const text = list => list.map(c => (typeof c.text === 'string' ? c.text : '')).join('');
+      const reasoning = text(
+        d.content.filter(c => c.type === 'thinking').flatMap(c => c.thinking || []),
+      );
+      d.content = text(d.content.filter(c => c.type === 'text'));
+      if (reasoning) d.reasoning_content = reasoning;
+      return 'data: ' + JSON.stringify(data);
+    } catch {
+      return line;
+    }
+  };
+  return new TransformStream({
+    transform(chunk, controller) {
+      buffer += decoder.decode(chunk, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      if (lines.length) controller.enqueue(encoder.encode(lines.map(rewrite).join('\n') + '\n'));
+      // A line this long is not a delta worth rewriting; pass it on as it is.
+      if (buffer.length > 65536) {
+        controller.enqueue(encoder.encode(buffer));
+        buffer = '';
+      }
+    },
+    flush(controller) {
+      buffer += decoder.decode();
+      if (buffer) controller.enqueue(encoder.encode(rewrite(buffer)));
+    },
+  });
 }
 export function usageStream(onUsage, onProgress = async () => {}) {
   const decoder = new TextDecoder();
@@ -141,13 +185,15 @@ export async function modelRequest(
   ) {
     return new Response('Unsupported model or request', { status: 400 });
   }
-  const payload = { model, messages: body.messages, stream: true, max_tokens: 16384 };
-  if (provider === 'openai') {
-    delete payload.max_tokens;
-    payload.max_completion_tokens = 16384;
-  }
-  // Thinking counts against Gemini's output limit; keep its default.
-  if (provider === 'gemini') delete payload.max_tokens;
+  const payload = { model, messages: body.messages, stream: true, ...requestFields(provider) };
+  // The runner sends back the thinking it read, which mistralDeltas made
+  // reasoning_content; Mistral refuses unknown message fields.
+  if (provider === 'mistral')
+    payload.messages = body.messages.map(m => {
+      const copy = { ...m };
+      delete copy.reasoning_content;
+      return copy;
+    });
   if (provider === 'anthropic') {
     const original =
       typeof body.system === 'string'
@@ -157,7 +203,6 @@ export async function modelRequest(
           : [];
     payload.system = [...(instructions ? [{ type: 'text', text: instructions }] : []), ...original];
   } else {
-    payload.stream_options = { include_usage: true };
     if (instructions)
       payload.messages = [{ role: 'system', content: instructions }, ...body.messages];
   }
@@ -193,8 +238,10 @@ export async function modelRequest(
     if (response.body) await response.body.cancel();
     return new Response(provider + ' rejected the request', { status: 502 });
   }
+  const stream =
+    provider === 'mistral' ? response.body?.pipeThrough(mistralDeltas()) : response.body;
   return new Response(
-    response.body?.pipeThrough(
+    stream?.pipeThrough(
       usageStream(async usage => {
         try {
           await onUsage(usage);

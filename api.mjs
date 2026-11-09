@@ -1,11 +1,26 @@
 /** The signed-in /api/* routes. apiRoutes maps "METHOD /path" (or "* /path")
  * to a handler (request, env, url, auth); sessionPaths tries, in order, the
  * routes under /api/sessions/<id>/ and returns null when none matches. */
-import { SECURITY, MAX_ARCHIVE, json, boundedJson } from './http.mjs';
-import { github } from './auth.mjs';
+import {
+  COOKIE,
+  SECURITY,
+  MAX_ARCHIVE,
+  json,
+  boundedJson,
+  cookie,
+  sessionCookie,
+} from './http.mjs';
+import { github, authObject } from './auth.mjs';
 import { catalog, modelAllowed } from './models.mjs';
 import { validateFiles } from './publish.mjs';
-import { profile, credential, providerModels, accountRoute, unseal } from './account.mjs';
+import {
+  PROVIDERS,
+  profile,
+  credential,
+  providerModels,
+  accountRoute,
+  unseal,
+} from './account.mjs';
 import { testMcp } from './mcp.mjs';
 import { publicWebUrl } from './web.mjs';
 import { pushApiRoutes } from './push.mjs';
@@ -102,6 +117,61 @@ export const apiRoutes = {
   '* /api/account/test': account,
   '* /api/account/search': account,
   '* /api/account/search-test': account,
+  /** Delete the account: every conversation (transcripts, attachments,
+   * artifacts, workspaces), the profile with its keys and connections, push
+   * subscriptions, the request log, and every recorded sign-in. The body must
+   * name the account's GitHub login, so it can't happen by accident. */
+  async 'POST /api/account/delete'(request, env, url, auth) {
+    const { confirm } = await boundedJson(request);
+    if (String(confirm || '').toLowerCase() !== auth.user.login.toLowerCase())
+      return json({ error: 'Type your GitHub username to confirm' }, 400);
+    const index = env.PROBE.getByName('index:' + auth.user.id);
+    const { sessions, logins } = await (
+      await index.fetch('https://internal/account/wipe', { method: 'POST' })
+    ).json();
+    await Promise.all(
+      sessions.map(id =>
+        env.PROBE.getByName('code:' + auth.user.id + ':' + id).fetch(
+          'https://internal/session/wipe',
+          { method: 'POST' },
+        ),
+      ),
+    );
+    const current = cookie(request, COOKIE);
+    await Promise.all(
+      [...new Set([...logins, ...(current ? [current] : [])])].map(id =>
+        authObject(env, id).fetch('https://internal/auth/delete', { method: 'POST' }),
+      ),
+    );
+    console.log(JSON.stringify({ event: 'account_deleted', sessions: sessions.length }));
+    return new Response(JSON.stringify({ deleted: true }), {
+      headers: {
+        'Content-Type': 'application/json',
+        'Set-Cookie': sessionCookie('', 0),
+        ...SECURITY,
+      },
+    });
+  },
+  /** The profile picture: PNG, JPEG or WebP up to 256 KB, kept on the index. */
+  async '* /api/account/avatar'(request, env, url, auth) {
+    const index = env.PROBE.getByName('index:' + auth.user.id);
+    if (request.method === 'GET') return index.fetch('https://internal/avatar');
+    if (request.method === 'DELETE')
+      return index.fetch('https://internal/avatar', { method: 'DELETE' });
+    if (request.method !== 'PUT') return json({ error: 'Unsupported method' }, 405);
+    const type = (request.headers.get('Content-Type') || '').split(';')[0].trim();
+    if (!/^image\/(png|jpeg|webp)$/.test(type))
+      return json({ error: 'Use a PNG, JPEG or WebP image' }, 415);
+    const bytes = await request.arrayBuffer();
+    if (bytes.byteLength > 256 * 1024)
+      return json({ error: 'Pictures are limited to 256 KB' }, 413);
+    await index.fetch('https://internal/avatar', {
+      method: 'PUT',
+      headers: { 'Content-Type': type },
+      body: bytes,
+    });
+    return new Response(null, { status: 204 });
+  },
   async 'POST /api/chats'(request, env, url, auth) {
     const { model } = await boundedJson(request),
       id = crypto.randomUUID();
@@ -151,8 +221,8 @@ export const apiRoutes = {
     const base = await catalog(),
       p = await profile(env, auth.user.id);
     const extra = await Promise.allSettled(
-      ['openai', 'anthropic', 'gemini']
-        .filter(id => p.keys?.[id])
+      Object.keys(PROVIDERS)
+        .filter(id => id !== 'ollama' && p.keys?.[id])
         .map(async id => providerModels(id, await credential(env, auth.user.id, p, id))),
     );
     const all = [

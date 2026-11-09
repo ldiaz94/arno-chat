@@ -3,36 +3,98 @@
  * Only masked connection metadata is ever returned by public GET routes.
  */
 import { publicWebUrl, searxngSearch } from './web.mjs';
-/** Each provider's API: where models are listed and where chat requests go.
- * Gemini is reached through its OpenAI-compatible endpoint. */
+/** Each provider's API: where models are listed and where chat requests go,
+ * and how a streamed chat request differs between them:
+ * - output: the name of the output-token limit, or none to keep the
+ *   provider's default (thinking counts against Gemini's limit);
+ * - usage: OpenAI's stream_options.include_usage, without which most
+ *   OpenAI-compatible streams carry no usage (Mistral rejects the field and
+ *   reports usage in its last chunk anyway; Anthropic has its own events);
+ * - replay: thinking is sent back as reasoning_content on assistant messages,
+ *   which DeepSeek requires once tools are offered (400 otherwise) and Kimi
+ *   asks for (Preserved Thinking).
+ * Gemini, DeepSeek, Kimi, Mistral and Meta are reached through their
+ * OpenAI-compatible endpoints. Kimi's is the international api.moonshot.ai
+ * (api.moonshot.cn serves mainland China); Meta's is Meta Model API, which
+ * succeeded the Llama API (api.llama.com). */
 export const PROVIDERS = {
   ollama: {
     label: 'Ollama Cloud',
     base: 'https://ollama.com',
     models: '/api/tags',
     chat: '/v1/chat/completions',
+    output: 'max_tokens',
+    usage: true,
   },
   openai: {
     label: 'OpenAI',
     base: 'https://api.openai.com',
     models: '/v1/models',
     chat: '/v1/chat/completions',
+    output: 'max_completion_tokens',
+    usage: true,
   },
   anthropic: {
     label: 'Anthropic',
     base: 'https://api.anthropic.com',
     models: '/v1/models',
     chat: '/v1/messages',
+    output: 'max_tokens',
   },
   gemini: {
     label: 'Google Gemini',
     base: 'https://generativelanguage.googleapis.com',
     models: '/v1beta/openai/models',
     chat: '/v1beta/openai/chat/completions',
+    usage: true,
+  },
+  deepseek: {
+    label: 'DeepSeek',
+    base: 'https://api.deepseek.com',
+    models: '/models',
+    chat: '/chat/completions',
+    output: 'max_tokens',
+    usage: true,
+    replay: true,
+  },
+  kimi: {
+    label: 'Kimi (Moonshot AI)',
+    base: 'https://api.moonshot.ai',
+    models: '/v1/models',
+    chat: '/v1/chat/completions',
+    output: 'max_completion_tokens',
+    usage: true,
+    replay: true,
+  },
+  mistral: {
+    label: 'Mistral',
+    base: 'https://api.mistral.ai',
+    models: '/v1/models',
+    chat: '/v1/chat/completions',
+    output: 'max_tokens',
+  },
+  meta: {
+    label: 'Meta Model API',
+    base: 'https://api.meta.ai',
+    models: '/v1/models',
+    chat: '/v1/chat/completions',
+    output: 'max_completion_tokens',
+    usage: true,
   },
 };
+/** Output tokens allowed per inference request, chat and coding alike. */
+export const MAX_OUTPUT = 16384;
+/** The request fields beside model, messages and tools that provider needs. */
+export function requestFields(provider) {
+  const p = PROVIDERS[provider];
+  return {
+    ...(p.output ? { [p.output]: MAX_OUTPUT } : {}),
+    ...(p.usage ? { stream_options: { include_usage: true } } : {}),
+  };
+}
 /** Model ids name their provider ("gemini/gemini-3.8-flash"), except Ollama's. */
-export const MODEL_ID = /^(openai|anthropic|gemini)\/([a-zA-Z0-9][a-zA-Z0-9._:-]{0,120})$/;
+export const MODEL_ID =
+  /^(openai|anthropic|gemini|deepseek|kimi|mistral|meta)\/([a-zA-Z0-9][a-zA-Z0-9._:-]{0,120})$/;
 export function providerModel(value) {
   const m = String(value).match(MODEL_ID);
   return m ? { provider: m[1], id: m[2] } : { provider: 'ollama', id: value };
@@ -200,6 +262,20 @@ export async function providerModels(provider, key) {
           /^gemini-/.test(m.id) &&
           !/(tts|image|transcribe|robotics|omni|customtools|embedding|live|audio)/.test(m.id),
       );
+  // Mistral lists embedding, OCR, moderation and audio models too, flagged by
+  // capabilities; a "-latest" alias is dropped when the model it names is listed.
+  if (provider === 'mistral') {
+    const ids = new Set((data.data || []).map(m => m.id));
+    data.data = (data.data || []).filter(
+      m =>
+        m.capabilities?.completion_chat &&
+        !/(embed|ocr|moderation|transcribe|tts)/.test(m.id) &&
+        !(/-latest$/.test(m.id) && (m.aliases || []).some(a => ids.has(a))),
+    );
+  }
+  // Meta also lists image generation, speech and segmentation models.
+  if (provider === 'meta')
+    data.data = (data.data || []).filter(m => !/(image|voice|transcribe|^sam)/.test(m.id));
   return (data.data || [])
     .filter(
       m =>
@@ -208,7 +284,10 @@ export async function providerModels(provider, key) {
           (/^(gpt-|chatgpt-|o[1-9])/.test(m.id) &&
             !/(audio|realtime|transcrib|tts|image|codex|gpt-5.*-pro)/.test(m.id))),
     )
-    .map(m => ({ id: provider + '/' + m.id, name: p.label + ' · ' + (m.display_name || m.id) }));
+    .map(m => ({
+      id: provider + '/' + m.id,
+      name: p.label + ' · ' + (m.display_name || m.name || m.id),
+    }));
 }
 export async function accountRoute(request, env, userId) {
   const u = new URL(request.url),
@@ -303,7 +382,9 @@ export async function accountRoute(request, env, userId) {
       if (new Set(mcp.map(m => m.id)).size !== mcp.length) throw Error('MCP IDs must be unique');
       const models = (body.models || []).slice(0, 20).map(m => {
         if (!MODEL_ID.test(m.id))
-          throw Error('Custom model IDs use openai/, anthropic/ or gemini/ before the model id');
+          throw Error(
+            'Custom model IDs start with a provider: openai/, anthropic/, gemini/, deepseek/, kimi/, mistral/ or meta/',
+          );
         return { id: m.id, name: String(m.name || m.id).slice(0, 120) };
       });
       await save({ systemPrompt: body.systemPrompt, skills, mcp, models });

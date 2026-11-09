@@ -19,7 +19,7 @@ Conversation-row menus support rename/delete without opening a conversation. The
 
 ## Providers and research
 
-Ollama Cloud is available through the private deployment fallback or a personal key. Bring your own OpenAI, Anthropic or Google Gemini API key to use their models in regular chats and coding sessions. Keys are encrypted, masked on read, and kept outside coding containers. Details: [ARCHITECTURE.md](ARCHITECTURE.md).
+Ollama Cloud is available through the private deployment fallback or a personal key. Bring your own OpenAI, Anthropic, Google Gemini, DeepSeek, Kimi (Moonshot AI), Mistral or Meta Model API key to use their models in regular chats and coding sessions. Keys are encrypted, masked on read, and kept outside coding containers. Details: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 Regular and coding conversations can search several web results and read original pages through host-mediated tools. Numbered citations link only to recorded sources and open a preview with title, domain, excerpt, and original link.
 
@@ -48,4 +48,4 @@ This is a private deployment restricted to ldiaz94 while it uses shared provider
 
 Coding workspaces use the pinned runner image in wrangler.jsonc. Completed turns checkpoint files and retain up to 20 recent turns, with bounded model context. Snapshot retention follows Cloudflare's 30-day window. Arbitrary dependency downloads, a live terminal, MCP OAuth/stdio installation, account balance, and unlimited context are not implemented. See limits in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-OpenAI/Anthropic/Gemini adapters and key handling have protocol tests; Gemini's chat tool loop and coding gateway were also exercised locally against the real API, not yet through the deployed app. Real calls to OpenAI and Anthropic require the user's keys. No blanket claim of perfect security or complete Claude Code feature parity is made.
+OpenAI/Anthropic/Gemini adapters and key handling have protocol tests; Gemini's chat tool loop and coding gateway were also exercised locally against the real API, not yet through the deployed app. DeepSeek, Kimi, Mistral and Meta are tested only against recorded-shape streams from their API references; no real call has been made. Real calls to OpenAI and Anthropic require the user's keys. No blanket claim of perfect security or complete Claude Code feature parity is made.

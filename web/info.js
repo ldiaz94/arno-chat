@@ -136,7 +136,7 @@ function usageSection(history) {
         .join('') +
       '</div>' +
       costBreakdown(stats, history.filter(t => !t.failed).at(-1)) +
-      '<p class="caption">Tokens are reported by the selected provider. A dash means usage was not recorded. Historical turns may have incomplete usage. Cost uses each model’s list price on the day of the turn (Ollama’s and Google’s pricing pages; Anthropic and OpenAI via OpenRouter); unpriced turns used a model missing from those tables. Ollama’s off-peak rates apply to turns saved off-peak. Web searches and page reads use the per-request rates Ollama actually billed this account (from its usage data).</p>' +
+      '<p class="caption">Tokens are reported by the selected provider. A dash means usage was not recorded. Historical turns may have incomplete usage. Cost uses each model’s list price on the day of the turn (the pricing pages of Ollama, Google, DeepSeek, Mistral and Meta; Anthropic, OpenAI and Kimi via OpenRouter); unpriced turns used a model missing from those tables. Ollama’s and DeepSeek’s off-peak rates apply to turns saved off-peak. Web searches and page reads use the per-request rates Ollama actually billed this account (from its usage data).</p>' +
       (last?.timing
         ? '<div class="eyebrow">Last turn</div>' +
           [

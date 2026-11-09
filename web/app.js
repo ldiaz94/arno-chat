@@ -171,4 +171,23 @@ $('#new-session').innerHTML = icon('plus') + ' New session';
 document.addEventListener('click', e => {
   if (e.target.id === 'reload') location.reload();
 });
+// A click on a modal dialog's backdrop closes it. A click on the backdrop
+// targets the dialog itself but lands outside its box; both press and release
+// must be outside, so selecting text that ends past the edge doesn't close it.
+// Non-modal dialogs (the docked code pane) are left alone.
+const outside = (dialog, e) => {
+  const r = dialog.getBoundingClientRect();
+  return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+};
+let pressedOutside = null;
+document.addEventListener('pointerdown', e => {
+  pressedOutside =
+    e.target instanceof HTMLDialogElement && e.target.matches(':modal') && outside(e.target, e)
+      ? e.target
+      : null;
+});
+document.addEventListener('click', e => {
+  if (e.target === pressedOutside && outside(e.target, e)) e.target.close();
+  pressedOutside = null;
+});
 boot();

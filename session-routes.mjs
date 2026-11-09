@@ -21,6 +21,16 @@ export const sessionRoutes = {
     await this.ctx.storage.put('session', renamed);
     return json(renamed);
   },
+  /** Account deletion: stop whatever is running and delete everything this
+   * session holds (transcript, attachments, artifacts, workspace snapshot
+   * reference), even mid-turn. */
+  async 'POST /session/wipe'() {
+    this.chatAbort?.abort();
+    if (this.ctx.container?.running) await this.ctx.container.destroy();
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+    return json({ deleted: true });
+  },
   async 'POST /session/delete'() {
     const job = await this.ctx.storage.get('job');
     if (this.inFlight || (job && ['queued', 'running'].includes(job.status)))

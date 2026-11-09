@@ -72,7 +72,12 @@ function customModelCard(m = {}) {
   node.className = 'setting-row custom-model';
   const parts = (m.id || 'openai/').split('/');
   node.innerHTML =
-    '<select class="field custom-provider" aria-label="Model provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Google Gemini</option></select><input class="field custom-id" aria-label="Model ID" placeholder="Model ID" value="' +
+    '<select class="field custom-provider" aria-label="Model provider">' +
+    Object.entries(account.providers)
+      .filter(([id]) => id !== 'ollama')
+      .map(([id, p]) => '<option value="' + id + '">' + esc(p.label) + '</option>')
+      .join('') +
+    '</select><input class="field custom-id" aria-label="Model ID" placeholder="Model ID" value="' +
     esc(parts.slice(1).join('/')) +
     '"><input class="field custom-name" aria-label="Model label" placeholder="Label" value="' +
     esc(m.name || '') +
@@ -123,6 +128,29 @@ const PROVIDER_GUIDES = {
       '). For private work, turn on billing for the key’s project (' +
       link('https://aistudio.google.com/docs/billing', 'billing') +
       ').',
+  ]),
+  deepseek: keySteps(
+    link('https://platform.deepseek.com/api_keys', 'platform.deepseek.com › API keys'),
+    [
+      'Add funds under ' +
+        link('https://platform.deepseek.com/top_up', 'Top up') +
+        ': the API draws on a prepaid balance and refuses requests when it runs out. Peak-hour prices are double the off-peak ones (' +
+        link('https://api-docs.deepseek.com/quick_start/pricing', 'pricing') +
+        ').',
+    ],
+  ),
+  kimi: keySteps(link('https://platform.kimi.ai/console/api-keys', 'platform.kimi.ai › API Keys'), [
+    'Top up your account in the same console: the API is pay-as-you-go from a prepaid balance, separate from a Kimi membership, and refuses requests when the balance runs out.',
+  ]),
+  mistral: keySteps(link('https://console.mistral.ai/api-keys', 'console.mistral.ai › API Keys'), [
+    'New accounts start in Free mode with a small monthly allowance. To go beyond it, buy credits and turn on pay-as-you-go under ' +
+      link('https://admin.mistral.ai/subscription', 'Admin › Subscription') +
+      '.',
+  ]),
+  meta: keySteps(link('https://dev.meta.ai/', 'dev.meta.ai › API keys'), [
+    'Usage is pay-as-you-go (' +
+      link('https://dev.meta.ai/docs/pricing-rate-limits', 'pricing') +
+      '). Models ending in <code>-contributor</code> cost much less but let Meta train its models on your prompts and the replies; the others do not.',
   ]),
 };
 const SEARCH_GUIDE = guide('How to set up your own SearXNG, step by step', [
@@ -273,7 +301,7 @@ async function openAccount() {
       .join('');
     $('#account-body').innerHTML =
       '<div class="account-tabs"><button data-account-tab="providers">Providers</button><button data-account-tab="instructions">Instructions & skills</button><button data-account-tab="mcp">MCP tools</button><button data-account-tab="connections">Connections</button></div>' +
-      '<section data-account-panel="providers"><p class="caption">Keys are encrypted and kept outside coding workspaces. OpenAI, Anthropic and Google Gemini models appear after you save a key. API billing is separate from ChatGPT/Claude app subscriptions.</p>' +
+      '<section data-account-panel="providers"><p class="caption">Keys are encrypted and kept outside coding workspaces. A provider’s models appear after you save its key. API billing is separate from ChatGPT/Claude app subscriptions.</p>' +
       providers +
       searchCard() +
       '<h3>Custom model IDs</h3><p class="caption">Use this when a provider’s model discovery does not list a model available to your key.</p><div id="custom-models"></div><button id="add-custom-model" type="button" class="ghost">＋ Add model</button></section>' +

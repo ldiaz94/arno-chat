@@ -1,23 +1,40 @@
 /** List prices in dollars per million tokens, fetched from the providers'
- * public tables and cached for a day: Ollama Cloud and Google Gemini from their
- * pricing pages, Anthropic and OpenAI from OpenRouter's model list, which
- * republishes their list prices as JSON (neither provider offers a price API).
- * OpenRouter's Gemini prices only fill in models Google's page lacks. A turn's cost is
- * computed when it is saved, so later price changes never rewrite history.
- * Ollama bills some models less off-peak, outside a weekday window the page
- * names; a turn is priced at the rate of the hour it was saved.
- * Left out: long-context price tiers; a model
- * missing from the tables has no cost rather than a guessed one.
+ * public tables and cached for a day: Ollama Cloud, Google Gemini, DeepSeek,
+ * Mistral and Meta from their pricing pages; Anthropic, OpenAI and Kimi from
+ * OpenRouter's model list, which republishes list prices as JSON (none of
+ * them offers a price API, and Kimi's page draws its table in the browser).
+ * OpenRouter's prices only fill in models a provider's own page lacks. A
+ * turn's cost is computed when it is saved, so later price changes never
+ * rewrite history. Ollama and DeepSeek bill less off-peak, outside weekday
+ * windows their pages name; a turn is priced at the rate of the hour it was
+ * saved.
+ * Left out: long-context price tiers, DeepSeek's off-peak Chinese public
+ * holidays (priced at peak), Kimi's cache-write TTL tiers; a model missing
+ * from the tables has no cost rather than a guessed one.
  */
 const DAY = 86400;
 let memo = null;
 
+/** Our provider prefix for OpenRouter's (and for our own) where other hosts
+ * serve the same model names at other prices. */
+const SCOPE = {
+  deepseek: 'deepseek',
+  kimi: 'kimi',
+  moonshotai: 'kimi',
+  mistral: 'mistral',
+  mistralai: 'mistral',
+  meta: 'meta',
+};
+
 /** Price keys ignore case, dated snapshots, Ollama's cloud tag, and the
- * dot/hyphen difference between "claude-opus-5.5" and "claude-opus-5-5". */
+ * dot/hyphen difference between "claude-opus-5.5" and "claude-opus-5-5".
+ * DeepSeek, Kimi, Mistral and Meta keep their prefix ("deepseek/…"), so that
+ * Ollama's price for the same open model never stands in for theirs. */
 export function priceKey(model) {
   return String(model)
     .toLowerCase()
     .replace(/^(openai|anthropic|gemini|google)\//, '')
+    .replace(/^(deepseek|kimi|moonshotai|mistralai|mistral|meta)\//, (_, p) => SCOPE[p] + '/')
     .replace(/[:-]cloud$/, '')
     .replace(/-\d{8}$/, '')
     .replace(/\./g, '-');
@@ -34,7 +51,7 @@ export function parseOllama(html) {
       .trim();
   const dollars = s => (/^\$[\d.]+$/.test(s) ? Number(s.slice(1)) : null);
   const window = String(html).match(/outside (\d\d?):00 and (\d\d?):00 UTC/i),
-    peak = window ? [Number(window[1]), Number(window[2])] : [12, 18];
+    peak = [window ? [Number(window[1]), Number(window[2])] : [12, 18]];
   const rows = new Map(),
     offPeak = new Map();
   for (const tr of String(html)
@@ -58,13 +75,95 @@ export function parseOllama(html) {
   return rows;
 }
 
-/** Whether Ollama bills at off-peak rates at time at: weekends, and weekdays
- * outside the peak hours (UTC). */
-export function isOffPeak(at, [from, to]) {
+/** Whether a provider bills at off-peak rates at time at: weekends, and
+ * weekdays outside every peak window [from, to) of hours (UTC). */
+export function isOffPeak(at, peak) {
   const d = new Date(at),
     day = d.getUTCDay(),
     hour = d.getUTCHours();
-  return day === 0 || day === 6 || hour < from || hour >= to;
+  return day === 0 || day === 6 || !peak.some(([from, to]) => from <= hour && hour < to);
+}
+
+/** Markdown table rows as lists of trimmed cells. */
+const tableRows = text =>
+  String(text)
+    .split('\n')
+    .filter(line => line.startsWith('|'))
+    .map(line =>
+      line
+        .split('|')
+        .slice(1, -1)
+        .map(cell => cell.trim()),
+    );
+const dollars = s => (/^\$[\d.]+$/.test(s) ? Number(s.slice(1)) : null);
+
+/** DeepSeek's pricing page as Markdown (pricing.md): a table with a column
+ * per model ("| MODEL | MODEL | MODEL | deepseek-flash(1) | … |") whose PRICING
+ * rows give cache-hit input, cache-miss input and output, each at OFF-PEAK and
+ * PEAK, and a sentence naming the peak hours ("Peak hours are 01:00 - 04:00
+ * and 06:00 - 10:00 UTC, Monday through Friday"). */
+export function parseDeepSeek(text) {
+  const rows = tableRows(text),
+    names = (rows.find(c => c[0] === 'MODEL') || []).slice(3),
+    hours = String(text).match(/Peak hours are ([^.]*) UTC/)?.[1] || '',
+    peak = [...hours.matchAll(/(\d\d):00 - (\d\d):00/g)].map(m => [Number(m[1]), Number(m[2])]);
+  const rates = names.map(() => ({ peak: {}, off: {} }));
+  for (const c of rows.filter(c => /^PRICING/.test(c[0]))) {
+    const field = /CACHE HIT/.test(c[1]) ? 'cached' : /CACHE MISS/.test(c[1]) ? 'inp' : 'out',
+      period = /OFF-PEAK/.test(c[2]) ? 'off' : 'peak';
+    c.slice(3).forEach((cell, i) => rates[i] && (rates[i][period][field] = dollars(cell)));
+  }
+  const full = r => r.inp != null && r.cached != null && r.out != null;
+  return new Map(
+    names
+      .map((name, i) => [name.replace(/\(\d+\)$/, ''), rates[i]])
+      .filter(([, r]) => full(r.peak))
+      .map(([name, r]) => [
+        priceKey('deepseek/' + name),
+        full(r.off) && peak.length ? { ...r.peak, offPeak: r.off, peak } : r.peak,
+      ]),
+  );
+}
+
+/** Mistral's pricing page as Markdown (pricing.md): rows of "| [Name](…) |
+ * `api-name` | Input $0.7 /M Tokens<br>Cached input $0.07 /M Tokens<br>Output
+ * $2.1 /M Tokens |"; rows priced per page, minute or character are skipped. */
+export function parseMistral(text) {
+  const rows = new Map();
+  for (const [, name = '', cell = ''] of tableRows(text)) {
+    const id = name.match(/^`([^`]+)`$/)?.[1];
+    if (!id) continue;
+    const rate = label =>
+      dollars(cell.match(new RegExp('(?:^|>)' + label + ' (\\$[\\d.]+) /M Tokens'))?.[1] || '');
+    const inp = rate('Input'),
+      out = rate('Output');
+    if (inp != null && out != null)
+      rows.set(priceKey('mistral/' + id), { inp, cached: rate('Cached input') ?? inp, out });
+  }
+  return rows;
+}
+
+/** Meta's pricing page as Markdown (pricing-rate-limits.md): a "### Model"
+ * section per family whose "Models:" line names its ids in backticks, then a
+ * table of Cached input / Input / Output rows with a Contributor-mode and a
+ * Standard-mode column; "-contributor" ids take the Contributor column. */
+export function parseMeta(text) {
+  const rows = new Map();
+  for (const section of String(text).split(/^### /m).slice(1)) {
+    const ids = [...(section.match(/^Models?: (.*)$/m)?.[1] || '').matchAll(/`([^`]+)`/g)],
+      table = Object.fromEntries(
+        tableRows(section)
+          .filter(c => c.length >= 3)
+          .map(c => [c[0], { contributor: dollars(c[1]), standard: dollars(c[2]) }]),
+      );
+    for (const [, id] of ids) {
+      const mode = /-contributor$/.test(id) ? 'contributor' : 'standard',
+        [inp, out, cached] = ['Input', 'Output', 'Cached input'].map(k => table[k]?.[mode]);
+      if (inp != null && out != null)
+        rows.set(priceKey('meta/' + id), { inp, cached: cached ?? inp, out });
+    }
+  }
+  return rows;
 }
 
 /** Rows of Google's Gemini pricing page, served as Markdoc at pricing.md: a
@@ -113,7 +212,9 @@ export function parseGemini(text) {
   return rows;
 }
 
-/** OpenRouter quotes dollars per token as strings. */
+/** OpenRouter quotes dollars per token as strings. Only makers' own models
+ * are taken: OpenRouter's DeepSeek ids are priced by other hosts (DeepSeek's
+ * page covers its API), as are Meta's open Llama ids (meta-llama/). */
 export function parseOpenRouter(data) {
   const rows = new Map(),
     perM = s => (s == null ? null : Number(s) * 1e6);
@@ -121,12 +222,12 @@ export function parseOpenRouter(data) {
     const id = String(m.id),
       p = m.pricing || {};
     if (
-      !/^(anthropic|openai|google)\/[^:]+$/.test(id) ||
+      !/^(anthropic|openai|google|moonshotai|mistralai|meta)\/[^:]+$/.test(id) ||
       perM(p.prompt) == null ||
       perM(p.completion) == null
     )
       continue;
-    rows.set(priceKey(id.split('/')[1]), {
+    rows.set(priceKey(id), {
       inp: perM(p.prompt),
       cached: perM(p.input_cache_read) ?? perM(p.prompt),
       write: perM(p.input_cache_write) ?? perM(p.prompt),
@@ -151,13 +252,17 @@ export async function prices(upstream = fetch) {
       return new Map();
     }
   };
-  const [ollama, router, gemini] = await Promise.all([
+  const [ollama, router, ...pages] = await Promise.all([
     get('https://ollama.com/pricing', parseOllama, 'text'),
     get('https://openrouter.ai/api/v1/models', parseOpenRouter, 'json'),
     get('https://aistudio.google.com/docs/pricing.md', parseGemini, 'text'),
+    get('https://api-docs.deepseek.com/quick_start/pricing.md', parseDeepSeek, 'text'),
+    get('https://docs.mistral.ai/inference/pricing.md', parseMistral, 'text'),
+    get('https://dev.meta.ai/docs/pricing-rate-limits.md', parseMeta, 'text'),
   ]);
   const rows = new Map([...ollama, ...router]);
-  for (const [k, row] of gemini) rows.set(k, { window: router.get(k)?.window ?? null, ...row });
+  for (const page of pages)
+    for (const [k, row] of page) rows.set(k, { window: router.get(k)?.window ?? null, ...row });
   if (rows.size) memo = { at: Date.now(), rows };
   return rows;
 }
@@ -179,11 +284,18 @@ export function priceOf(rows, model, at = Date.now()) {
 }
 
 /** One provider usage report as uncached input, cache reads, cache writes and
- * output. OpenAI counts cached tokens inside prompt_tokens; Anthropic does not. */
+ * output. OpenAI-style reports count cache reads (and Kimi's cache_write_tokens)
+ * inside prompt_tokens; Anthropic counts neither in input_tokens. DeepSeek
+ * names its cache reads prompt_cache_hit_tokens, mirrored in cached_tokens. */
 export function tokens(u = {}) {
-  const cached = u.cache_read_input_tokens ?? u.prompt_tokens_details?.cached_tokens ?? 0,
-    write = u.cache_creation_input_tokens ?? 0;
-  const input = u.prompt_tokens != null ? u.prompt_tokens - cached : (u.input_tokens ?? 0);
+  const inside = u.prompt_tokens_details?.cache_write_tokens ?? 0,
+    cached =
+      u.cache_read_input_tokens ??
+      u.prompt_tokens_details?.cached_tokens ??
+      u.prompt_cache_hit_tokens ??
+      0,
+    write = u.cache_creation_input_tokens ?? inside;
+  const input = u.prompt_tokens != null ? u.prompt_tokens - cached - inside : (u.input_tokens ?? 0);
   // Gemini leaves thinking out of completion_tokens; total_tokens still counts it.
   const output =
     u.prompt_tokens != null && u.total_tokens != null

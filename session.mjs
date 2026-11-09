@@ -384,8 +384,10 @@ export class ArnoProbe extends DurableObject {
       preferences = await profile(this.env, session?.ownerId);
     let config =
       'provider = ' +
-      ({ anthropic: 'claude', openai: 'openai', gemini: 'gemini' }[selected.provider] ||
-        'ollama-cloud') +
+      // Arno speaks OpenAI's protocol to every other provider; the gateway
+      // behind model.internal picks the real upstream and its quirks.
+      ({ ollama: 'ollama-cloud', anthropic: 'claude', gemini: 'gemini' }[selected.provider] ||
+        'openai') +
       '\nmodel = ' +
       selected.id +
       '\nurl = http://model.internal/v1\nkey =\nexecution_boundary = outer-sandbox\nsafety = auto\ncontext_files = no\nproject_map = no\nmax_tokens = 4096\n';

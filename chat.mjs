@@ -1,7 +1,7 @@
 import { WEB_TOOLS } from './web.mjs';
-import { displayDelta } from './gateway.mjs';
+import { displayDelta, mistralDeltas } from './gateway.mjs';
 import { tokens } from './prices.mjs';
-import { PROVIDERS } from './account.mjs';
+import { PROVIDERS, requestFields } from './account.mjs';
 import { attachedNote } from './attachments.mjs';
 
 /** Gemini streams its thoughts as a leading <thought>…</thought> in the text;
@@ -16,8 +16,8 @@ function visible(text, reasoning) {
 
 /** Decode text, native tool calls, and reported usage from either provider's
  * streaming dialect. Credential-bearing headers never enter these results. */
-async function readReply(response, onProgress) {
-  const reader = response.body.getReader(),
+async function readReply(body, onProgress) {
+  const reader = body.getReader(),
     decoder = new TextDecoder(),
     calls = new Map();
   let buffer = '',
@@ -104,7 +104,8 @@ export async function plainChat({
   onProgress = async () => {},
   upstream = fetch,
 }) {
-  const messages = [];
+  const messages = [],
+    replay = PROVIDERS[provider].replay;
   let size = 0;
   for (const t of history.slice(-20).reverse()) {
     const sourceContext = t.sources?.length
@@ -113,9 +114,16 @@ export async function plainChat({
       : '';
     const pair = [
       { role: 'user', content: t.prompt + attachedNote(t.attachments) },
-      { role: 'assistant', content: t.summary + sourceContext },
+      {
+        role: 'assistant',
+        content: t.summary + sourceContext,
+        ...(replay ? { reasoning_content: t.reasoning || '' } : {}),
+      },
     ];
-    const length = pair.reduce((n, m) => n + m.content.length, 0);
+    const length = pair.reduce(
+      (n, m) => n + m.content.length + (m.reasoning_content?.length || 0),
+      0,
+    );
     if (size + length > 32000) break;
     messages.unshift(...pair);
     size += length;
@@ -187,16 +195,14 @@ export async function plainChat({
         messages,
         stream: true,
         tools,
+        ...requestFields(provider),
         ...(provider === 'anthropic'
           ? { system: instructions || 'You are a helpful assistant.' }
-          : { stream_options: { include_usage: true } }),
-        ...(provider === 'openai'
-          ? { max_completion_tokens: 16384 }
-          : provider === 'gemini'
-            ? // Thinking counts against Gemini's output limit, so keep its default,
-              // and ask for thoughts, which arrive in content as <thought>…</thought>.
-              { extra_body: { google: { thinking_config: { include_thoughts: true } } } }
-            : { max_tokens: 16384 }),
+          : {}),
+        // Gemini's thoughts arrive in content as <thought>…</thought>.
+        ...(provider === 'gemini'
+          ? { extra_body: { google: { thinking_config: { include_thoughts: true } } } }
+          : {}),
       }),
     });
     total.calls++;
@@ -204,9 +210,9 @@ export async function plainChat({
       await response.body?.cancel();
       throw Error(provider + ' could not complete this chat (' + response.status + ')');
     }
-    const reply = await readReply(response, preview =>
-      onProgress({ ...preview, round: round + 1 }),
-    );
+    const body =
+      provider === 'mistral' ? response.body.pipeThrough(mistralDeltas()) : response.body;
+    const reply = await readReply(body, preview => onProgress({ ...preview, round: round + 1 }));
     if (reply.usage) {
       const t = tokens(reply.usage);
       total.measuredCalls++;
@@ -254,6 +260,7 @@ export async function plainChat({
       messages.push({
         role: 'assistant',
         content: reply.summary || null,
+        ...(replay ? { reasoning_content: reply.reasoning } : {}),
         tool_calls: reply.calls.map(c => ({
           id: c.id,
           type: 'function',

@@ -62,6 +62,48 @@ export const storeRoutes = {
   },
   'POST /profile/patch': patchProfile,
   'POST /profile/key': patchProfile,
+  async 'PUT /avatar'(request) {
+    const type = request.headers.get('Content-Type') || '';
+    await this.ctx.storage.put('avatar', {
+      type,
+      bytes: new Uint8Array(await request.arrayBuffer()),
+    });
+    return new Response(null, { status: 204 });
+  },
+  async 'DELETE /avatar'() {
+    await this.ctx.storage.delete('avatar');
+    return new Response(null, { status: 204 });
+  },
+  async 'GET /avatar'() {
+    const avatar = await this.ctx.storage.get('avatar');
+    if (!avatar) return json({ error: 'No avatar' }, 404);
+    return new Response(avatar.bytes, {
+      headers: {
+        'Content-Type': avatar.type,
+        'Cache-Control': 'private, no-cache',
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Security-Policy': "default-src 'none'; sandbox",
+      },
+    });
+  },
+  async 'POST /logins/add'(request) {
+    const { id } = await request.json();
+    const logins = ((await this.ctx.storage.get('logins')) || []).filter(l => l !== id);
+    await this.ctx.storage.put('logins', [...logins, id].slice(-50));
+    return new Response(null, { status: 204 });
+  },
+  /** Everything the per-user index object holds goes: profile, keys, search
+   * connection, push subscriptions, request log, session list. Returns what
+   * the caller still has to delete elsewhere (sessions, sign-ins). */
+  async 'POST /account/wipe'() {
+    const sessions = [...(await this.ctx.storage.list({ prefix: 'session:' })).values()].map(
+      s => s.id,
+    );
+    const logins = (await this.ctx.storage.get('logins')) || [];
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+    return json({ sessions, logins });
+  },
   async '* /index/list'() {
     const entries = await this.ctx.storage.list({ prefix: 'session:' });
     return json({ sessions: [...entries.values()].sort((a, b) => b.createdAt - a.createdAt) });

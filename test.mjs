@@ -37,6 +37,8 @@ function fixture(values = {}) {
           : Object.entries(k).forEach(([key, value]) => map.set(key, value)),
       setAlarm: async () => {},
       delete: async k => [].concat(k).forEach(key => map.delete(key)),
+      deleteAll: async () => map.clear(),
+      deleteAlarm: async () => {},
     },
     container: {
       running: false,
@@ -848,6 +850,410 @@ test('Gemini prices: first tier, dated changes resolved at the turn time', async
   });
   assert.equal(priceOf(rows, 'gemini/gemini-9-flash', Date.UTC(2027, 0, 1, 1)).inp, 1.5);
 });
+/** Streams in the shapes the providers' API references document (no keys:
+ * their endpoints answer 401, so these fixtures stand in for real replies). */
+const sse = chunks =>
+  new Response(
+    chunks.map(c => 'data: ' + JSON.stringify(c) + '\n\n').join('') + 'data: [DONE]\n\n',
+  );
+const delta = (d, extra = {}) => ({
+  choices: [{ index: 0, delta: d, finish_reason: null }],
+  ...extra,
+});
+const callDeltas = id => [
+  delta({
+    tool_calls: [
+      { index: 0, id, type: 'function', function: { name: 'web_search', arguments: '' } },
+    ],
+  }),
+  delta({ tool_calls: [{ index: 0, function: { arguments: '{"query":"q"}' } }] }),
+];
+const BYOK = {
+  deepseek: {
+    url: 'https://api.deepseek.com/chat/completions',
+    fields: { max_tokens: 16384, stream_options: { include_usage: true } },
+    // Thinking in reasoning_content; usage rides on the last content chunk.
+    rounds: [
+      [
+        delta({ role: 'assistant', content: '', reasoning_content: 'look it up' }, { usage: null }),
+        ...callDeltas('call_00_a'),
+        {
+          choices: [{ index: 0, delta: { content: '' }, finish_reason: 'tool_calls' }],
+          usage: {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            total_tokens: 120,
+            prompt_tokens_details: { cached_tokens: 64 },
+            prompt_cache_hit_tokens: 64,
+            prompt_cache_miss_tokens: 36,
+          },
+        },
+      ],
+      [
+        delta({ reasoning_content: 'found it' }),
+        delta({ content: 'Answer' }),
+        {
+          choices: [{ index: 0, delta: { content: '' }, finish_reason: 'stop' }],
+          usage: {
+            prompt_tokens: 200,
+            completion_tokens: 10,
+            total_tokens: 210,
+            prompt_tokens_details: { cached_tokens: 100 },
+            prompt_cache_hit_tokens: 100,
+            prompt_cache_miss_tokens: 100,
+          },
+        },
+      ],
+    ],
+    reasoning: 'found it',
+    usage: { inputTokens: 300, cachedTokens: 164, cacheWriteTokens: 0, outputTokens: 30 },
+  },
+  kimi: {
+    url: 'https://api.moonshot.ai/v1/chat/completions',
+    fields: { max_completion_tokens: 16384, stream_options: { include_usage: true } },
+    // A usage-only last chunk with empty choices; cache writes inside prompt_tokens.
+    rounds: [
+      [
+        delta({ role: 'assistant', content: '' }),
+        delta({ reasoning_content: 'look it up' }),
+        ...callDeltas('web_search:0'),
+        {
+          choices: [],
+          usage: {
+            prompt_tokens: 373,
+            completion_tokens: 93,
+            total_tokens: 466,
+            prompt_tokens_details: { cached_tokens: 100, cache_write_tokens: 256 },
+          },
+        },
+      ],
+      [
+        delta({ content: 'Answer' }),
+        {
+          choices: [],
+          usage: {
+            prompt_tokens: 400,
+            completion_tokens: 7,
+            total_tokens: 407,
+            prompt_tokens_details: { cached_tokens: 356, cache_write_tokens: 0 },
+          },
+        },
+      ],
+    ],
+    reasoning: '',
+    usage: { inputTokens: 773, cachedTokens: 456, cacheWriteTokens: 256, outputTokens: 100 },
+  },
+  mistral: {
+    url: 'https://api.mistral.ai/v1/chat/completions',
+    fields: { max_tokens: 16384 },
+    // Thinking arrives as content chunks; usage in the last chunk unasked.
+    rounds: [
+      [
+        ...callDeltas('Ab3dE5gH7'),
+        {
+          ...delta({ content: '' }),
+          usage: { prompt_tokens: 50, completion_tokens: 9, total_tokens: 59 },
+        },
+      ],
+      [
+        delta({ content: [{ type: 'thinking', thinking: [{ type: 'text', text: 'weigh ' }] }] }),
+        delta({
+          content: [
+            { type: 'thinking', thinking: [{ type: 'text', text: 'it' }] },
+            { type: 'text', text: 'Ans' },
+          ],
+        }),
+        delta({ content: 'wer' }),
+        {
+          ...delta({ content: '' }),
+          usage: { prompt_tokens: 80, completion_tokens: 30, total_tokens: 110 },
+        },
+      ],
+    ],
+    reasoning: 'weigh it',
+    usage: { inputTokens: 130, cachedTokens: 0, cacheWriteTokens: 0, outputTokens: 39 },
+  },
+  meta: {
+    url: 'https://api.meta.ai/v1/chat/completions',
+    fields: { max_completion_tokens: 16384, stream_options: { include_usage: true } },
+    // Reasoning stays private; usage only on the final, choice-less chunk.
+    rounds: [
+      [
+        ...callDeltas('call_m1'),
+        {
+          choices: [],
+          usage: {
+            prompt_tokens: 40,
+            completion_tokens: 12,
+            total_tokens: 52,
+            completion_tokens_details: { reasoning_tokens: 8 },
+            prompt_tokens_details: { cached_tokens: 32 },
+          },
+        },
+      ],
+      [
+        delta({ content: 'Answer' }),
+        {
+          choices: [],
+          usage: {
+            prompt_tokens: 60,
+            completion_tokens: 3,
+            total_tokens: 63,
+            prompt_tokens_details: { cached_tokens: 40 },
+          },
+        },
+      ],
+    ],
+    reasoning: '',
+    usage: { inputTokens: 100, cachedTokens: 72, cacheWriteTokens: 0, outputTokens: 15 },
+  },
+};
+test('DeepSeek, Kimi, Mistral and Meta: endpoint, fields, tool loop and usage', async () => {
+  for (const [provider, want] of Object.entries(BYOK)) {
+    const bodies = [],
+      replies = want.rounds.map(sse),
+      searched = [];
+    const r = await plainChat({
+      model: 'm1',
+      provider,
+      key: 'sk-' + provider,
+      history: [{ prompt: 'earlier', summary: 'said', reasoning: 'thought' }],
+      prompt: 'p',
+      runTool: async (name, args) => (searched.push([name, args]), { sources: [] }),
+      upstream: async (url, init) => {
+        assert.equal(url, want.url, provider);
+        assert.equal(init.headers.Authorization, 'Bearer sk-' + provider);
+        bodies.push(JSON.parse(init.body));
+        return replies.shift();
+      },
+    });
+    const [first, second] = bodies,
+      { model, messages, stream, tools, ...fields } = first;
+    assert.deepEqual(fields, want.fields, provider);
+    assert.equal(model, 'm1');
+    assert.equal(stream, true);
+    assert.equal(tools.length > 0, true);
+    assert.deepEqual(searched, [['web_search', { query: 'q' }]], provider);
+    const replay = provider === 'deepseek' || provider === 'kimi';
+    // DeepSeek needs earlier thinking back once tools are offered; Kimi asks for it.
+    assert.equal(messages[1].reasoning_content, replay ? 'thought' : undefined, provider);
+    const call = second.messages.at(-2);
+    assert.equal(call.tool_calls[0].function.arguments, '{"query":"q"}');
+    assert.equal(call.reasoning_content, replay ? 'look it up' : undefined, provider);
+    assert.equal(second.messages.at(-1).role, 'tool');
+    assert.equal(r.summary, 'Answer', provider);
+    assert.equal(r.reasoning, want.reasoning, provider);
+    const { inputTokens, cachedTokens, cacheWriteTokens, outputTokens } = r.usage;
+    assert.deepEqual(
+      { inputTokens, cachedTokens, cacheWriteTokens, outputTokens },
+      want.usage,
+      provider,
+    );
+  }
+});
+test('coding gateway: Mistral gets no stream_options and its thinking chunks become strings', async () => {
+  let sent, usage;
+  const r = await modelRequest(
+    new Request('http://model.internal/v1/chat/completions', {
+      method: 'POST',
+      body: JSON.stringify({
+        model: 'mistral-large-4',
+        messages: [
+          { role: 'user', content: 'hi' },
+          { role: 'assistant', content: 'Hello', reasoning_content: 'greet' },
+          { role: 'user', content: 'and?' },
+        ],
+        stream: true,
+      }),
+    }),
+    {
+      provider: 'mistral',
+      model: 'mistral-large-4',
+      key: 'k',
+      authorize: async () => true,
+      onUsage: async u => (usage = u),
+      upstream: async (url, init) => {
+        sent = { url, body: JSON.parse(init.body) };
+        return sse(BYOK.mistral.rounds[1]);
+      },
+    },
+  );
+  const lines = (await r.text()).split('\n').filter(l => l.startsWith('data: {'));
+  assert.equal(sent.url, 'https://api.mistral.ai/v1/chat/completions');
+  assert.equal(sent.body.stream_options, undefined);
+  assert.equal(sent.body.max_tokens, 16384);
+  assert.deepEqual(sent.body.messages[1], { role: 'assistant', content: 'Hello' });
+  assert.deepEqual(JSON.parse(lines[1].slice(6)).choices[0].delta, {
+    content: 'Ans',
+    reasoning_content: 'it',
+  });
+  assert.deepEqual(usage, {
+    prompt_tokens: 80,
+    completion_tokens: 30,
+    cached_tokens: 0,
+    cache_write_tokens: 0,
+  });
+});
+test('model discovery keeps chat models of DeepSeek, Kimi, Mistral and Meta', async () => {
+  const { providerModels } = await import('./account.mjs');
+  const lists = {
+    'https://api.deepseek.com/models': [
+      { id: 'deepseek-flash', object: 'model', owned_by: 'deepseek', name: 'DeepSeek-V4.1-Flash' },
+      { id: 'deepseek-v4-pro', object: 'model', owned_by: 'deepseek', name: 'DeepSeek-V4-Pro' },
+    ],
+    'https://api.moonshot.ai/v1/models': [
+      { id: 'kimi-k3.1-pro', object: 'model', owned_by: 'moonshot', context_length: 1048576 },
+    ],
+    'https://api.mistral.ai/v1/models': [
+      {
+        id: 'mistral-large-4',
+        aliases: ['mistral-large-latest'],
+        capabilities: { completion_chat: true },
+      },
+      {
+        id: 'mistral-large-latest',
+        aliases: ['mistral-large-4'],
+        capabilities: { completion_chat: true },
+      },
+      {
+        id: 'mistral-small-latest',
+        aliases: ['mistral-small-2603'],
+        capabilities: { completion_chat: true },
+      },
+      { id: 'mistral-embed-2312', capabilities: { completion_chat: false } },
+      { id: 'codestral-embed-2505', capabilities: { completion_chat: true } },
+      { id: 'mistral-ocr-4-1', capabilities: { completion_chat: false, ocr: true } },
+    ],
+    'https://api.meta.ai/v1/models': [
+      { id: 'muse-spark-1.3' },
+      { id: 'muse-wonder-1.0' },
+      { id: 'muse-image-1.0' },
+      { id: 'muse-voice-transcribe-1.0' },
+      { id: 'sam-3.1' },
+    ],
+  };
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    assert.equal(init.headers.Authorization, 'Bearer key-0123456789');
+    return Response.json({ object: 'list', data: lists[url] });
+  };
+  try {
+    const ids = async p => (await providerModels(p, 'key-0123456789')).map(m => m.id);
+    assert.deepEqual(await ids('deepseek'), [
+      'deepseek/deepseek-flash',
+      'deepseek/deepseek-v4-pro',
+    ]);
+    assert.equal(
+      (await providerModels('deepseek', 'key-0123456789'))[0].name,
+      'DeepSeek · DeepSeek-V4.1-Flash',
+    );
+    assert.deepEqual(await ids('kimi'), ['kimi/kimi-k3.1-pro']);
+    // An alias is dropped only when the model it names is listed too.
+    assert.deepEqual(await ids('mistral'), [
+      'mistral/mistral-large-4',
+      'mistral/mistral-small-latest',
+    ]);
+    assert.deepEqual(await ids('meta'), ['meta/muse-spark-1.3', 'meta/muse-wonder-1.0']);
+  } finally {
+    globalThis.fetch = real;
+  }
+});
+test('DeepSeek, Mistral and Meta prices from their pages; Kimi via OpenRouter; each kept apart', async () => {
+  const { parseDeepSeek, parseMistral, parseMeta, parseOpenRouter, parseOllama, priceOf } =
+    await import('./prices.mjs');
+  const deepseek = parseDeepSeek(`| MODEL | MODEL | MODEL | deepseek-flash(1) | deepseek-v4-pro |
+| --- | --- | --- | --- | --- |
+| BASE URL (OpenAI Format) | BASE URL (OpenAI Format) | BASE URL (OpenAI Format) | <https://api.deepseek.com> | <https://api.deepseek.com> |
+| PRICING(2) | 1M INPUT TOKENS / (CACHE HIT) | OFF-PEAK | $0.003 | $0.022 |
+| PRICING(2) | 1M INPUT TOKENS / (CACHE HIT) | PEAK | $0.006 | $0.044 |
+| PRICING(2) | 1M INPUT TOKENS / (CACHE MISS) | OFF-PEAK | $0.15 | $0.66 |
+| PRICING(2) | 1M INPUT TOKENS / (CACHE MISS) | PEAK | $0.3 | $1.32 |
+| PRICING(2) | 1M OUTPUT TOKENS | OFF-PEAK | $0.6 | $1.98 |
+| PRICING(2) | 1M OUTPUT TOKENS | PEAK | $1.2 | $3.96 |
+
+(2) Off-peak rates are half of the peak rates. Peak hours are 01:00 - 04:00 and 06:00 - 10:00 UTC, Monday through Friday, excluding Chinese public holidays.`);
+  const monday = h => Date.UTC(2026, 10, 9, h);
+  assert.deepEqual(priceOf(deepseek, 'deepseek/deepseek-v4-pro', monday(7)), {
+    cached: 0.044,
+    inp: 1.32,
+    out: 3.96,
+    offPeak: { cached: 0.022, inp: 0.66, out: 1.98 },
+    peak: [
+      [1, 4],
+      [6, 10],
+    ],
+  });
+  assert.equal(priceOf(deepseek, 'deepseek/deepseek-flash', monday(4)).inp, 0.15);
+  assert.equal(priceOf(deepseek, 'deepseek/deepseek-flash', Date.UTC(2026, 10, 8, 2)).inp, 0.15);
+  const mistral = parseMistral(`| Model | API name | Price |
+| --- | --- | --- |
+| [Mistral Large 4](/models/mistral-large-4-0) | \`mistral-large-4\` | Input $0.7 /M Tokens<br>Cached input $0.07 /M Tokens<br>Output $2.1 /M Tokens |
+| [Mistral Small 4](/models/mistral-small-4-0-26-03) | \`mistral-small-2603\` | Input $0.15 /M Tokens<br>Output $0.6 /M Tokens |
+| [OCR 4.1](/models/ocr-4-1) | \`mistral-ocr-4-1\` | Input $4 /1000 Pages |
+| [Voxtral Mini Transcribe 3](/models/voxtral-mini-transcribe-3-0) | \`voxtral-mini-transcribe-3-0\` | Input $0.0035 /Min |`);
+  assert.deepEqual(priceOf(mistral, 'mistral/mistral-large-4'), {
+    inp: 0.7,
+    cached: 0.07,
+    out: 2.1,
+  });
+  assert.deepEqual(priceOf(mistral, 'mistral/mistral-small-2603'), {
+    inp: 0.15,
+    cached: 0.15,
+    out: 0.6,
+  });
+  assert.equal(mistral.size, 2);
+  const meta = parseMeta(`### Muse Wonder
+Model: \`muse-wonder-1.0\`.
+| Usage        | Contributor mode (per 1M tokens) | Standard mode (per 1M tokens) |
+| :----------- | :------------------------------- | :---------------------------- |
+| Cached input | Not available                    | $0.20                         |
+| Input        | Not available                    | $4.00                         |
+| Output       | Not available                    | $20.00                        |
+### Muse Spark
+Models: \`muse-spark-1.3\` in Standard mode; \`muse-spark-1.3-contributor\` in Contributor mode.
+| Usage        | Contributor mode (per 1M tokens) | Standard mode (per 1M tokens) |
+| :----------- | :------------------------------- | :---------------------------- |
+| Cached input | $0.002                           | $0.15                         |
+| Input        | $0.10                            | $1.25                         |
+| Output       | $0.20                            | $4.25                         |
+### Muse Image
+| Usage           | Price           |
+| :-------------- | :-------------- |
+| Generated image | $0.01 per image |`);
+  assert.deepEqual(priceOf(meta, 'meta/muse-wonder-1.0'), { inp: 4, cached: 0.2, out: 20 });
+  assert.deepEqual(priceOf(meta, 'meta/muse-spark-1.3-contributor'), {
+    inp: 0.1,
+    cached: 0.002,
+    out: 0.2,
+  });
+  assert.equal(priceOf(meta, 'meta/muse-spark-1.3').out, 4.25);
+  const price = (prompt, completion, cache) => ({ prompt, completion, input_cache_read: cache });
+  const router = parseOpenRouter({
+    data: [
+      {
+        id: 'moonshotai/kimi-k3.1-pro',
+        pricing: price('0.000002', '0.00001', '0.0000002'),
+        context_length: 1048576,
+      },
+      { id: 'mistralai/mistral-medium-3-5', pricing: price('0.0000015', '0.0000075') },
+      { id: 'deepseek/deepseek-v4-flash', pricing: price('0.000000091', '0.000000182') },
+      { id: 'meta-llama/llama-4-scout', pricing: price('0.0000001', '0.0000003') },
+    ],
+  });
+  assert.equal(priceOf(router, 'kimi/kimi-k3.1-pro').inp, 2);
+  assert.equal(priceOf(router, 'kimi/kimi-k3.1-pro').cached.toFixed(2), '0.20');
+  assert.equal(priceOf(router, 'mistral/mistral-medium-3-5').out, 7.5);
+  // OpenRouter's DeepSeek and Llama prices are other hosts', not the maker's.
+  assert.equal(priceOf(router, 'deepseek/deepseek-v4-flash'), null);
+  assert.equal(priceOf(router, 'meta/llama-4-scout'), null);
+  // Ollama's price for an open model never stands in for its maker's.
+  const ollama = parseOllama(
+    '<table><tr><td>m</td><td>i</td><td>c</td><td>o</td></tr><tr><td>deepseek-v4-pro</td><td>$9</td><td>$9</td><td>$9</td></tr></table>',
+  );
+  const all = new Map([...ollama, ...deepseek]);
+  assert.equal(priceOf(all, 'deepseek-v4-pro:cloud').inp, 9);
+  assert.equal(priceOf(all, 'deepseek/deepseek-v4-pro', monday(7)).inp, 1.32);
+});
 
 test('markdown images load through the proxy and only over HTTP(S)', () => {
   const html = markdown('![a "cat" & co](https://img.example.com/c.png?x=1&y=2)');
@@ -1289,4 +1695,55 @@ test('account saves a SearXNG connection sealed and refuses private or plain-HTT
     .search;
   assert.notEqual(stored.secret.value, 'client-secret-value');
   assert.equal((await save({ remove: true })).status, 200);
+});
+test('deleting the account wipes the index, every session and every recorded sign-in', async () => {
+  const { apiRoutes } = await import('./api.mjs');
+  const objects = new Map();
+  const env = {
+    PROBE: {
+      getByName: name => {
+        if (!objects.has(name)) {
+          const f = fixture({});
+          f.obj.env = env;
+          objects.set(name, f);
+        }
+        // Like a Durable Object stub: fetch takes a URL and init.
+        const { obj } = objects.get(name);
+        return {
+          ctx: obj.ctx,
+          fetch: (u, init) => obj.fetch(u instanceof Request ? u : new Request(u, init)),
+        };
+      },
+    },
+  };
+  const index = env.PROBE.getByName('index:7');
+  await index.fetch(
+    new Request('https://internal/logins/add', { method: 'POST', body: '{"id":"old"}' }),
+  );
+  await index.fetch(
+    new Request('https://internal/index/add', {
+      method: 'POST',
+      body: '{"id":"s1","createdAt":1}',
+    }),
+  );
+  for (const name of ['code:7:s1', 'auth:old', 'auth:now'])
+    await env.PROBE.getByName(name).ctx.storage.put('marker', true);
+  const auth = { user: { id: 7, login: 'Luis' } };
+  const call = body =>
+    apiRoutes['POST /api/account/delete'](
+      new Request('https://x/api/account/delete', {
+        method: 'POST',
+        body: JSON.stringify(body),
+        headers: { Cookie: 'arno_session=now' },
+      }),
+      env,
+      null,
+      auth,
+    );
+  assert.equal((await call({ confirm: 'someone' })).status, 400);
+  const r = await call({ confirm: 'luis' });
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('Set-Cookie'), /Max-Age=0/);
+  for (const name of ['index:7', 'code:7:s1', 'auth:old', 'auth:now'])
+    assert.equal((await objects.get(name).ctx.storage.list({})).size, 0, name + ' emptied');
 });

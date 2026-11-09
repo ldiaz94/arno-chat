@@ -98,6 +98,12 @@ export async function handleOAuth(request, env, url) {
         expiresAt: Date.now() + 30 * 86400000,
       }),
     });
+    // Remember this sign-in on the user's index, so deleting the account can
+    // end every device's sign-in, not only the current one.
+    await env.PROBE.getByName('index:' + user.id).fetch('https://internal/logins/add', {
+      method: 'POST',
+      body: JSON.stringify({ id }),
+    });
     return new Response(null, {
       status: 302,
       headers: { Location: '/', 'Set-Cookie': sessionCookie(id), ...SECURITY },
