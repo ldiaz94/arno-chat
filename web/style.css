@@ -11,6 +11,23 @@
   --red: #ffafa8;
   --warn: #f0b84a;
   --shadow: 0 24px 80px #0005;
+  /* Code: one monospace stack; syntax colours are ladle's default theme (sauce), WCAG-checked */
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --code-size: 13px;
+  --code-bg: #0a0e14;
+  --code-fg: #d5dfeb;
+  --hl-k: #f0705d;
+  --hl-t: #e0a94f;
+  --hl-s: #6dbe78;
+  --hl-n: #6fc1dd;
+  --hl-c: #b79f8c;
+  --hl-b: #d79bd7;
+  --diff-add-bg: #16372a;
+  --diff-add-fg: #b9ebce;
+  --diff-del-bg: #3c2026;
+  --diff-del-fg: #ffd0ce;
+  --diff-hunk-bg: #172439;
+  --diff-hunk-fg: #91c8ff;
   font-family:
     Inter,
     -apple-system,
@@ -21,6 +38,11 @@
 * {
   box-sizing: border-box;
   min-width: 0;
+}
+html {
+  /* phones must not inflate the text of wide code blocks */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 html,
 body {
@@ -546,11 +568,7 @@ main {
   font-weight: 650;
 }
 .prose code {
-  font:
-    12px ui-monospace,
-    SFMono-Regular,
-    Consolas,
-    monospace;
+  font: 0.9em var(--mono);
   background: var(--raised);
   padding: 3px 5px;
   border-radius: 5px;
@@ -569,7 +587,7 @@ main {
 }
 .codeblock {
   border: 1px solid var(--line);
-  background: #0a0e14;
+  background: var(--code-bg);
   border-radius: 12px;
   margin: 18px 0;
   overflow: hidden;
@@ -595,18 +613,73 @@ main {
 }
 .codeblock pre {
   margin: 0;
-  padding: 16px;
+  padding: 12px 14px;
   overflow: auto;
   max-height: 420px;
-  font:
-    12px/1.7 ui-monospace,
-    monospace;
+  font: var(--code-size) / 1.5 var(--mono);
+  tab-size: 4;
   white-space: pre;
 }
 .codeblock pre code {
+  font: inherit;
   background: none;
   padding: 0;
-  color: #d5dfeb;
+  color: var(--code-fg);
+}
+.code-actions {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+.code-wrap .wrap-toggle {
+  color: var(--accent);
+}
+/* Soft wrap, the Wrap button's choice; otherwise long lines scroll inside their block */
+.code-wrap .codeblock pre,
+.code-wrap .source-lines .sl {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.code-wrap .source-lines {
+  min-width: 0;
+}
+/* wrapped, a line's continuation hangs under its first character, clear of the numbers */
+.code-wrap .source-lines .sl {
+  padding-left: var(--gutter);
+  text-indent: calc(-1 * var(--gutter));
+}
+/* Syntax colours (web/highlight.mjs) */
+.hl-k {
+  color: var(--hl-k);
+  font-weight: 600;
+}
+.hl-t {
+  color: var(--hl-t);
+}
+.hl-s {
+  color: var(--hl-s);
+}
+.hl-n {
+  color: var(--hl-n);
+}
+.hl-c {
+  color: var(--hl-c);
+  font-style: italic;
+}
+.hl-b {
+  color: var(--hl-b);
+}
+.hl-add {
+  background: var(--diff-add-bg);
+}
+.hl-remove {
+  background: var(--diff-del-bg);
+}
+.hl-hunk {
+  color: var(--diff-hunk-fg);
+}
+.hl-file {
+  font-weight: 600;
 }
 .table-wrap {
   overflow: auto;
@@ -717,12 +790,12 @@ table.sized th {
   overflow: auto;
 }
 .diff-view {
-  font:
-    11px/1.7 ui-monospace,
-    monospace;
+  font: var(--code-size) / 1.5 var(--mono);
+  tab-size: 4;
   overflow: auto;
   max-height: 440px;
-  background: #0b1017;
+  background: var(--code-bg);
+  color: var(--code-fg);
 }
 .diff-line {
   white-space: pre;
@@ -730,21 +803,22 @@ table.sized th {
   padding: 0 12px;
 }
 .diff-line.add {
-  background: #16372a;
-  color: #b9ebce;
+  background: var(--diff-add-bg);
+  color: var(--diff-add-fg);
 }
 .diff-line.remove {
-  background: #3c2026;
-  color: #ffd0ce;
+  background: var(--diff-del-bg);
+  color: var(--diff-del-fg);
 }
 .diff-line.file {
-  color: #ccd7e6;
+  color: var(--text);
   background: var(--raised);
-  padding: 7px 12px;
+  padding: 2px 12px;
+  font-weight: 600;
 }
 .diff-line.hunk {
-  color: #91c8ff;
-  background: #172439;
+  color: var(--diff-hunk-fg);
+  background: var(--diff-hunk-bg);
 }
 .composer-wrap {
   position: relative;
@@ -1009,12 +1083,23 @@ body.light {
   --accent-bg: #e1f3e9;
   --red: #b33232;
   --warn: #a8660a;
+  --code-bg: #fbfcfd;
+  --code-fg: #18232f;
+  --hl-k: #b5291c;
+  --hl-t: #8a5200;
+  --hl-s: #2f7d3b;
+  --hl-n: #1b6b8a;
+  --hl-c: #7a6455;
+  --hl-b: #8e3b8e;
+  --diff-add-bg: #dcefd9;
+  --diff-add-fg: #1d4a26;
+  --diff-del-bg: #f8d8d0;
+  --diff-del-fg: #6e1f14;
+  --diff-hunk-bg: #e3eef5;
+  --diff-hunk-fg: #1b6b8a;
 }
 .light .prose strong {
   color: #101e2a;
-}
-.light .codeblock {
-  background: #17202b;
 }
 .light .codehead {
   background: #eaf0f3;
@@ -1282,23 +1367,63 @@ body.light {
 }
 .source-scroll {
   overflow: auto;
-  height: calc(100% - 100px);
+  height: calc(100% - 92px);
+  background: var(--code-bg);
 }
+/* A file's lines; each number is generated from data-n, so it is never selected or copied,
+   and sticks to the left while the line scrolls sideways */
 .source-lines {
-  margin: 0;
-  padding: 16px 16px 16px 58px;
+  --gutter: calc(var(--digits) * 1ch + 22px);
+  padding: 8px 0;
   min-width: max-content;
-  font:
-    12px/1.8 ui-monospace,
-    monospace;
-  counter-reset: line;
+  font: var(--code-size) / 1.5 var(--mono);
+  tab-size: 4;
+  color: var(--code-fg);
 }
-.source-lines li {
-  padding-left: 12px;
+.source-lines .sl {
   white-space: pre;
+  padding-right: 16px;
 }
-.source-lines li::marker {
+.source-lines .sl::before {
+  content: attr(data-n);
+  display: inline-block;
+  position: sticky;
+  left: 0;
+  width: calc(var(--gutter) - 10px);
+  padding-right: 8px;
+  margin-right: 10px;
+  text-indent: 0;
+  text-align: right;
   color: var(--muted);
+  background: var(--code-bg);
+  border-right: 1px solid var(--line);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.filehead {
+  gap: 10px;
+  padding: 4px 10px;
+}
+.file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-weight: 600;
+}
+.file-meta {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  :root {
+    --code-size: 12px;
+  }
+  .codeblock pre {
+    padding: 10px 12px;
+  }
 }
 .panel-diff {
   max-height: none;

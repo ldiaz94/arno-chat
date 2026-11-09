@@ -1,6 +1,8 @@
+import { highlight, detect, diffLines } from './highlight.mjs';
 /** Render a deliberately small Markdown dialect. Raw HTML is always text.
  * Links and images are restricted to HTTP(S); repository/model content never enters an
- * HTML attribute without escaping. Code fences are parsed before inline markup.
+ * HTML attribute without escaping. Code fences are parsed before inline markup; their code
+ * goes through highlight(), which escapes it too.
  */
 export function markdown(source, sources = []) {
   const escape = s =>
@@ -130,11 +132,12 @@ export function markdown(source, sources = []) {
       i++;
       while (i < lines.length && !/^\s*\x60{3}/.test(lines[i])) block.push(lines[i++]);
       i++;
+      const code = block.join('\n');
       out +=
         '<div class="codeblock"><div class="codehead"><span>' +
         escape(lang || 'code') +
-        '</span><button type="button" class="copy-code">Copy</button></div><pre><code>' +
-        escape(block.join('\n')) +
+        '</span><span class="code-actions"><button type="button" class="wrap-toggle" title="Wrap long lines">Wrap</button><button type="button" class="copy-code">Copy</button></span></div><pre><code>' +
+        highlight(detect({ fence: lang, code }), code) +
         '</code></pre></div>';
       continue;
     }
@@ -242,30 +245,10 @@ export function cleanOutput(text) {
       .trim()
   );
 }
+/** A unified diff as escaped HTML rows, each side of a hunk coloured by its file's language. */
 export function diffHtml(diff) {
-  const escape = s =>
-    String(s).replace(
-      /[&<>"']/g,
-      c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
-    );
-  return String(diff || '')
-    .split('\n')
-    .map(
-      line =>
-        '<div class="diff-line ' +
-        (line.startsWith('+++') || line.startsWith('---') || line.startsWith('diff ')
-          ? 'file'
-          : line.startsWith('+')
-            ? 'add'
-            : line.startsWith('-')
-              ? 'remove'
-              : line.startsWith('@@')
-                ? 'hunk'
-                : '') +
-        '">' +
-        escape(line || ' ') +
-        '</div>',
-    )
+  return diffLines(diff)
+    .map(l => '<div class="diff-line ' + l.kind + '">' + (l.html || ' ') + '</div>')
     .join('');
 }
 /** Let users drag a table header's .col-resize handle to size its columns;

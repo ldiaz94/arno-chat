@@ -14,7 +14,7 @@
  * Deploying: bump VERSION whenever a file in SHELL changes, so installed apps
  * fetch the new shell at once (test.mjs checks SHELL lists every web/ file).
  */
-const VERSION = 'v18';
+const VERSION = 'v19';
 const SHELL_CACHE = 'arno-shell-' + VERSION;
 const DATA_CACHE = 'arno-data'; // cleared by offline.js on sign-out
 const SHELL = [
@@ -26,6 +26,7 @@ const SHELL = [
   '/code.js',
   '/core.js',
   '/home.js',
+  '/highlight.mjs',
   '/home-content.js',
   '/info.js',
   '/layout.js',

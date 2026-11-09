@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { catalog } from './models.mjs';
-import { markdown, cleanOutput } from './web/render.mjs';
+import { markdown, cleanOutput, diffHtml } from './web/render.mjs';
+import { highlight, detect } from './web/highlight.mjs';
 import { Outbox, conflicted, isLocal } from './web/queue.mjs';
 import { moon, byRecent, ago, daily, weatherText } from './web/today.mjs';
 import { QUOTES, FACTS } from './web/home-content.js';
@@ -315,6 +316,144 @@ test('Markdown tables honour alignment, escaped pipes and code-span pipes', () =
   assert.equal((html.match(/<td/g) || []).length, 6);
   assert.equal((html.match(/col-resize/g) || []).length, 3);
   assert.doesNotMatch(markdown('a | b\nnot a delimiter'), /<table/);
+});
+// The text of highlighted HTML: tags dropped, entities read back.
+const unhighlight = h =>
+  h
+    .replace(/<[^>]*>/g, '')
+    .replace(
+      /&(lt|gt|amp|quot|#39);/g,
+      (_, e) => ({ lt: '<', gt: '>', amp: '&', quot: '"', '#39': "'" })[e],
+    );
+// Whether every line of html opens as many spans as it closes.
+const linesBalanced = html =>
+  html
+    .split('\n')
+    .every(l => (l.match(/<span/g) || []).length === (l.match(/<\/span>/g) || []).length);
+// The classes highlight gives the tokens of html, as { token: class }.
+const classes = html =>
+  Object.fromEntries(
+    [...html.matchAll(/<span class="hl-(\w+)">([^<]*)<\/span>/g)].map(m => [
+      unhighlight(m[2]),
+      m[1],
+    ]),
+  );
+test("highlight colours each language by ladle's classes", () => {
+  const cases = {
+    raz: [
+      'proc f(x: INT): BOOL; begin return LEN(s) # nil end f. (* c *)',
+      { proc: 'k', INT: 't', LEN: 'b', nil: 'n', '(* c *)': 'c' },
+    ],
+    concha: [
+      "x := 1 // note\nif x > 0 then echo the end; end\nwriteln('hi')",
+      { if: 'k', then: 'k', echo: 'b', writeln: 'b', "'hi'": 's', 1: 'n', '// note': 'c' },
+    ],
+    js: [
+      'const a = `t ${b}`; class Foo {} console.log(null, /re/g) // c',
+      { const: 'k', class: 'k', Foo: 't', console: 'b', null: 'n', '/re/g': 's', '// c': 'c' },
+    ],
+    ts: ['interface A { x: string }', { interface: 'k', A: 't', string: 't' }],
+    python: [
+      '@cache\ndef f(self):\n    return None  # c',
+      { '@cache': 'b', def: 'k', f: 't', None: 'n', '# c': 'c' },
+    ],
+    shell: [
+      'for f in *.c; do echo "$f"; done # c',
+      { for: 'k', in: 'k', do: 'k', echo: 'b', $f: 'b', '# c': 'c' },
+    ],
+    json: ['{"a": true, "b": "x"}', { '"a"': 't', true: 'n', '"x"': 's' }],
+    css: [
+      '@media x { a { color: #fff; width: calc(1px) } }',
+      { '@media': 'k', color: 't', '#fff': 'n', calc: 'b' },
+    ],
+    html: ['<a href="x">y</a><!-- c -->', { a: 'k', href: 't', '"x"': 's', '<!-- c -->': 'c' }],
+    go: ['func f() string { return nil }', { func: 'k', string: 't', nil: 'n' }],
+    rust: [
+      'fn main() { let s: &str = "x"; println!("{}", s); }',
+      { fn: 'k', str: 't', println: 'b', '"x"': 's' },
+    ],
+    c: [
+      '#include <stdio.h>\nint main(void) { return NULL; }',
+      { '#include': 'k', '<stdio.h>': 's', int: 't', NULL: 'n' },
+    ],
+    java: ['public class A { String s = null; }', { public: 'k', A: 't', String: 't', null: 'n' }],
+    kotlin: ['fun f(): Int = 1', { fun: 'k', Int: 't', 1: 'n' }],
+    sql: [
+      "SELECT COUNT(*) FROM t WHERE a = 'x' -- c",
+      { SELECT: 'k', COUNT: 'b', "'x'": 's', '-- c': 'c' },
+    ],
+    yaml: ['key: true # c', { key: 't', true: 'n', '# c': 'c' }],
+    toml: ['[server]\nport = 80', { '[server]': 'k', port: 't', 80: 'n' }],
+    markdown: ['# Title\n\n`code` and *em*', { '# Title': 'k', '`code`': 's', '*em*': 't' }],
+  };
+  for (const [lang, [code, want]] of Object.entries(cases)) {
+    const got = classes(highlight(lang, code));
+    for (const [token, cls] of Object.entries(want))
+      assert.equal(got[token], cls, lang + ': ' + token);
+  }
+  assert.equal(detect({ path: 'src/a.cn' }), 'concha');
+  assert.equal(detect({ path: 'x/concharc' }), 'concha');
+  assert.equal(detect({ code: '#!/usr/bin/env python3\nprint(1)' }), 'python');
+  assert.equal(detect({ code: '#!/bin/bash\n' }), 'shell');
+  assert.equal(detect({ fence: 'sh title=x' }), 'shell');
+  assert.equal(detect({ fence: 'TSX' }), 'ts');
+  assert.equal(detect({ path: 'README' }), '');
+});
+test('highlight escapes everything and never lets a span cross a line break', () => {
+  const nasty = '<b>&"\'</b>';
+  for (const lang of ['js', 'python', 'raz', 'html', 'shell', 'nope']) {
+    const code = 'x = "' + nasty + '" // ' + nasty + '\n# ' + nasty + '\n' + nasty;
+    const html = highlight(lang, code);
+    assert.doesNotMatch(html.replace(/<\/?span[^>]*>/g, ''), /[<>"']/, lang);
+    assert.equal(unhighlight(html), code, lang);
+  }
+  const multi = {
+    raz: '(* one\ntwo\nthree *) x := `raw\nstring`',
+    js: '/* one\ntwo */ const s = `a\n${b}\nc`;',
+    python: '"""doc\nstring""" x',
+    shell: 'cat <<EOF\nbody\nEOF\necho "a\nb"',
+    html: '<!-- a\nb -->',
+  };
+  for (const [lang, code] of Object.entries(multi)) {
+    const html = highlight(lang, code);
+    assert.equal(html.split('\n').length, code.split('\n').length, lang);
+    assert.ok(linesBalanced(html), lang);
+    assert.match(html.split('\n')[1], /^<span class="hl-[cs]">/, lang + ' goes on on line 2');
+  }
+  assert.equal(highlight('klingon', 'a < b'), 'a &lt; b');
+  assert.equal(highlight(undefined, null), '');
+});
+test('highlight round-trips random text in every language without throwing', () => {
+  const alphabet = 'ab01 \n\t"\'`$(){}[]<>/*#!-+=:;,.\\@&|%~^_?xX\r',
+    langs =
+      'raz concha js ts python shell json css html xml go rust c java kotlin sql yaml toml markdown diff';
+  let seed = 7;
+  const random = n => ((seed = (seed * 1103515245 + 12345) % 2147483648), seed % n);
+  for (let k = 0; k < 600; k++) {
+    let s = '';
+    for (let n = random(50); n > 0; n--) s += alphabet[random(alphabet.length)];
+    for (const lang of langs.split(' ')) {
+      const html = highlight(lang, s);
+      assert.equal(unhighlight(html), s, lang + ' ' + JSON.stringify(s));
+      assert.ok(linesBalanced(html), lang + ' ' + JSON.stringify(s));
+    }
+  }
+  const big = 'let x = 1;\n'.repeat(6000);
+  assert.equal(highlight('js', big), big, 'past 5,000 lines, plain');
+});
+test('code fences and diffs are highlighted by their language', () => {
+  const html = markdown('```raz\nproc f(); (* <x> *)\n```\n\n```\n#!/bin/sh\necho hi\n```');
+  assert.match(html, /<span class="hl-k">proc<\/span>/);
+  assert.match(html, /<span class="hl-c">\(\* &lt;x&gt; \*\)<\/span>/);
+  assert.match(html, /<span class="hl-b">echo<\/span>/);
+  assert.match(html, /class="wrap-toggle"/);
+  const diff = diffHtml(
+    'diff --git a/a.py b/a.py\n--- a/a.py\n+++ b/a.py\n@@ -1,3 +1,3 @@\n x = """doc\n-old"""\n+new"""\n y = None',
+  );
+  assert.match(diff, /<div class="diff-line remove">-<span class="hl-s">old&quot;&quot;&quot;/);
+  assert.match(diff, /<div class="diff-line add">\+<span class="hl-s">new&quot;&quot;&quot;/);
+  assert.match(diff, /<div class="diff-line "> y = <span class="hl-n">None<\/span>/);
+  assert.match(diff, /<div class="diff-line file">\+\+\+ b\/a.py/);
 });
 test('follow-up prompts retain conversation and original GitHub identity', () => {
   const p = buildPrompt(

@@ -1,7 +1,8 @@
 /** The code dialog: file browser, diff tab and the review-and-publish flow.
- * Depends on core and render.mjs.
+ * Depends on core, render.mjs and highlight.mjs.
  */
 import { diffHtml } from './render.mjs';
+import { highlight, detect } from './highlight.mjs';
 import { $, state, esc, icon, num, api, toast, copy } from './core.js';
 export function openCode(tab = 'files') {
   if (!state.session || state.session.kind === 'chat')
@@ -68,22 +69,44 @@ export async function browse(path) {
           (d.truncated ? '<p class="caption">Showing the first 300 entries.</p>' : ''),
       );
     } else {
-      const lines = d.content.split('\n');
-      $('#code-body').insertAdjacentHTML(
-        'beforeend',
-        '<div class="codehead"><span>' +
-          num(d.bytes) +
-          ' bytes · ' +
-          lines.length +
-          ' lines · read only</span><button id="copy-file">Copy file</button></div><div class="source-scroll"><ol class="source-lines">' +
-          lines.map(line => '<li><code>' + esc(line || ' ') + '</code></li>').join('') +
-          '</ol></div>',
-      );
+      $('#code-body').insertAdjacentHTML('beforeend', fileView(d, path));
       $('#copy-file').onclick = () => copy(d.content);
     }
   } catch (e) {
     $('#code-body').innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
   }
+}
+// A byte count, short.
+const size = n =>
+  n < 1024
+    ? n + ' B'
+    : n < 1048576
+      ? (n / 1024).toFixed(1) + ' KB'
+      : (n / 1048576).toFixed(1) + ' MB';
+// A file: a compact header (name, size, lines, language, Wrap, Copy) over its numbered lines,
+// coloured by highlight(), which leaves large files plain. A number is CSS (data-n), so
+// selecting and copying lines never picks it up.
+function fileView(d, path) {
+  const name = path.split('/').at(-1),
+    lang = detect({ path, code: d.content }),
+    lines = highlight(lang, d.content).split('\n');
+  return (
+    '<div class="codehead filehead"><span class="file-name" title="' +
+    esc(path) +
+    '">' +
+    esc(name) +
+    '</span><span class="file-meta">' +
+    size(d.bytes ?? d.content.length) +
+    ' · ' +
+    num(lines.length) +
+    ' lines' +
+    (lang ? ' · ' + lang : '') +
+    '</span><span class="code-actions"><button type="button" class="wrap-toggle" title="Wrap long lines">Wrap</button><button type="button" id="copy-file">Copy</button></span></div><div class="source-scroll"><div class="source-lines" style="--digits:' +
+    String(lines.length).length +
+    '">' +
+    lines.map((h, k) => '<div class="sl" data-n="' + (k + 1) + '">' + h + '</div>').join('') +
+    '</div></div>'
+  );
 }
 // The digest binds the action to reviewed file contents. The server re-exports
 // and rechecks it; a model edit between review and click cannot be published.

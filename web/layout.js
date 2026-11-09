@@ -135,5 +135,11 @@ export function theme() {
   localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
   themeColor();
 }
+/** Soft wrap for code (chat code blocks, the file view), remembered on this device. */
+export function toggleWrap() {
+  document.body.classList.toggle('code-wrap');
+  localStorage.setItem('codeWrap', document.body.classList.contains('code-wrap') ? '1' : '');
+}
 if (localStorage.getItem('theme') === 'light') document.body.classList.add('light');
+if (localStorage.getItem('codeWrap')) document.body.classList.add('code-wrap');
 themeColor();

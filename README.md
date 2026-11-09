@@ -19,7 +19,7 @@ Answers stream as they arrive in both chat modes. Expand **Thinking** to view pr
 
 It installs as an app and works offline: every conversation reads from the device, and messages (with attachments), new chats, renames and saved preferences wait in an outbox, sent in order once the network is back (on iPhone and iPad the app must be open for that).
 
-Conversation-row menus support rename/delete without opening a conversation. The interface includes dark/light themes, safe Markdown, copy/export, persistent drafts, editable chat messages, usage/timings with per-turn and per-session cost at current list prices, resizable tables, source previews, and distinct chat/coding loading states. The code pane docks on ultrawide screens and becomes a dialog on smaller displays.
+Conversation-row menus support rename/delete without opening a conversation. The interface includes dark/light themes, safe Markdown, syntax highlighting after [ladle](https://github.com/ldiaz94/ladle)'s design (raz, concha, JS/TS, Python, shell and a dozen more, in chat code blocks, artifacts, the file browser and diffs) with phone-sized code and a remembered Wrap toggle, copy/export, persistent drafts, editable chat messages, usage/timings with per-turn and per-session cost at current list prices, resizable tables, source previews, and distinct chat/coding loading states. The code pane docks on ultrawide screens and becomes a dialog on smaller displays.
 
 ## Providers and research
 

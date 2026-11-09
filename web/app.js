@@ -19,7 +19,7 @@ import {
   loadAvatar,
   sendKey,
 } from './core.js';
-import { drawer, title, sidebar, theme } from './layout.js';
+import { drawer, title, sidebar, theme, toggleWrap } from './layout.js';
 import { loadModels, openModels, renderModels, chooseModel } from './models.js';
 import { openSources, scrollDown } from './thread.js';
 import { startDiagnostics } from './diag.js';
@@ -150,6 +150,7 @@ document.addEventListener('click', e => {
   if (close) close.closest('dialog').close();
   const code = e.target.closest('.copy-code');
   if (code) copy(code.closest('.codeblock').querySelector('code').textContent);
+  if (e.target.closest('.wrap-toggle')) toggleWrap();
 });
 async function boot() {
   try {

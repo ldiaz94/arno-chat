@@ -40,7 +40,7 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 | web/info.js | Conversation details panel (title or usage button): context, usage, sources, links, images, repository |
 | web/usage.js | Usage view: per-request report, spend summaries, by-model totals and the Ollama account card |
 | web/artifacts.js | Artifact dialog (versions, Copy, .md and first-table .csv download, Print), turn cards, click handler |
-| web/code.js | Code dialog: file browser, diff, review and publish |
+| web/code.js | Code dialog: file browser (numbered, highlighted lines; Wrap; Copy), diff, review and publish |
 | web/attach.js | Composer attachments: upload on pick/paste/drop, chips, attachment rendering for messages and details |
 | web/turns.js | Sending, editing, job polling and live output |
 | web/options.js | Composer options: the sliders button, its popover, chips, per-conversation storage |
@@ -56,6 +56,7 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 | web/manifest.webmanifest | Installable web app manifest (standalone, maskable icon; needed for push on iPhone and iPad) |
 | web/style.css | Responsive dark/light design tokens, layout, typography, reduced-motion rules |
 | web/render.mjs | Escaping Markdown renderer, table sizing, CLI-banner cleanup, safe diff rendering (shared by browser and tests) |
+| web/highlight.mjs | Syntax highlighting: `highlight(lang, code)`, `detect({ path, fence, code })` and `diffLines(diff)`, a table-driven scanner per language (shared by browser and tests) |
 | web/_headers | Security headers for the static files, including the page's CSP |
 | wrangler.jsonc | Worker config, durable namespace, pinned container image, observability; `npx wrangler deploy` |
 | test.mjs | Backend and rendering regression tests; test-hooks.mjs stubs cloudflare:workers for Node |
@@ -63,6 +64,8 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 | offline-test.cjs | Playwright offline test: a local server for web/ and mocked /api/, warm, cut the network, reload and read |
 
 Everything in web/ is served by Cloudflare as static files, before the worker runs; the worker handles /api/ and /auth/ only.
+
+Syntax highlighting follows the design of our own [ladle](https://github.com/ldiaz94/ladle) (its Colour module), ported from raz to JavaScript: six classes (k keyword, t type, s string, n number or constant, c comment, b built-in) in ladle's default theme's WCAG-checked colours, light and dark; spans that never cross a line break, so the file view and diffs can split highlighted code by line; and a highlighter that never fails, giving escaped plain text for an unknown language, odd input or a file past 200 KB or 5,000 lines. As in ladle, the lines of a diff hunk are coloured by the language of their file, each hunk's old and new sides as small files of their own. Languages: raz, concha, JavaScript/TypeScript (JSX/TSX loosely), Python, shell, JSON, CSS, HTML/XML, Go, Rust, C/C++, Java, Kotlin, SQL, YAML, TOML/INI, Markdown and diff, told by a file's extension, its `#!` line or a code fence's word.
 
 Security boundaries are in [SECURITY.md](SECURITY.md); testing and deployment in [OPERATIONS.md](OPERATIONS.md).
 
