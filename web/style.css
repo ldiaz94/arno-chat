@@ -127,12 +127,11 @@ svg {
 [hidden] {
   display: none !important;
 }
+/* Pinned to all four edges rather than sized in viewport units: iOS has
+   reported wrong vh/dvh/lvh in installed web apps (WebKit 316008). */
 #shell {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100dvh;
+  inset: 0;
   display: grid;
   grid-template-columns: 252px minmax(0, 1fr);
   overflow: hidden;
@@ -2375,4 +2374,25 @@ details.setting-card.collapsible[open] > summary {
   font-size: 18px;
   box-shadow: var(--shadow);
   z-index: 5;
+}
+
+/* Layout diagnostics overlay (You tab → Layout diagnostics). */
+.diagnostics {
+  position: fixed;
+  right: 8px;
+  top: 35%;
+  z-index: 9999;
+  max-width: 62vw;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #000c;
+  color: #9ff5c8;
+  font:
+    11px/1.45 ui-monospace,
+    monospace;
+  pointer-events: none;
+}
+.diagnostics b {
+  color: #fff;
+  font-weight: 600;
 }

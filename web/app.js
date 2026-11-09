@@ -21,6 +21,7 @@ import {
 import { drawer, title, sidebar, theme } from './layout.js';
 import { loadModels, openModels, renderModels, chooseModel } from './models.js';
 import { openSources, scrollDown } from './thread.js';
+import { startDiagnostics } from './diag.js';
 import { openInfo } from './info.js';
 import { openUsage } from './usage.js';
 import { artifactClick } from './artifacts.js';
@@ -211,4 +212,5 @@ document.addEventListener('click', e => {
   pressedOutside = null;
 });
 register();
+startDiagnostics();
 boot();

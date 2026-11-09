@@ -4,6 +4,7 @@
 import { $, state, esc, api, avatar, toast } from './core.js';
 import { sidebar } from './layout.js';
 import { clearData } from './offline.js';
+import { diagnostics, diagnosticsOn } from './diag.js';
 const PICTURE_SIDE = 256; // pictures are shrunk to this many pixels square before upload
 const PICTURE_MAX = 256 * 1024; // the server's size limit, in bytes
 const initials = () => (state.user?.login || 'A').slice(0, 2).toUpperCase();
@@ -16,6 +17,7 @@ export function profilePanel(account) {
     esc(account.about) +
     '</textarea></label><p class="caption">Up to 2,000 characters, sent to every model with each request. Saved with Save preferences.</p>' +
     PRIVACY +
+    '<section class="setting-card"><div class="setting-row"><strong>Layout diagnostics</strong><button type="button" id="diag-toggle" class="ghost"></button></div><p class="caption">Shows the screen measurements on top of the app, to debug layout on a phone. Take a screenshot and switch it off again.</p></section>' +
     DANGER +
     '</section>'
   );
@@ -110,6 +112,13 @@ async function deleteAccount() {
 }
 /** Connects the panel's controls; call once after its markup is in the page. */
 export function wireProfile() {
+  const toggle = $('#diag-toggle'),
+    label = () => (toggle.textContent = diagnosticsOn() ? 'Turn off' : 'Turn on');
+  label();
+  toggle.onclick = () => {
+    diagnostics(!diagnosticsOn());
+    label();
+  };
   showPicture();
   $('#picture-upload').onclick = () => $('#picture-file').click();
   $('#picture-file').onchange = e => {
