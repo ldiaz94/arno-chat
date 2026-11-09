@@ -2,7 +2,7 @@
  * it executes inside the untrusted container, and the host validates the result.
  * Publishing creates a new branch from the pinned GitHub source commit.
  */
-export const EXPORT_FILES=String.raw`
+export const EXPORT_FILES = String.raw`
 const fs=require('fs'),cp=require('child_process'),path=require('path'),root='/workspace/repo';
 const base=cp.execFileSync('git',['rev-list','--max-parents=0','HEAD'],{cwd:root,encoding:'utf8'}).trim().split('\n')[0];
 const tracked=cp.execFileSync('git',['diff','--name-only','-z',base],{cwd:root}).toString().split('\0');
@@ -22,20 +22,33 @@ let size=0;const files=names.map(name=>{
  * repository code can change the runtime and all files inside its container.
  */
 export function validateFiles(files) {
- if(!Array.isArray(files)||files.length>50||!files.length)throw Error('No changes to publish');
- let size=0;const seen=new Set();
- for(const f of files){
-  if(typeof f.path!=='string'||!f.path||f.path.startsWith('/')||f.path.split('/').some(p=>!p||p==='..'||p==='.'||p==='.git')||seen.has(f.path))throw Error('Invalid changed file path');
-  seen.add(f.path);
-  if(!f.deleted){if(typeof f.content!=='string'||!['100644','100755'].includes(f.mode))throw Error('Unsupported file');size+=new TextEncoder().encode(f.content).length}
- }
- if(size>1000000)throw Error('Changes exceed 1 MB');
- return files;
+  if (!Array.isArray(files) || files.length > 50 || !files.length)
+    throw Error('No changes to publish');
+  let size = 0;
+  const seen = new Set();
+  for (const f of files) {
+    if (
+      typeof f.path !== 'string' ||
+      !f.path ||
+      f.path.startsWith('/') ||
+      f.path.split('/').some(p => !p || p === '..' || p === '.' || p === '.git') ||
+      seen.has(f.path)
+    )
+      throw Error('Invalid changed file path');
+    seen.add(f.path);
+    if (!f.deleted) {
+      if (typeof f.content !== 'string' || !['100644', '100755'].includes(f.mode))
+        throw Error('Unsupported file');
+      size += new TextEncoder().encode(f.content).length;
+    }
+  }
+  if (size > 1000000) throw Error('Changes exceed 1 MB');
+  return files;
 }
 /** Include newly created files as well as tracked edits in the review UI.
  * git diff alone omits untracked files. Arguments are passed without a shell.
  */
-export const WORKTREE_DIFF=String.raw`
+export const WORKTREE_DIFF = String.raw`
 const cp=require('child_process');let out='';
 const run=args=>{try{return cp.execFileSync('git',args,{encoding:'utf8',maxBuffer:2000000})}catch(e){if(e.status===1)return e.stdout||'';throw e}};
 const base=run(['rev-list','--max-parents=0','HEAD']).trim().split('\n')[0];

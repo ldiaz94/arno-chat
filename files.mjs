@@ -1,10 +1,16 @@
 /** Read-only code navigation. Both host and container validate paths; file
  * contents are returned as JSON and escaped by the browser, never executed.
  */
-export function validPath(path){
- return typeof path==='string'&&path.length<=1000&&!path.startsWith('/')&&!path.includes('\0')&&!path.split('/').some(p=>p==='..'||p==='.git');
+export function validPath(path) {
+  return (
+    typeof path === 'string' &&
+    path.length <= 1000 &&
+    !path.startsWith('/') &&
+    !path.includes('\0') &&
+    !path.split('/').some(p => p === '..' || p === '.git')
+  );
 }
-export const READ_FILE=String.raw`
+export const READ_FILE = String.raw`
 const fs=require('fs'),path=require('path'),root='/workspace/repo',name=process.argv[1]||'';
 const full=path.resolve(root,name);
 if(full!==root&&!full.startsWith(root+'/'))throw Error('Path outside repository');
