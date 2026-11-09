@@ -7,6 +7,9 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "preview_urls": false,
+  // Off: the page script embeds functions via toString(), and esbuild's
+  // __name() wrappers would reach the browser undefined.
+  "keep_names": false,
   "vars": { "ALLOWED_GITHUB_LOGINS": "ldiaz94" },
   "durable_objects": { "bindings": [{ "name": "PROBE", "class_name": "ArnoProbe" }] },
   "exports": { "ArnoProbe": { "type": "durable-object", "storage": "sqlite" } },
