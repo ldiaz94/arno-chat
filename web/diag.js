@@ -1,9 +1,47 @@
 /** Layout diagnostics: a small overlay listing the viewport measurements, for
  * debugging the app installed on a phone, where there are no developer tools.
- * Switched on from the You tab and remembered on this device. Depends on
- * nothing.
+ * Part of Developer mode (You tab), with a copyable debug report; both are
+ * remembered on this device. Depends on nothing.
  */
-const KEY = 'arno:diagnostics';
+const KEY = 'arno:diagnostics',
+  DEVELOPER = 'arno:developer';
+const stored = key => {
+  try {
+    return !!localStorage.getItem(key);
+  } catch {
+    return false;
+  }
+};
+const store = (key, on) => {
+  try {
+    if (on) localStorage.setItem(key, '1');
+    else localStorage.removeItem(key);
+  } catch {
+    // private mode: lasts for this visit only
+  }
+};
+
+/** Developer mode shows the debugging tools in the You tab; off, they hide
+ * and the overlay goes. Remembered on this device. */
+export const developerOn = () => stored(DEVELOPER);
+export function setDeveloper(on) {
+  store(DEVELOPER, on);
+  if (!on) diagnostics(false);
+}
+
+/** Text for a bug report: the layout measurements plus the app's state. */
+export async function debugReport() {
+  const caches_ = await (window.caches?.keys() || Promise.resolve([]));
+  return [
+    ...measure().map(([k, v]) => k + ': ' + v),
+    'online: ' + navigator.onLine,
+    'service worker: ' + (navigator.serviceWorker?.controller ? 'active' : 'none'),
+    'caches: ' + caches_.join(', '),
+    'theme: ' + (document.body.classList.contains('light') ? 'light' : 'dark'),
+    'agent: ' + navigator.userAgent,
+    'at: ' + new Date().toISOString(),
+  ].join('\n');
+}
 let box = null,
   timer = null;
 
@@ -63,12 +101,7 @@ function render() {
 
 /** Turns the overlay on or off, and remembers the choice on this device. */
 export function diagnostics(on) {
-  try {
-    if (on) localStorage.setItem(KEY, '1');
-    else localStorage.removeItem(KEY);
-  } catch {
-    // private mode: the overlay still shows for this visit
-  }
+  store(KEY, on);
   if (!on) {
     box?.remove();
     box = null;
@@ -87,9 +120,5 @@ export const diagnosticsOn = () => !!box;
 
 /** Shows the overlay at start when it was left on. */
 export function startDiagnostics() {
-  try {
-    if (localStorage.getItem(KEY)) diagnostics(true);
-  } catch {
-    // no storage: stays off
-  }
+  if (developerOn() && stored(KEY)) diagnostics(true);
 }

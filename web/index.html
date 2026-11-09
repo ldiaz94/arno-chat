@@ -6,7 +6,10 @@
     <meta name="theme-color" content="#0d1117" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- Opaque, not black-translucent: with the translucent bar iOS drew the
+         page from the top of the screen but sized it as if the bar took space,
+         leaving a band at the bottom (WebKit 301994). Read at install time. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
     <meta name="apple-mobile-web-app-title" content="Arno" />
     <link rel="icon" href="/brand/logo.svg" />
     <link rel="manifest" href="/manifest.webmanifest" />

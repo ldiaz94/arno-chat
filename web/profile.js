@@ -1,10 +1,10 @@
 /** The account dialog's "You" tab: what the assistant should know about the user, the
  * profile picture, the privacy notice and account deletion. Depends on core, layout and offline.
  */
-import { $, state, esc, api, avatar, toast } from './core.js';
+import { $, state, esc, api, avatar, toast, copy } from './core.js';
 import { sidebar } from './layout.js';
 import { clearData } from './offline.js';
-import { diagnostics, diagnosticsOn } from './diag.js';
+import { diagnostics, diagnosticsOn, developerOn, setDeveloper, debugReport } from './diag.js';
 const PICTURE_SIDE = 256; // pictures are shrunk to this many pixels square before upload
 const PICTURE_MAX = 256 * 1024; // the server's size limit, in bytes
 const initials = () => (state.user?.login || 'A').slice(0, 2).toUpperCase();
@@ -17,7 +17,7 @@ export function profilePanel(account) {
     esc(account.about) +
     '</textarea></label><p class="caption">Up to 2,000 characters, sent to every model with each request. Saved with Save preferences.</p>' +
     PRIVACY +
-    '<section class="setting-card"><div class="setting-row"><strong>Layout diagnostics</strong><button type="button" id="diag-toggle" class="ghost"></button></div><p class="caption">Shows the screen measurements on top of the app, to debug layout on a phone. Take a screenshot and switch it off again.</p></section>' +
+    '<section class="setting-card"><label class="check"><input type="checkbox" id="developer"> Developer mode</label><p class="caption">Tools for debugging the app on this device.</p><div id="dev-tools" hidden><div class="setting-row"><span>Layout diagnostics: the screen measurements over the app</span><button type="button" id="diag-toggle" class="ghost"></button></div><div class="setting-row"><span>Debug report: measurements and app state, for a bug report</span><button type="button" id="debug-copy" class="ghost">Copy</button></div></div></section>' +
     DANGER +
     '</section>'
   );
@@ -113,7 +113,16 @@ async function deleteAccount() {
 /** Connects the panel's controls; call once after its markup is in the page. */
 export function wireProfile() {
   const toggle = $('#diag-toggle'),
-    label = () => (toggle.textContent = diagnosticsOn() ? 'Turn off' : 'Turn on');
+    label = () => (toggle.textContent = diagnosticsOn() ? 'Turn off' : 'Turn on'),
+    developer = $('#developer');
+  developer.checked = developerOn();
+  $('#dev-tools').hidden = !developer.checked;
+  developer.onchange = () => {
+    setDeveloper(developer.checked);
+    $('#dev-tools').hidden = !developer.checked;
+    label();
+  };
+  $('#debug-copy').onclick = async () => copy(await debugReport());
   label();
   toggle.onclick = () => {
     diagnostics(!diagnosticsOn());
