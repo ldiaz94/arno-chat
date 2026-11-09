@@ -542,6 +542,27 @@ test('account API saves a key without returning it', async () => {
   assert.equal(text.includes('sk-test-placeholder'), false);
   assert.equal(JSON.parse(text).providers.openai.saved, true);
 });
+test('account validates and returns the about-you text', async () => {
+  const f = fixture(),
+    env = {
+      ACCOUNT_ENCRYPTION_KEY: btoa(String.fromCharCode(...new Uint8Array(32).fill(9))),
+      PROBE: { getByName: () => ({ fetch: (url, opt) => f.obj.fetch(new Request(url, opt)) }) },
+    };
+  const save = about =>
+    accountRoute(
+      new Request('https://arno.test/api/account', {
+        method: 'POST',
+        body: JSON.stringify({ systemPrompt: '', about, skills: [], mcp: [], models: [] }),
+      }),
+      env,
+      1,
+    );
+  assert.equal((await save('x'.repeat(2001))).status, 400);
+  assert.equal((await save(5)).status, 400);
+  const r = await save('Ana, a nurse');
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).about, 'Ana, a nurse');
+});
 test('Anthropic gateway uses native protocol and merges usage without exposing credentials', async () => {
   let seen, usage;
   const r = await modelRequest(
@@ -591,6 +612,10 @@ test('account instructions include only enabled skills and MCP rejects private e
       ],
     }),
     'Be concise\n\nSkill: Tests\nRun checks',
+  );
+  assert.equal(
+    instructions({ about: 'Ana, a nurse', systemPrompt: 'Be concise' }),
+    'About the user:\nAna, a nurse\n\nBe concise',
   );
   for (const url of [
     'http://example.com/mcp',
@@ -1746,4 +1771,11 @@ test('deleting the account wipes the index, every session and every recorded sig
   assert.match(r.headers.get('Set-Cookie'), /Max-Age=0/);
   for (const name of ['index:7', 'code:7:s1', 'auth:old', 'auth:now'])
     assert.equal((await objects.get(name).ctx.storage.list({})).size, 0, name + ' emptied');
+});
+test('models that let the provider train on your data are never offered or run', async () => {
+  const { TRAINS_ON_DATA } = await import('./account.mjs');
+  const { modelAllowed } = await import('./models.mjs');
+  assert.ok(TRAINS_ON_DATA.test('meta/muse-spark-1.3-contributor'));
+  assert.equal(await modelAllowed('meta/muse-spark-1.3-contributor'), false);
+  assert.equal(await modelAllowed('meta/muse-spark-1.3'), true);
 });

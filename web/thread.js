@@ -2,7 +2,19 @@
  * previews and the starter suggestions. Depends on core, turns and render.mjs.
  */
 import { markdown, cleanOutput, diffHtml } from './render.mjs';
-import { $, state, esc, icon, num, duration, modelName, money, copy, main } from './core.js';
+import {
+  $,
+  state,
+  esc,
+  icon,
+  num,
+  duration,
+  modelName,
+  avatar,
+  money,
+  copy,
+  main,
+} from './core.js';
 import { editMessage, retry } from './turns.js';
 import { attachmentsHtml } from './attach.js';
 import { artifactCard } from './artifacts.js';
@@ -22,7 +34,7 @@ export function message(role, text, result = {}) {
     : '';
   node.innerHTML =
     '<div class="turn-header"><div class="avatar">' +
-    (role === 'You' ? esc((state.user?.login || 'Y').slice(0, 1).toUpperCase()) : 'a') +
+    (role === 'You' ? avatar((state.user?.login || 'Y').slice(0, 1).toUpperCase()) : 'a') +
     '</div><strong>' +
     role +
     '</strong>' +

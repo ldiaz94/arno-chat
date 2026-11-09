@@ -2,21 +2,9 @@
  * conversations, and rename. Depends on core, layout, models, thread, turns and render.mjs.
  */
 import { cleanOutput } from './render.mjs';
-import {
-  $,
-  state,
-  esc,
-  icon,
-  modelName,
-  api,
-  toast,
-  showError,
-  main,
-  composer,
-  prompt,
-} from './core.js';
+import { $, state, esc, icon, api, toast, showError, main, composer, prompt } from './core.js';
 import { drawer, busy, title, sidebar } from './layout.js';
-import { modelButton, openModels } from './models.js';
+import { modelButton, modelLabel, openModels } from './models.js';
 import { message, failure, scrollDown, suggestions } from './thread.js';
 import { watchJob, resizePrompt } from './turns.js';
 import { clearAttachments } from './attach.js';
@@ -109,8 +97,7 @@ export async function home() {
     '</b><span>Cloud models</span></div><div class="metric"><b>' +
     icon('check') +
     '</b><span>Persistent conversations</span></div></div><div class="section-title"><h2>Your repositories</h2><button id="home-model" class="ghost">' +
-    icon('code') +
-    esc(modelName(state.selectedModel || 'mistral-large-4:cloud')) +
+    modelLabel(state.selectedModel || 'mistral-large-4:cloud') +
     '</button></div><div class="searchbox">' +
     icon('search') +
     '<input id="search" type="search" placeholder="Search all accessible repositories" aria-label="Search repositories" autocomplete="off"></div><div id="repo-progress" class="search-progress" role="status"></div><div id="repos" class="repo-grid"></div><div id="more-repos"></div></div>';

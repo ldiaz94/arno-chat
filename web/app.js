@@ -5,7 +5,19 @@
  * and settings. This file wires the page's events and boots the session.
  */
 import { tableResize } from './render.mjs';
-import { $, state, esc, icon, api, toast, showError, copy, main, prompt } from './core.js';
+import {
+  $,
+  state,
+  esc,
+  icon,
+  api,
+  toast,
+  showError,
+  copy,
+  main,
+  prompt,
+  loadAvatar,
+} from './core.js';
 import { drawer, title, sidebar, theme } from './layout.js';
 import { loadModels, openModels, renderModels, chooseModel } from './models.js';
 import { openSources } from './thread.js';
@@ -144,6 +156,7 @@ async function boot() {
     }
     await Promise.all([
       loadModels(),
+      loadAvatar(),
       api('/api/sessions').then(d => (state.sessions = d.sessions)),
     ]);
     sidebar();

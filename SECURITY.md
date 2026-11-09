@@ -41,3 +41,9 @@ Remote content and tool output remain untrusted. MCP services can perform remote
 ## Reporting
 
 Report a suspected vulnerability privately to the repository owner. Include reproduction steps and relevant task/session IDs, but never credentials or private source code that is not required for the report.
+
+## Account deletion and pictures
+
+`POST /api/account/delete` needs the caller's GitHub login typed back (case-insensitive), so a stray request or a hijacked tab cannot wipe an account by accident. It deletes the conversations (transcripts, attachments, artifacts, workspace handles), the profile with its sealed keys and tokens, the about text and picture, push subscriptions, the request log and every recorded sign-in, then clears the session cookie. What it cannot reach: Cloudflare keeps coding-workspace snapshots up to 30 days and error logs up to 7 days, and data already sent to a model provider, Ollama or a SearXNG follows that party's retention. GitHub authorization is revoked by the user at github.com/settings/applications. The in-app privacy notice states this.
+
+The profile picture accepts only PNG, JPEG or WebP, at most 256 KB (the browser shrinks photos to 256 × 256 first; the server enforces type and size itself), is served only to its owner and is wiped with the account.

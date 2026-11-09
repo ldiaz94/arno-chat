@@ -16,6 +16,7 @@ export const state = {
   search: 0,
   job: null,
   modelTarget: null,
+  avatar: 0, // cache-busting stamp of the profile picture; 0 when there is none
 };
 export const esc = s =>
   String(s ?? '').replace(
@@ -48,6 +49,21 @@ export function icon(name) {
     (paths[name] || paths.code) +
     '"/></svg>'
   );
+}
+/** The user's avatar content: their picture if they have one, else the given initials. */
+export function avatar(initials) {
+  return state.avatar
+    ? '<img src="/api/account/avatar?v=' + state.avatar + '" alt="">'
+    : esc(initials);
+}
+/** Finds out whether the user has a profile picture (a 404 means initials). */
+export async function loadAvatar() {
+  try {
+    const r = await fetch('/api/account/avatar');
+    state.avatar = r.ok && r.headers.get('Content-Type')?.startsWith('image/') ? Date.now() : 0;
+  } catch {
+    state.avatar = 0;
+  }
 }
 export function num(n) {
   return typeof n === 'number' ? n.toLocaleString() : '—';

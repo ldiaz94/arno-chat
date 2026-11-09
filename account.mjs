@@ -95,6 +95,9 @@ export function requestFields(provider) {
 /** Model ids name their provider ("gemini/gemini-3.8-flash"), except Ollama's. */
 export const MODEL_ID =
   /^(openai|anthropic|gemini|deepseek|kimi|mistral|meta)\/([a-zA-Z0-9][a-zA-Z0-9._:-]{0,120})$/;
+/** Models whose provider trains on what you send them; the app never offers or
+ * runs them. Meta's "-contributor" models are the only ones marked this way. */
+export const TRAINS_ON_DATA = /^meta\/.*-contributor$/;
 export function providerModel(value) {
   const m = String(value).match(MODEL_ID);
   return m ? { provider: m[1], id: m[2] } : { provider: 'ollama', id: value };
@@ -139,6 +142,7 @@ export async function profile(env, userId) {
 }
 export function instructions(p) {
   return [
+    p.about ? 'About the user:\n' + p.about : '',
     p.systemPrompt || '',
     ...(p.skills || []).filter(s => s.enabled).map(s => 'Skill: ' + s.name + '\n' + s.content),
   ]
@@ -152,6 +156,7 @@ export async function credential(env, userId, p, provider) {
 export function publicProfile(env, p) {
   return {
     systemPrompt: p.systemPrompt || '',
+    about: p.about || '',
     skills: p.skills || [],
     models: p.models || [],
     providers: Object.fromEntries(
@@ -273,9 +278,12 @@ export async function providerModels(provider, key) {
         !(/-latest$/.test(m.id) && (m.aliases || []).some(a => ids.has(a))),
     );
   }
-  // Meta also lists image generation, speech and segmentation models.
+  // Meta also lists image generation, speech and segmentation models, and
+  // "-contributor" models that let Meta train on prompts: never offered.
   if (provider === 'meta')
-    data.data = (data.data || []).filter(m => !/(image|voice|transcribe|^sam)/.test(m.id));
+    data.data = (data.data || []).filter(
+      m => !/(image|voice|transcribe|^sam)/.test(m.id) && !TRAINS_ON_DATA.test('meta/' + m.id),
+    );
   return (data.data || [])
     .filter(
       m =>
@@ -340,6 +348,9 @@ export async function accountRoute(request, env, userId) {
     } else {
       if (typeof body.systemPrompt !== 'string' || body.systemPrompt.length > 12000)
         throw Error('System prompt must be at most 12,000 characters');
+      const about = body.about ?? p.about ?? '';
+      if (typeof about !== 'string' || about.length > 2000)
+        throw Error('About you must be at most 2,000 characters');
       if (!Array.isArray(body.skills) || body.skills.length > 10)
         throw Error('At most 10 skills are supported');
       const skills = body.skills.map(s => {
@@ -381,13 +392,15 @@ export async function accountRoute(request, env, userId) {
       }
       if (new Set(mcp.map(m => m.id)).size !== mcp.length) throw Error('MCP IDs must be unique');
       const models = (body.models || []).slice(0, 20).map(m => {
+        if (TRAINS_ON_DATA.test(m.id))
+          throw Error('Models that let the provider train on your data are not allowed');
         if (!MODEL_ID.test(m.id))
           throw Error(
             'Custom model IDs start with a provider: openai/, anthropic/, gemini/, deepseek/, kimi/, mistral/ or meta/',
           );
         return { id: m.id, name: String(m.name || m.id).slice(0, 120) };
       });
-      await save({ systemPrompt: body.systemPrompt, skills, mcp, models });
+      await save({ systemPrompt: body.systemPrompt, about, skills, mcp, models });
     }
     return Response.json(publicProfile(env, await profile(env, userId)));
   } catch (e) {

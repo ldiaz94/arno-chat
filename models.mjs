@@ -1,4 +1,4 @@
-import { MODEL_ID, providerModel } from './account.mjs';
+import { MODEL_ID, TRAINS_ON_DATA, providerModel } from './account.mjs';
 import { prices, priceKey } from './prices.mjs';
 export const DEFAULT_MODEL = 'mistral-large-4:cloud';
 export const FALLBACK_MODELS = [
@@ -30,6 +30,7 @@ export async function catalog(upstream = fetch) {
   }
 }
 export async function modelAllowed(model) {
+  if (TRAINS_ON_DATA.test(model)) return false;
   if (MODEL_ID.test(model)) return true;
   return (
     (await catalog()).models.some(m => m.id === model) || FALLBACK_MODELS.some(m => m.id === model)

@@ -3,6 +3,19 @@
  */
 import { $, state, esc, icon, modelName, api, toast, showError } from './core.js';
 import { busy } from './layout.js';
+import { providerMark } from './marks.js';
+/** The provider that serves (and bills) a model id; ids without a prefix are Ollama's. */
+export function providerOf(id) {
+  const prefix = String(id).split('/')[0];
+  return String(id).includes('/') &&
+    ['openai', 'anthropic', 'gemini', 'deepseek', 'kimi', 'mistral', 'meta'].includes(prefix)
+    ? prefix
+    : 'ollama';
+}
+/** A model's provider mark followed by its name, as markup. */
+export function modelLabel(id) {
+  return providerMark(providerOf(id), 16) + '<span>' + esc(modelName(id)) + '</span>';
+}
 export async function loadModels() {
   try {
     const d = await api('/api/models');
@@ -15,8 +28,7 @@ export async function loadModels() {
 }
 export function modelButton() {
   const id = state.session?.model || state.selectedModel || 'mistral-large-4:cloud';
-  $('#model-button').innerHTML =
-    icon('code') + '<span>' + esc(modelName(id)) + '</span><span aria-hidden="true">⌄</span>';
+  $('#model-button').innerHTML = modelLabel(id) + '<span aria-hidden="true">⌄</span>';
 }
 export function openModels(target) {
   if (state.busy) return;
@@ -41,8 +53,8 @@ export function renderModels() {
           (m.id === current ? 'selected' : '') +
           '" data-model="' +
           esc(m.id) +
-          '"><span>' +
-          esc(m.name) +
+          '"><span class="model-id">' +
+          modelLabel(m.id) +
           '</span>' +
           (m.id === current ? icon('check') : '') +
           '</button>',
@@ -53,7 +65,7 @@ export async function chooseModel(id) {
   $('#model-dialog').close();
   if (!state.session) {
     state.selectedModel = id;
-    $('#home-model').innerHTML = icon('code') + esc(modelName(id));
+    $('#home-model').innerHTML = modelLabel(id);
     return;
   }
   const sid = state.session.id;

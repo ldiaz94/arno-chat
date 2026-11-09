@@ -131,8 +131,10 @@ const { chromium } = require('playwright'),
       });
     },
   );
+  let deleted = null;
   let preferences = {
     systemPrompt: '',
+    about: '',
     skills: [],
     mcp: [],
     models: [],
@@ -145,6 +147,12 @@ const { chromium } = require('playwright'),
   await page.route('**/api/**', async route => {
     const u = new URL(route.request().url());
     let d;
+    if (u.pathname === '/api/account/avatar')
+      return route.fulfill({ status: 404, json: { error: 'No picture' } });
+    if (u.pathname === '/api/account/delete') {
+      deleted = route.request().postDataJSON();
+      return route.fulfill({ json: { deleted: true } });
+    }
     if (u.pathname.endsWith('/artifacts/' + artId)) d = artifact;
     else if (u.pathname.endsWith('/artifacts')) d = { artifacts: [artifact] };
     else if (u.pathname === '/api/usage/requests')
@@ -360,6 +368,11 @@ const { chromium } = require('playwright'),
   await page.screenshot({ path: '/tmp/arno-citations-mobile.png', fullPage: true });
   await page.getByRole('button', { name: 'Close sources' }).click();
   await page.getByRole('button', { name: 'Change model' }).click();
+  assert.equal(
+    await page.locator('#model-options .model-option').count(),
+    await page.locator('#model-options .model-option svg.pmark').count(),
+  );
+  assert.ok((await page.locator('#model-options .model-option svg.pmark').count()) >= 2);
   await page.getByRole('button', { name: 'Kimi K3.1 Pro' }).click();
   await page.waitForFunction(() => !document.querySelector('#send').disabled);
   await page.getByRole('button', { name: 'Usage and session details' }).click();
@@ -486,6 +499,23 @@ const { chromium } = require('playwright'),
   );
   await page.getByRole('button', { name: 'Open sessions', exact: true }).click();
   await page.getByRole('button', { name: 'Account settings', exact: true }).click();
+  // The You tab opens first: picture (initials, no photo), about text and privacy notice.
+  assert.equal(await page.locator('#picture').textContent(), 'LD');
+  assert.equal(await page.locator('#picture img').count(), 0);
+  assert.equal(await page.locator('#picture-remove').isHidden(), true);
+  for (const text of [
+    'We don’t train on your chats',
+    'a log of your last 1,000 requests',
+    'Cloudflare deletes coding-workspace snapshots within 30 days',
+  ])
+    assert.ok((await page.locator('#privacy').textContent()).includes(text), text);
+  assert.equal(
+    await page
+      .locator('#privacy a[href="https://github.com/settings/applications"]')
+      .getAttribute('target'),
+    '_blank',
+  );
+  await page.locator('#about').fill('Ana, a nurse who likes short answers');
   await page.getByRole('button', { name: 'Instructions & skills' }).click();
   await page.locator('#system-prompt').fill('Be concise');
   await page.getByRole('button', { name: 'Add skill', exact: false }).click();
@@ -496,6 +526,7 @@ const { chromium } = require('playwright'),
     document.querySelector('#account-save-status').textContent.startsWith('Saved.'),
   );
   assert.equal(preferences.systemPrompt, 'Be concise');
+  assert.equal(preferences.about, 'Ana, a nurse who likes short answers');
   assert.equal(preferences.skills[0].enabled, true);
   await page.getByRole('button', { name: 'Providers', exact: true }).click();
   // Provider and search cards start collapsed; the header row opens them.
@@ -577,6 +608,18 @@ const { chromium } = require('playwright'),
     spinner.w >= 14 && Math.abs(spinner.w - spinner.h) < 1,
     'Standalone loading indicator must remain a circle',
   );
+  // Account deletion needs the GitHub login typed first.
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.getByRole('button', { name: 'Account settings', exact: true }).click();
+  await page.locator('#delete-start').click();
+  assert.equal(await page.locator('#delete-go').isDisabled(), true);
+  await page.locator('#delete-login').fill('someone-else');
+  assert.equal(await page.locator('#delete-go').isDisabled(), true);
+  await page.locator('#delete-login').fill('LDiaz94');
+  assert.equal(await page.locator('#delete-go').isDisabled(), false);
+  await page.locator('#delete-go').click();
+  await page.getByText('Account deleted', { exact: true }).waitFor();
+  assert.deepEqual(deleted, { confirm: 'LDiaz94' });
   await browser.close();
   console.log(
     'PASS: page-three search, session drawer, Markdown/code/table rendering, model change, usage, reviewed publishing, dropped-response recovery, themes, mobile/keyboard/desktop overflow.',

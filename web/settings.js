@@ -1,10 +1,12 @@
-/** Account settings dialog: instructions, skills, MCP connections, custom models,
- * provider keys with setup guides, the account's own SearXNG web search, and
- * notifications. Depends on core, layout, models and push.
+/** Account settings dialog: the You tab (profile.js), instructions, skills, MCP connections,
+ * custom models, provider keys with setup guides, the account's own SearXNG web search, and
+ * notifications. Depends on core, layout, models, marks, profile and push.
  */
 import { $, state, esc, api, toast } from './core.js';
 import { fit } from './layout.js';
 import { loadModels } from './models.js';
+import { providerMark } from './marks.js';
+import { profilePanel, wireProfile } from './profile.js';
 import { pushState, enablePush, disablePush } from './push.js';
 let account = null;
 function settingsTabs(tab) {
@@ -150,7 +152,7 @@ const PROVIDER_GUIDES = {
   meta: keySteps(link('https://dev.meta.ai/', 'dev.meta.ai › API keys'), [
     'Usage is pay-as-you-go (' +
       link('https://dev.meta.ai/docs/pricing-rate-limits', 'pricing') +
-      '). Models ending in <code>-contributor</code> cost much less but let Meta train its models on your prompts and the replies; the others do not.',
+      '). Meta’s cheaper “-contributor” models let Meta train on your prompts, so they are not offered here.',
   ]),
 };
 const SEARCH_GUIDE = guide('How to set up your own SearXNG, step by step', [
@@ -272,7 +274,8 @@ async function openAccount() {
     const providers = Object.entries(account.providers)
       .map(
         ([id, p]) =>
-          '<details class="setting-card collapsible"><summary class="setting-row"><strong>' +
+          '<details class="setting-card collapsible"><summary class="setting-row"><strong class="provider-name">' +
+          providerMark(id, 20) +
           esc(p.label) +
           '</strong><span class="tag">' +
           (p.saved
@@ -300,8 +303,9 @@ async function openAccount() {
       )
       .join('');
     $('#account-body').innerHTML =
-      '<div class="account-tabs"><button data-account-tab="providers">Providers</button><button data-account-tab="instructions">Instructions & skills</button><button data-account-tab="mcp">MCP tools</button><button data-account-tab="connections">Connections</button></div>' +
-      '<section data-account-panel="providers"><p class="caption">Keys are encrypted and kept outside coding workspaces. A provider’s models appear after you save its key. API billing is separate from ChatGPT/Claude app subscriptions.</p>' +
+      '<div class="account-tabs"><button data-account-tab="you">You</button><button data-account-tab="providers">Providers</button><button data-account-tab="instructions">Instructions & skills</button><button data-account-tab="mcp">MCP tools</button><button data-account-tab="connections">Connections</button></div>' +
+      profilePanel(account) +
+      '<section data-account-panel="providers" hidden><p class="caption">Keys are encrypted and kept outside coding workspaces. A provider’s models appear after you save its key. API billing is separate from ChatGPT/Claude app subscriptions.</p>' +
       providers +
       searchCard() +
       '<h3>Custom model IDs</h3><p class="caption">Use this when a provider’s model discovery does not list a model available to your key.</p><div id="custom-models"></div><button id="add-custom-model" type="button" class="ghost">＋ Add model</button></section>' +
@@ -338,8 +342,9 @@ async function openAccount() {
     $('#search-remove').onclick = () => saveSearch(true);
     $('#search-test').onclick = testSearch;
     showSearch(account.search);
+    wireProfile();
     showPush();
-    settingsTabs('providers');
+    settingsTabs('you');
   } catch (e) {
     $('#account-body').innerHTML = '<p class="banner">' + esc(e.message) + '</p>';
   }
@@ -419,6 +424,7 @@ async function saveAccount() {
   status.textContent = 'Saving preferences…';
   const body = {
     systemPrompt: $('#system-prompt').value,
+    about: $('#about').value,
     skills: [...document.querySelectorAll('.skill-card')].map(n => ({
       name: n.querySelector('.skill-name').value,
       content: n.querySelector('.skill-content').value,

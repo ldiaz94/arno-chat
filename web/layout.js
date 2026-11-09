@@ -1,7 +1,7 @@
 /** Page chrome: viewport fitting, the drawer, the busy flag, the title bar, the session
  * sidebar and the theme. Depends on core.
  */
-import { $, state, esc, icon, date, shell } from './core.js';
+import { $, state, esc, icon, date, avatar, shell } from './core.js';
 export function fit() {
   const v = window.visualViewport;
   shell.style.height = (v ? v.height : innerHeight) + 'px';
@@ -61,7 +61,7 @@ export function title(name, subtitle) {
 }
 export function sidebar() {
   $('#account').textContent = state.user?.login || 'Guest';
-  $('#account-avatar').textContent = (state.user?.login || 'A').slice(0, 2).toUpperCase();
+  $('#account-avatar').innerHTML = avatar((state.user?.login || 'A').slice(0, 2).toUpperCase());
   $('#session-list').innerHTML = state.sessions.length
     ? state.sessions
         .map(
