@@ -1,7 +1,8 @@
 /** Page chrome: viewport fitting, the drawer, the busy flag, the title bar, the session
- * sidebar and the theme. Depends on core.
+ * sidebar and the theme. Depends on core and offline.
  */
 import { $, state, esc, icon, date, avatar, shell } from './core.js';
+import { controls } from './offline.js';
 export function fit() {
   const v = window.visualViewport;
   shell.style.height = (v ? v.height : innerHeight) + 'px';
@@ -32,10 +33,8 @@ export function drawer(open) {
 }
 export function busy(value) {
   state.busy = value;
-  $('#send').disabled = value;
   $('#stop').hidden = !value;
-  $('#model-button').disabled = value;
-  $('#home-model')?.toggleAttribute('disabled', value);
+  controls(); // send and model change wait while busy; offline, attaching too
   $('#send').innerHTML = value
     ? state.session?.kind === 'chat'
       ? $('#live-response .prose')?.textContent
@@ -85,8 +84,16 @@ export function sidebar() {
         .join('')
     : '<div class="empty caption">Your coding sessions will appear here.</div>';
 }
+/** The browser and status bar colour follows the app's theme, not the system's. */
+function themeColor() {
+  $('meta[name="theme-color"]').content = getComputedStyle(document.body)
+    .getPropertyValue('--bg')
+    .trim();
+}
 export function theme() {
   document.body.classList.toggle('light');
   localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
+  themeColor();
 }
 if (localStorage.getItem('theme') === 'light') document.body.classList.add('light');
+themeColor();

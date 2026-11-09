@@ -1,5 +1,5 @@
 /** Running a turn: sending a prompt, editing a message, polling the job and showing
- * live output. Depends on core, layout, thread and render.mjs.
+ * live output. Depends on core, layout, thread, offline and render.mjs.
  */
 import { markdown } from './render.mjs';
 import { $, state, esc, duration, api, toast, showError, prompt } from './core.js';
@@ -7,6 +7,7 @@ import { busy, title, sidebar } from './layout.js';
 import { message, failure, scrollDown } from './thread.js';
 import { resume } from './sessions.js';
 import { uploading, takeReady, restore } from './attach.js';
+import { warm } from './offline.js';
 function activity(job) {
   let node = $('#activity');
   if (!node) {
@@ -128,6 +129,8 @@ export async function watchJob(id, gen, expected) {
         job = await api('/api/sessions/' + id + '/job');
       } catch {
         if (gen !== state.generation) return;
+        // Offline with no turn known to be running: nothing to follow.
+        if (!active && !expected && (state.offline || !navigator.onLine)) return;
         busy(true);
         if (!$('#activity')) activity({ stage: 'queued' });
         const label = $('#activity strong') || $('#activity span');
@@ -154,6 +157,7 @@ export async function watchJob(id, gen, expected) {
         if (job.status === 'completed') {
           message('Arno', job.result.summary, { ...job.result, at: job.finishedAt });
           const updated = await api('/api/sessions/' + id);
+          warm([{ id }], true); // keep the new turn's artifacts and images for offline
           if (gen === state.generation) {
             state.session = { id, ...updated };
             const asked = [...document.querySelectorAll('#thread .turn.user')].at(-1),
@@ -218,6 +222,7 @@ export async function watchJob(id, gen, expected) {
 export async function submit(e) {
   e.preventDefault();
   if (!state.session || state.busy || !prompt.value.trim()) return;
+  if (state.offline) return toast('Reconnect to send');
   if (uploading()) return toast('Wait for the uploads to finish');
   const text = prompt.value.trim();
   prompt.value = '';
@@ -258,6 +263,7 @@ export function retry(card, text) {
 }
 // attachments are the metadata of uploaded files sent with the message.
 async function send(text, editAt, replaces, attachments = []) {
+  if (state.offline) return toast('Reconnect to send');
   const id = state.session.id,
     gen = state.generation,
     body = {

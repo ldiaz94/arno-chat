@@ -17,6 +17,7 @@ export const state = {
   job: null,
   modelTarget: null,
   avatar: 0, // cache-busting stamp of the profile picture; 0 when there is none
+  offline: false, // no network: showing saved conversations (offline.js)
 };
 export const esc = s =>
   String(s ?? '').replace(
@@ -90,6 +91,10 @@ export async function api(path, opt = {}) {
     headers: { 'Content-Type': 'application/json' },
     signal: AbortSignal.timeout(path === '/api/sessions' && opt.method === 'POST' ? 180000 : 25000),
   });
+  // Tells offline.js whether the reply came from the device's saved copy (sw.js).
+  dispatchEvent(
+    new CustomEvent('arno:reply', { detail: { offline: r.headers.has('X-Arno-Offline') } }),
+  );
   let d;
   try {
     d = await r.json();

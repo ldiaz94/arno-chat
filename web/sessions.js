@@ -8,6 +8,7 @@ import { modelButton, modelLabel, openModels } from './models.js';
 import { message, failure, scrollDown, suggestions } from './thread.js';
 import { watchJob, resizePrompt } from './turns.js';
 import { clearAttachments } from './attach.js';
+import { controls } from './offline.js';
 export async function resume(id) {
   $('#code-dialog').close();
   const gen = ++state.generation;
@@ -109,6 +110,7 @@ export async function home() {
     timer = setTimeout(() => searchRepos($('#search').value), 250);
   };
   $('#home-model').onclick = () => openModels('home');
+  controls();
   searchRepos('');
 }
 function repoCard(r) {

@@ -23,6 +23,9 @@ const { chromium } = require('playwright'),
     viewport: { width: 390, height: 844 },
     isMobile: true,
     hasTouch: true,
+    // The service worker's own fetches would bypass the page.route mocks below;
+    // offline-test.cjs covers it.
+    serviceWorkers: 'block',
   });
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
@@ -373,6 +376,7 @@ const { chromium } = require('playwright'),
     await page.locator('#model-options .model-option svg.pmark').count(),
   );
   assert.ok((await page.locator('#model-options .model-option svg.pmark').count()) >= 2);
+  await page.screenshot({ path: '/tmp/arno-models-mobile.png' });
   await page.getByRole('button', { name: 'Kimi K3.1 Pro' }).click();
   await page.waitForFunction(() => !document.querySelector('#send').disabled);
   await page.getByRole('button', { name: 'Usage and session details' }).click();
@@ -531,6 +535,7 @@ const { chromium } = require('playwright'),
   await page.getByRole('button', { name: 'Providers', exact: true }).click();
   // Provider and search cards start collapsed; the header row opens them.
   assert.equal(await page.locator('#account-dialog details.collapsible[open]').count(), 0);
+  await page.screenshot({ path: '/tmp/arno-providers-mobile.png' });
   await page.locator('details:has([data-provider-input="openai"]) > summary').click();
   await page.locator('[data-provider-input="openai"]').fill('sk-test-placeholder');
   await page.locator('[data-key-save="openai"]').click();

@@ -1,7 +1,7 @@
 /** Push notifications for finished turns: turn them on or off for this browser.
- * On, the service worker (sw.js) is registered and subscribed with the server's
- * VAPID key; off, both sides forget the subscription and the worker goes. The
- * worker is registered only while notifications are on. Depends on core.
+ * On, the service worker (sw.js, registered at boot by offline.js) is subscribed
+ * with the server's VAPID key; off, both sides forget the subscription. The
+ * worker stays either way: it also serves the app offline. Depends on core.
  */
 import { api } from './core.js';
 
@@ -37,8 +37,7 @@ export async function enablePush() {
   if ((await Notification.requestPermission()) !== 'granted')
     throw Error('Notifications are blocked for this site in the browser settings.');
   const { key } = await api('/api/push/key');
-  const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
-  await navigator.serviceWorker.ready;
+  const registration = await navigator.serviceWorker.ready;
   const sub =
     (await registration.pushManager.getSubscription()) ||
     (await registration.pushManager.subscribe({
@@ -57,5 +56,4 @@ export async function disablePush() {
     });
     await sub.unsubscribe();
   }
-  await (await navigator.serviceWorker.getRegistration('/'))?.unregister();
 }

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { catalog } from './models.mjs';
 import { markdown, cleanOutput } from './web/render.mjs';
 import { buildPrompt } from './context.mjs';
@@ -24,6 +24,20 @@ test('browser scripts parse', () => {
   const dir = new URL('./web/', import.meta.url).pathname;
   for (const f of readdirSync(dir).filter(f => f.endsWith('.js')))
     execFileSync(process.execPath, ['--check', dir + f]);
+});
+test('the service worker precaches every static file the app needs', () => {
+  const dir = new URL('./web/', import.meta.url).pathname,
+    sw = readFileSync(dir + 'sw.js', 'utf8'),
+    shell = JSON.parse(
+      sw
+        .match(/const SHELL = (\[[^\]]*\]);/)[1]
+        .replace(/'/g, '"')
+        .replace(/,\s*\]/, ']'),
+    ),
+    files = readdirSync(dir, { recursive: true })
+      .filter(f => statSync(dir + f).isFile() && !['_headers', 'sw.js'].includes(f))
+      .map(f => (f === 'index.html' ? '/' : '/' + f));
+  assert.deepEqual([...shell].sort(), files.sort());
 });
 function fixture(values = {}) {
   const map = new Map(Object.entries(values)),

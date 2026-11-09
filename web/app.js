@@ -1,8 +1,8 @@
 /** Browser application entry. Server state is authoritative; view generation tokens
  * prevent old async responses from repainting a newly selected session.
  * Job polling survives mobile disconnects and never resubmits automatically.
- * The code lives in modules: core, layout, models, thread, sessions, code, turns
- * and settings. This file wires the page's events and boots the session.
+ * The code lives in modules: core, layout, models, thread, sessions, code, turns,
+ * settings and offline. This file wires the page's events and boots the session.
  */
 import { tableResize } from './render.mjs';
 import {
@@ -36,6 +36,7 @@ import { openCode, browse, reviewPublish } from './code.js';
 import { submit, resizePrompt } from './turns.js';
 import './attach.js'; // wires the paperclip, paste and drop
 import './settings.js'; // wires the account settings dialog
+import { register, warm, clearData } from './offline.js';
 tableResize(document);
 
 $('#menu').onclick = () => drawer(true);
@@ -148,6 +149,7 @@ async function boot() {
     state.user = d.user;
     state.githubConnected = d.githubConnected;
     if (!state.user) {
+      if (!state.offline) clearData(); // signed out: drop the device's copy
       title('Welcome to Arno', 'Your code, wherever you are');
       sidebar();
       main.innerHTML =
@@ -166,6 +168,7 @@ async function boot() {
     const saved = /^[0-9a-f-]{36}$/.test(linked || '') ? linked : sessionStorage.getItem('session');
     if (saved) await resume(saved);
     else await home();
+    if (!state.offline) setTimeout(warm, 2000); // after the page settles
   } catch (e) {
     main.innerHTML =
       '<div class="empty"><h2>Connection unavailable</h2><p>' +
@@ -203,4 +206,5 @@ document.addEventListener('click', e => {
   if (e.target === pressedOutside && outside(e.target, e)) e.target.close();
   pressedOutside = null;
 });
+register();
 boot();

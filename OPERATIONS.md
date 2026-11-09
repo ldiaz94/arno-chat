@@ -4,6 +4,7 @@
 
 - `npm install`, then `npm test`: ESLint, `prettier --check`, and the unit tests (`node --test test.mjs`, with test-hooks.mjs stubbing cloudflare:workers), which cover the backend, protocols, encryption, rendering, context, streaming usage, publication, and a wrangler bundle build. `npm run fmt` formats with Prettier.
 - `node design-test.cjs` drives the local web/ files in the system Chromium through Playwright (a dev dependency) with mocked API responses. Set CHROMIUM_PATH if Chromium is not /usr/bin/chromium. Screenshots go to /tmp/arno-*.png.
+- `node offline-test.cjs` serves web/ and mocked /api/ replies from a local server, lets the service worker warm its cache, cuts the network, reloads and checks a conversation, its image and artifact, the usage page, the offline banner and the disabled composer, then goes back online.
 - `node browser-test.cjs` runs the same suite against the files served by the deployed endpoint (`ARNO_TEST_LIVE=1`).
 
 The design test covers search through page three, the session drawer, Markdown/code/tables, model selection, usage, reviewed publishing, a dropped submission response, theme switching, citations and source previews, the docked code pane, account settings, row-level rename/delete, and horizontal overflow at widths from 360 to 3440 px, including keyboard-height viewports.
@@ -14,7 +15,7 @@ Keep UI, protocol and provider changes testable separately. Add security tests f
 
 ## Deployment
 
-`npx wrangler deploy` (log in first with `npx wrangler login`). wrangler.jsonc names the Worker, the PROBE Durable Object binding and its ArnoProbe sqlite export (keep both to preserve session routing and storage), the pinned container image digest, the web/ assets directory and the login allowlist. Secrets persist across deploys.
+`npx wrangler deploy` (log in first with `npx wrangler login`). wrangler.jsonc names the Worker, the PROBE Durable Object binding and its ArnoProbe sqlite export (keep both to preserve session routing and storage), the pinned container image digest, the web/ assets directory and the login allowlist. Secrets persist across deploys. When a deploy changes any file in web/, bump `VERSION` in web/sw.js so installed apps take the new shell at once.
 
 Encrypted Worker secrets:
 

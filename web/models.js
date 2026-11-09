@@ -63,6 +63,7 @@ export function renderModels() {
 }
 export async function chooseModel(id) {
   $('#model-dialog').close();
+  if (state.offline) return toast('Reconnect to send');
   if (!state.session) {
     state.selectedModel = id;
     $('#home-model').innerHTML = modelLabel(id);

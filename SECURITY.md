@@ -20,6 +20,10 @@ The authenticated event stream uses the same owner-scoped session routing as pol
 
 Pushes are empty: no conversation text passes through Google, Mozilla, Apple or Microsoft. The service worker fetches the notice from the same origin with the user's cookie. A subscription endpoint must be an HTTPS URL of at most 1000 characters on a known push service (fcm.googleapis.com, push.services.mozilla.com, push.apple.com, notify.windows.com, or their subdomains), without credentials or port, so the Worker cannot be made to POST elsewhere; redirects are not followed. The VAPID private key is an encrypted Worker secret; only its public half is served.
 
+## Offline copy on the device
+
+To read offline, the service worker keeps the user's API replies in the browser's Cache Storage (`arno-data`): conversations, artifacts, image attachments, the profile with masked settings (never keys), the usage log. It is readable by anyone with the unlocked device and browser profile, like any site data. It is deleted on sign-out (the Exit link), after account deletion, and on any online visit where the session is no longer signed in; a conversation deleted elsewhere is dropped on the next warming pass. Only same-origin GETs to a fixed list of read routes are kept, and only 2xx replies; writes, live events, notices and the image proxy are never stored. The privacy notice in the app states this.
+
 ## Execution boundary
 
 The container has no general Internet access and no GitHub or Ollama token. Repository code can read and modify all files inside that disposable container, including Arno configuration and other workspace files. The host must not trust results from programs inside it.

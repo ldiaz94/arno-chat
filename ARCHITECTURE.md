@@ -42,15 +42,17 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 | web/settings.js | Account settings dialog |
 | web/profile.js | The dialog's You tab: about text, profile picture (resize and upload), privacy notice, account deletion |
 | web/marks.js | `providerMark(provider, size)`: original inline-SVG badges for the eight providers, shown in the model picker, composer, home button and provider cards |
-| web/push.js | Turn notifications on or off: permission, service worker, push subscription |
-| web/sw.js | Service worker (registered only while notifications are on): shows the latest notice on a push, opens its conversation on a click |
-| web/manifest.webmanifest | Installable web app manifest (needed for push on iPhone and iPad) |
+| web/push.js | Turn notifications on or off: permission, push subscription on the shared service worker |
+| web/offline.js | Offline reading: registers sw.js, the offline banner and disabled composer, warms the saved-data cache, clears it on sign-out |
+| web/sw.js | Service worker (registered at boot): app-shell precache, saved API reads for offline use, push notices and their clicks |
+| web/manifest.webmanifest | Installable web app manifest (standalone, maskable icon; needed for push on iPhone and iPad) |
 | web/style.css | Responsive dark/light design tokens, layout, typography, reduced-motion rules |
 | web/render.mjs | Escaping Markdown renderer, table sizing, CLI-banner cleanup, safe diff rendering (shared by browser and tests) |
 | web/_headers | Security headers for the static files, including the page's CSP |
 | wrangler.jsonc | Worker config, durable namespace, pinned container image, observability; `npx wrangler deploy` |
 | test.mjs | Backend and rendering regression tests; test-hooks.mjs stubs cloudflare:workers for Node |
 | design-test.cjs | Playwright browser workflow and viewport tests against the local web/ files; browser-test.cjs runs it against the deployed ones |
+| offline-test.cjs | Playwright offline test: a local server for web/ and mocked /api/, warm, cut the network, reload and read |
 
 Everything in web/ is served by Cloudflare as static files, before the worker runs; the worker handles /api/ and /auth/ only.
 
@@ -229,7 +231,19 @@ The review includes a SHA-256 digest of the files and the source revision. Publi
 
 When a turn ends completed or failed (not stopped), `alarm()` calls `notify()`, which hands the owner a notice: the conversation title, the first 120 characters of the answer or the error as plain text, and `/?session=<id>`. push.mjs stores it as the user's latest notice in `index:<user>` and sends each saved subscription an empty push signed with VAPID (RFC 8292; `TTL: 3600`). A push service answering 404 or 410 deletes that subscription. Without VAPID_KEY or subscriptions nothing is sent; errors are logged and never fail the turn; each push is bounded to 5 s.
 
-The push carries no payload, so there is no RFC 8291 encryption. web/sw.js wakes on it, fetches `GET /api/notifications/latest` with the user's cookie and shows it, unless an app window is visible. A click focuses an app window and navigates it to the link, or opens one; app.js opens the `?session=` conversation and removes the query. The settings Connections tab turns notifications on (permission, register sw.js, subscribe) or off (unsubscribe both sides, unregister sw.js). On iPhone and iPad push works only from the Home Screen app, so the page has a manifest and the toggle says so.
+The push carries no payload, so there is no RFC 8291 encryption. web/sw.js wakes on it, fetches `GET /api/notifications/latest` with the user's cookie and shows it, unless an app window is visible. A click focuses an app window and navigates it to the link, or opens one; app.js opens the `?session=` conversation and removes the query. The settings Connections tab turns notifications on (permission, subscribe on the worker offline.js registered) or off (unsubscribe both sides; the worker stays for offline use). On iPhone and iPad push works only from the Home Screen app, so the page has a manifest and the toggle says so.
+
+## Offline
+
+The app is an installable PWA that reads every conversation with no network; sending, attaching and changing the model need it (an outbox of unsent messages would live in web/offline.js later).
+
+- Shell: web/sw.js precaches every static file in its `SHELL` list into `arno-shell-<VERSION>` on install (test.mjs fails when a file in web/ is missing from it). Pages are network-first with a 3 s timeout, then the cached `/`; other static files are stale-while-revalidate. Bump `VERSION` in sw.js whenever a shell file changes: the new worker installs a fresh shell at once (skipWaiting) and deletes the old one.
+- Saved reads: GETs of /api/me, /api/models, /api/account, /api/account/avatar, /api/sessions, /api/sessions/:id, its artifacts list and artifacts, its attachments, and /api/usage/requests are network-first with a 6 s timeout. Each 2xx reply is kept in the `arno-data` cache (the avatar under one key, without its stamp); a 404 drops the kept copy. When the network fails or times out, the kept copy is served with `X-Arno-Offline: 1`, or a 503 JSON error if there is none. Never kept: anything but GET, non-2xx replies, /job, /events, /api/notifications/latest, /api/image, /api/usage/ollama and every other route.
+- Warming: two seconds after an online boot, offline.js refetches the boot reads (on a first visit the page loaded before the worker took over), then walks the session list three at a time with low-priority fetches through the worker. A conversation is refetched, with its artifacts, when it is not kept or its kept `updatedAt` or `title` differs from the list entry; `alarm()` stamps `updatedAt` on the session and its list entry after each turn (`touch()`), so a turn on another device marks the copy stale. Image attachments are kept while a 50 MB budget per pass lasts, most recent conversations first. A finished turn refetches its conversation; coming back online starts a pass; a pass drops kept replies of conversations no longer listed.
+- Offline state: `navigator.onLine` false, or an api() reply marked `X-Arno-Offline` (core.js dispatches `arno:reply`), shows the banner "Offline · showing saved conversations" and disables send, attach and the model buttons ("Reconnect to send"); job polling does not start. The `online` event, or the next reply from the network, restores them.
+- Clearing: the Exit link deletes `arno-data` before going to /auth/logout, account deletion does the same, and so does a boot where /api/me answers with no user while online.
+- Install: the page has the apple-mobile-web-app-* tags (status bar black-translucent; the top bar, sidebar and full-screen artifact dialog pad by `env(safe-area-inset-top)`), `theme-color` follows the app's own theme (layout.js), and the manifest has `id`, `scope`, `display: standalone`, `orientation: any` and a maskable 512 px icon (web/brand/logo.svg on full bleed, scaled 0.72 into the safe zone with rsvg-convert).
+- Safari: WebKit deletes a site's script-writable storage (Cache API included) after seven days of Safari use without interaction; a Home Screen app has its own day counter that its use resets, so the installed app keeps its copy while it is used.
 
 ## Interface
 

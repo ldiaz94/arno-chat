@@ -1,8 +1,9 @@
 /** The account dialog's "You" tab: what the assistant should know about the user, the
- * profile picture, the privacy notice and account deletion. Depends on core and layout.
+ * profile picture, the privacy notice and account deletion. Depends on core, layout and offline.
  */
 import { $, state, esc, api, avatar, toast } from './core.js';
 import { sidebar } from './layout.js';
+import { clearData } from './offline.js';
 const PICTURE_SIDE = 256; // pictures are shrunk to this many pixels square before upload
 const PICTURE_MAX = 256 * 1024; // the server's size limit, in bytes
 const initials = () => (state.user?.login || 'A').slice(0, 2).toUpperCase();
@@ -28,7 +29,7 @@ const PRIVACY =
   '<p><strong>What leaves the app:</strong> messages go to the model provider you pick; searches and page reads go to Ollama (or your own SearXNG). Each provider’s terms cover what it receives — for example, Google’s free Gemini tier may use prompts to improve its products.</p>' +
   '<p><strong>Deleting your account</strong> removes all of it at once. Two copies outside our direct control disappear on their own schedule: Cloudflare deletes coding-workspace snapshots within 30 days and error logs within 7 days; data already sent to providers follows their retention. You can also revoke GitHub access at ' +
   ghub +
-  '.</p></section>';
+  '.</p><p><strong>On this device.</strong> To work offline, this device keeps a copy of your conversations; signing out or deleting your account clears it.</p></section>';
 const DANGER =
   '<section class="setting-card danger-zone"><h3>Danger zone</h3><button id="delete-start" class="danger" type="button">Delete account</button>' +
   '<div id="delete-confirm" hidden><p>This permanently deletes your conversations, files, artifacts, settings, keys and history. Type your GitHub username to confirm.</p>' +
@@ -100,6 +101,7 @@ async function deleteAccount() {
       body: JSON.stringify({ confirm: $('#delete-login').value.trim() }),
     });
     status.textContent = 'Account deleted';
+    await clearData();
     setTimeout(() => location.assign('/'), 1500);
   } catch (e) {
     status.textContent = e.message;

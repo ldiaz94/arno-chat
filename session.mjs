@@ -460,6 +460,22 @@ export class ArnoProbe extends DurableObject {
       console.error(JSON.stringify({ event: 'push_failed', error: String(e) }));
     }
   }
+  /** Stamps the session and its entry in the owner's list with the time of its
+   * last turn, so an offline copy on another device knows it is stale. */
+  async touch() {
+    try {
+      const session = await this.ctx.storage.get('session');
+      if (!session?.ownerId || !session.id) return;
+      const meta = { ...session, updatedAt: Date.now() };
+      await this.ctx.storage.put('session', meta);
+      await this.env.PROBE.getByName('index:' + session.ownerId).fetch(
+        'https://internal/index/add',
+        { method: 'POST', body: JSON.stringify(meta) },
+      );
+    } catch (e) {
+      console.error(JSON.stringify({ event: 'touch_failed', error: String(e) }));
+    }
+  }
   async fetch(request) {
     const url = new URL(request.url);
     const route = ROUTES[request.method + ' ' + url.pathname] ?? ROUTES['* ' + url.pathname];
@@ -492,7 +508,10 @@ export class ArnoProbe extends DurableObject {
             result,
             finishedAt: Date.now(),
           });
-        if (current?.status !== 'cancelled') await this.notify(result);
+        if (current?.status !== 'cancelled') {
+          await this.touch();
+          await this.notify(result);
+        }
       } catch (e) {
         console.error(JSON.stringify({ event: 'turn_failed', error: String(e) }));
         const current = await this.ctx.storage.get('job');

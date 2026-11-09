@@ -38,6 +38,7 @@ If GitHub shows only 17 repositories, check the connection permissions rather th
 
 - `npm test`: ESLint, Prettier check, and unit tests (including a wrangler bundle build).
 - `node design-test.cjs`: Playwright against the local web/ files in the system Chromium (set CHROMIUM_PATH if it is not /usr/bin/chromium). `node browser-test.cjs` runs it against the deployed files.
+- `node offline-test.cjs`: Playwright offline reading against a local server (warm, go offline, reload, open a conversation and artifact).
 - Deploy with `npx wrangler deploy`.
 
 Browser fixtures are not evidence of real OAuth or GitHub publication. Real provider, container, MCP and research runs are in the validation record in [OPERATIONS.md](OPERATIONS.md).

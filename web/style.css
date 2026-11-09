@@ -143,6 +143,7 @@ svg {
   display: flex;
   flex-direction: column;
   padding: 22px 14px max(18px, env(safe-area-inset-bottom));
+  padding-top: max(22px, env(safe-area-inset-top));
   gap: 18px;
   overflow: hidden;
 }
@@ -226,9 +227,24 @@ svg {
   flex-direction: column;
   overflow: hidden;
 }
+/* Shown while offline (offline.js): the thread reads from the device's copy. */
+.offline-banner {
+  padding: 6px 14px;
+  font-size: 12px;
+  text-align: center;
+  color: var(--warn);
+  background: var(--raised);
+  border-bottom: 1px solid var(--line);
+}
+.offline-banner[hidden] {
+  display: none;
+}
+/* An installed app on iPhone and iPad draws under the status bar
+   (black-translucent), so the top bar and sidebar pad by its height. */
 .topbar {
-  height: 72px;
+  height: calc(58px + max(14px, env(safe-area-inset-top)));
   padding: 14px 30px;
+  padding-top: max(14px, env(safe-area-inset-top));
   border-bottom: 1px solid var(--line);
   display: flex;
   align-items: center;
@@ -1040,7 +1056,7 @@ body.light {
     z-index: 30;
   }
   .topbar {
-    height: 66px;
+    height: calc(56px + max(10px, env(safe-area-inset-top)));
     padding: 10px 12px;
     padding-top: max(10px, env(safe-area-inset-top));
   }
@@ -2051,6 +2067,9 @@ body.light {
     border-radius: 0;
     border: 0;
   }
+  .artifact-dialog .modal-head {
+    padding-top: max(18px, env(safe-area-inset-top));
+  }
 }
 @media print {
   body > *:not(#artifact-dialog) {
@@ -2192,14 +2211,25 @@ details.setting-card.collapsible > summary {
 details.setting-card.collapsible > summary::-webkit-details-marker {
   display: none;
 }
-details.setting-card.collapsible > summary strong::before {
+details.setting-card.collapsible > summary {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+}
+details.setting-card.collapsible > summary .tag {
+  margin-left: auto;
+  flex: none;
+}
+details.setting-card.collapsible > summary::after {
   content: '▸';
-  display: inline-block;
-  width: 1.1em;
+  flex: none;
+  width: 1em;
+  text-align: center;
   color: var(--muted);
   transition: transform 0.15s;
 }
-details.setting-card.collapsible[open] > summary strong::before {
+details.setting-card.collapsible[open] > summary::after {
   transform: rotate(90deg);
 }
 details.setting-card.collapsible[open] > summary {
@@ -2274,4 +2304,23 @@ details.setting-card.collapsible[open] > summary {
 .danger-zone .field {
   width: 100%;
   margin: 8px 0 12px;
+}
+
+/* Phones: the account tabs stay one row and scroll sideways instead of wrapping. */
+@media (max-width: 640px) {
+  .account-dialog .account-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .account-dialog .account-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .account-dialog .account-tabs button {
+    flex: none;
+  }
+  details.setting-card.collapsible > summary .provider-name {
+    min-width: 0;
+    gap: 8px;
+  }
 }
