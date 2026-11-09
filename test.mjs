@@ -14,6 +14,7 @@ import { usageStream, modelRequest, displayDelta } from './gateway.mjs';
 import { checkOptions, optionTags, DEFAULTS } from './web/options.mjs';
 import { turnPlan, codeSettings, codeLimits } from './plan.mjs';
 import { gitProxy, refUpdates } from './git.mjs';
+import { hostCommand } from './session-routes.mjs';
 import { encode, decoderOf } from './serve.mjs';
 import { plainChat } from './chat.mjs';
 import { validPath } from './files.mjs';
@@ -2502,13 +2503,18 @@ test('git gateway reaches only the session repository and refuses deleting a bra
   assert.equal(refUpdates(new TextEncoder().encode(pkt(a + ' ' + b + ' refs/heads/x'))), null);
 });
 test('code options reach arno only in coding sessions', () => {
-  const o = checkOptions({ approach: 'build', workers: false, budget: '3' }, 'code');
+  const o = checkOptions({ approach: 'build', workers: 'off', budget: '3' }, 'code');
   assert.equal(codeSettings('m', o), 'mode = build\nturn_budget = 3\nbuild_budget = 3\n');
-  assert.equal(codeSettings('m', DEFAULTS), 'workers = m\n');
+  assert.equal(codeSettings('m', DEFAULTS), 'workers = m\nmax_workers = 4\n');
   assert.equal(codeLimits(o).rounds, 400);
   // A chat sent with a coding session's choices keeps the defaults.
   assert.equal(checkOptions({ approach: 'build' }, 'chat').approach, 'auto');
-  assert.equal(checkOptions({ budget: '7' }, 'code'), null);
+  assert.equal(checkOptions({ budget: '2.50' }, 'code').budget, '2.50');
+  assert.equal(checkOptions({ budget: '500' }, 'code'), null);
+  assert.equal(checkOptions({ workers: '5' }, 'code'), null);
+  // Commands that would undo the host's setup stay out of arno.
+  assert.match(hostCommand('/model gpt'), /model button/);
+  assert.equal(hostCommand('/compact'), '');
   assert.deepEqual(optionTags(o), ['Build', 'No workers', '$3 budget']);
 });
 test('serve messages are netstrings of netstrings, read across chunk boundaries', () => {

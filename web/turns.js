@@ -12,7 +12,7 @@ import { uploading, takeReady, restore } from './attach.js';
 import { warm } from './offline.js';
 import { queueMessage, waiting } from './outbox.js';
 import { isLocal } from './queue.mjs';
-import { messageOptions } from './options.js';
+import { messageOptions, optionCommand } from './options.js';
 function activity(job) {
   let node = $('#activity');
   if (!node) {
@@ -233,6 +233,12 @@ export async function submit(e) {
   if (!state.session || state.busy || !prompt.value.trim()) return;
   if (uploading()) return toast('Wait for the uploads to finish');
   const text = prompt.value.trim();
+  const set = optionCommand(text);
+  if (set) {
+    prompt.value = '';
+    resizePrompt();
+    return toast(set);
+  }
   prompt.value = '';
   resizePrompt();
   sessionStorage.removeItem('draft:' + state.session.id);

@@ -447,6 +447,34 @@ export class ArnoProbe extends DurableObject {
       this.gitOpen = null;
     }
   }
+  /** The branches on GitHub as the clone last saw them, to tell after a turn
+   * which the model pushed. */
+  async remoteRefs() {
+    return (
+      await this.exec(
+        ['git', 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/remotes/origin'],
+        { cwd: '/workspace/repo' },
+        10,
+      )
+    ).stdout;
+  }
+  /** After a turn: arno applied the model's work to the project, but the
+   * commits it pushed were made in its copy. When the project now holds just
+   * what a branch pushed this turn holds, the checkout moves onto that
+   * branch, so the next turn starts clean on it. Returns its name, or ''. */
+  async followPush(before) {
+    const r = await this.exec(
+      ['sh', '-c', FOLLOW_PUSH],
+      { cwd: '/workspace/repo', env: { BEFORE: before } },
+      60,
+    );
+    const branch = r.exitCode === 0 ? r.stdout.trim() : '';
+    if (branch) {
+      const session = await this.ctx.storage.get('session');
+      await this.ctx.storage.put('session', { ...session, ref: branch });
+    }
+    return branch;
+  }
   /** Arno's config for this turn; with search off (plan.mjs) the built-in web
    * research MCP server is left out. */
   async writeConfig(model, plan, options = {}) {
@@ -463,9 +491,10 @@ export class ArnoProbe extends DurableObject {
       '\nmodel = ' +
       selected.id +
       '\nurl = http://model.internal/v1\nkey =\ntimeout = 180\nmax_retries = 2\n' +
-      // Staged in a copy, every change applied at the turn's end; the jail
-      // keeps the network, which reaches only the gateways (git push).
-      'safety = auto\ncontext_files = yes\njail_net = yes\njail_rw = ~/.npm ~/.cache/pip\n' +
+      // Staged in a copy, every change applied at the turn's end. The
+      // container is the sandbox, and may forbid arno's own jail; its only
+      // network is the gateways (git push).
+      'safety = auto\ncontext_files = yes\njail = no\n' +
       (price ? 'price = ' + price.inp + ' ' + price.out + ' ' + price.cached + '\n' : '') +
       codeSettings(selected.id, options);
     if (plan.search)
@@ -637,4 +666,26 @@ if [ -n "$REF" ]; then
   git fetch -q $depth origin "+refs/heads/$REF:refs/remotes/origin/$REF" &&
     git branch -q --set-upstream-to="origin/$REF" 2>/dev/null || true
 fi
+`;
+
+/** followPush's script: the tree of the project as it stands (a throwaway
+ * index), and the first branch pushed since BEFORE with that same tree. */
+const FOLLOW_PUSH = String.raw`set -e
+index=$(mktemp -u)
+GIT_INDEX_FILE=$index git add -A
+tree=$(GIT_INDEX_FILE=$index git write-tree)
+rm -f "$index"
+git for-each-ref --format='%(refname) %(objectname)' refs/remotes/origin |
+while read -r ref sha; do
+  case "$BEFORE" in *"$ref $sha"*) continue ;; esac
+  [ "$ref" = refs/remotes/origin/HEAD ] && continue
+  [ "$(git rev-parse "$sha^{tree}")" = "$tree" ] || continue
+  branch=$(echo "$ref" | sed "s#^refs/remotes/origin/##")
+  git update-ref "refs/heads/$branch" "$sha"
+  git symbolic-ref HEAD "refs/heads/$branch"
+  git reset -q
+  git branch -q --set-upstream-to="$ref"
+  echo "$branch"
+  break
+done
 `;

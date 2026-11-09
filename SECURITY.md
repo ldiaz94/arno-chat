@@ -4,7 +4,7 @@ The browser, repository content, model output, and all container output are untr
 
 ## Credentials and authentication
 
-GitHub access tokens live in Durable Object authentication records. The private Ollama fallback lives in an encrypted Worker binding. Personal provider keys and MCP bearer tokens use user/field-bound AES-GCM envelopes in per-account storage, with the master key in an encrypted Worker binding (never rotate it casually; see [ARCHITECTURE.md](ARCHITECTURE.md)). Public account responses carry saved flags only, and key inputs are never kept in browser storage. None enters the repository container. The browser receives an opaque Secure, HttpOnly, SameSite=Lax cookie. OAuth state is random, cookie-bound, origin-checked, expiring, and consumed once.
+GitHub access tokens live in Durable Object authentication records, and a copy sealed (AES-GCM) in each coding session's object so the git gateway can use it while a turn runs. The private Ollama fallback lives in an encrypted Worker binding. Personal provider keys and MCP bearer tokens use user/field-bound AES-GCM envelopes in per-account storage, with the master key in an encrypted Worker binding (never rotate it casually; see [ARCHITECTURE.md](ARCHITECTURE.md)). Public account responses carry saved flags only, and key inputs are never kept in browser storage. None enters the repository container. The browser receives an opaque Secure, HttpOnly, SameSite=Lax cookie. OAuth state is random, cookie-bound, origin-checked, expiring, and consumed once.
 
 Each public session route derives its Durable Object name from the authenticated GitHub user ID and the supplied session UUID. A user's session ID does not route into another user's namespace. Cross-origin API requests are rejected.
 
@@ -28,11 +28,17 @@ To read offline, the service worker keeps the user's API replies in the browser'
 
 The container has no general Internet access and no GitHub or Ollama token. Repository code can read and modify all files inside that disposable container, including Arno configuration and other workspace files. The host must not trust results from programs inside it.
 
-The outer container boundary is the isolation layer. Arno's internal jail is not used in this deployment. No claim of perfect security is made.
+The container is the isolation layer. Arno runs with `jail = no` (containers may hide /proc, which its namespace jail needs) and answers every approval with yes, so anything the model runs is limited only by the container. Arno's `safety = auto` stages edits in a copy and applies them at the end of the turn; that is for tidiness, not security. No claim of perfect security is made.
+
+## Git boundary
+
+The container's git origin is `http://git.internal/OWNER/REPO.git`. The Worker's git gateway (git.mjs) forwards git's smart-HTTP requests (info/refs, git-upload-pack, git-receive-pack) to `https://github.com/OWNER/REPO.git` with the owner's GitHub token as Basic `x-access-token`. The token never enters the container, so the model can fetch and push but cannot read the token. The session object hands the gateway the token only while a turn or a clone runs.
+
+The gateway reaches only the session's own repository. It reads a push's commands before forwarding and refuses any that delete a branch or tag. It cannot tell a force push from a normal one: protect branches on GitHub (branch protection or rulesets) to refuse them there. A push can still create a branch or add commits to any branch the token may write, so grant the connection only to accounts and repositories you accept that for. Commits are made as the user's GitHub login with its `id+login@users.noreply.github.com` address.
 
 ## Publication boundary
 
-Only an explicit browser action can invoke publication. The host re-exports and validates the reviewed files and checks their digest. Paths cannot escape the repository; symlinks, unsupported modes, and binary files are rejected. Changes are committed onto the pinned remote revision and published to a new arno/ branch. The model has no direct push credentials.
+Only an explicit browser action can invoke the reviewed publication. The host re-exports and validates the reviewed files and checks their digest. Paths cannot escape the repository; symlinks, unsupported modes, and binary files are rejected. Changes are committed onto the pinned remote revision and published to a new arno/ branch. The reviewed route holds no credentials in the container; the git gateway above is the only other way to GitHub.
 
 Basic sign-in requests read:user. The separate repository connection requests repo scope because private repositories need it. A narrower managed GitHub App integration remains a future improvement. The shared-key deployment restricts sign-in and use to ALLOWED_GITHUB_LOGINS, so arbitrary GitHub users cannot spend the owner's subscriptions; see [OPERATIONS.md](OPERATIONS.md) for what removing that needs. Older accounts that already granted repo scope keep it.
 

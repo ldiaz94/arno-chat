@@ -14,6 +14,19 @@ import { checkOptions } from './web/options.mjs';
 import { turnPlan, codeLimits } from './plan.mjs';
 import { gitRemote } from './git.mjs';
 
+/** Why a coding session's line can't go to arno, or '': the commands that
+ * would undo what the host set up (its model, safety and process), or need a
+ * terminal. The rest (/clear, /compact, /notes, /usage, /help, ...) go on. */
+export function hostCommand(prompt) {
+  const name = /^\/([a-z]+)/.exec(prompt.trim())?.[1];
+  if (['model', 'models', 'provider'].includes(name))
+    return 'Change the model with the model button';
+  if (['budget', 'workers'].includes(name))
+    return 'Set /' + name + ' in the options (sliders) button';
+  if (['safety', 'quit', 'exit', 'attach', 'paste', 'stage'].includes(name))
+    return '/' + name + ' is not available here';
+  return '';
+}
 export const sessionRoutes = {
   async 'POST /session/rename'(request) {
     const { title } = await request.json();
@@ -244,6 +257,8 @@ export const sessionRoutes = {
       if (!session) return json({ error: 'Session not found' }, 404);
       if (body.editAt && session.kind !== 'chat')
         return json({ error: 'Only chat messages can be edited' }, 400);
+      const refused = session.kind !== 'chat' && hostCommand(body.prompt);
+      if (refused) return json({ error: refused }, 400);
       const options = checkOptions(body.options, session.kind);
       if (!options) return json({ error: 'Invalid message options' }, 400);
       const job = {
@@ -422,6 +437,7 @@ export const sessionRoutes = {
         webCounts: { searches: 0, reads: 0 },
         deadline: Date.now() + limits.timeLimit + 60000,
       });
+      const refsBefore = await this.remoteRefs();
       const modelBegan = Date.now();
       const process = await this.ctx.container.exec(
         [
@@ -456,7 +472,13 @@ export const sessionRoutes = {
           conversation: session.arnoConversation,
           // A conversation arno no longer has (or a session from before it kept
           // them) starts again with the earlier turns as context.
-          line: loaded => (loaded ? prompt + note : buildPrompt(session, previous, prompt + note)),
+          // A command goes as it is.
+          line: loaded =>
+            prompt.startsWith('/')
+              ? prompt
+              : loaded
+                ? prompt + note
+                : buildPrompt(session, previous, prompt + note),
           onEvent: e => this.activity(activityOf(e)),
           signal: stop.signal,
         });
@@ -475,6 +497,7 @@ export const sessionRoutes = {
         });
       const executionMs = Date.now() - modelBegan;
       await this.phase('checkpointing', { workspace, startupMs, executionMs });
+      const pushed = await this.followPush(refsBefore);
       const reply = replyOf(turn),
         failed = !reply && !turn.entries.length;
       const diffResult = await this.exec(
@@ -492,6 +515,7 @@ export const sessionRoutes = {
         diff: diffResult.stdout.slice(-40000),
         diagnostics: (transcriptOf(turn) + (stderr ? '\n\n' + stderr : '')).slice(-40000),
         arno: turn.stats,
+        pushed: pushed || undefined,
         reasoning:
           this.live?.jobId === (await this.ctx.storage.get('job'))?.id
             ? this.live?.reasoning || ''

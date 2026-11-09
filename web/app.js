@@ -34,6 +34,7 @@ import {
   exportChat,
   renameConversation,
   deleteConversation,
+  anotherSession,
 } from './sessions.js';
 import { openCode, browse, reviewPublish } from './code.js';
 import { submit, resizePrompt } from './turns.js';
@@ -74,7 +75,15 @@ $('#diff-tab').onclick = () => openCode('diff');
 $('#code-dialog').addEventListener('close', () => {
   if (!$('#code-dialog').open) document.body.classList.remove('code-open');
 });
-$('#actions').onclick = () => $('#actions-dialog').showModal();
+$('#actions').onclick = () => {
+  // A coding session's actions start another session on its repository.
+  $('#another-session').hidden = !state.session?.repo || state.session.kind === 'chat';
+  $('#actions-dialog').showModal();
+};
+$('#another-session').onclick = () => {
+  $('#actions-dialog').close();
+  anotherSession();
+};
 for (const id of ['export', 'publish']) {
   const b = $('#' + id);
   b.className = 'model-option';

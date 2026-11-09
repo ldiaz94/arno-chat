@@ -17,7 +17,7 @@
       "scheduling_policy": "durable_object",
       "images": {
         "runner": {
-          "image": "registry.cloudflare.com/8186b19f2173607e1dc594e4dd579aed/arno-runner@sha256:b4f4e660255670a6e19d0f79b113adcddb6a7248faaad78545d021d38de74fba",
+          "image": "registry.cloudflare.com/8186b19f2173607e1dc594e4dd579aed/arno-runner@sha256:d496537f0142ef714125f6e2f6bdb69d991fc475311d9a064cdf34975e02dd73",
         },
       },
     },

@@ -133,7 +133,11 @@ export async function serveTurn(
       if (message) turn.conversation = conversation;
     }
   }
-  await send('line', typeof line === 'function' ? line(turn.conversation === conversation) : line);
+  const text = typeof line === 'function' ? line(turn.conversation === conversation) : line;
+  // A command (/clear, /compact, /notes, ...) is not a turn: it ends with the
+  // status that follows what it said, unless it starts one.
+  turn.command = text.startsWith('/');
+  await send('line', text);
   while (!done && (message = await next())) {
     const [verb, ...f] = message;
     switch (verb) {
@@ -184,6 +188,10 @@ export async function serveTurn(
         break;
       case 'status':
         if (f[2]) turn.conversation = f[2];
+        if (turn.command && first !== Infinity && !busy) done = true;
+        break;
+      case 'reset': // the transcript is shown again (/clear, /new, /load): renumbered
+        if (first !== Infinity) first = -1;
         break;
       case 'stats':
         try {
@@ -209,9 +217,15 @@ export async function serveTurn(
   return turn;
 }
 
-/** The reply of a turn: the lead's last words, or the last error. */
+/** The reply of a turn: the lead's last words, or the last error; for a
+ * command, what arno said of it. */
 export function replyOf(turn) {
   const lead = turn.entries.filter(e => !e.worker);
+  if (turn.command)
+    return lead
+      .filter(e => e.kind === 'info' || e.kind === 'err')
+      .map(e => e.text.trim())
+      .join('\n\n');
   const said = lead.filter(e => e.kind === 'asst' && e.text.trim());
   if (said.length) return said[said.length - 1].text.trim();
   const errors = lead.filter(e => e.kind === 'err');

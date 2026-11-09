@@ -675,7 +675,7 @@ const { chromium } = require('playwright'),
       mode: 'deep',
       style: 'caveman',
       approach: 'auto',
-      workers: true,
+      workers: '4',
       budget: 'auto',
     });
     assert.equal(await page.locator('#attach-chips .attach-chip').count(), 0);
@@ -851,6 +851,18 @@ const { chromium } = require('playwright'),
       true,
     );
     assert.deepEqual(await chips(), ['Caveman']);
+    // Coding options: approach, workers and budget, then /budget typed.
+    await page
+      .locator('#options-panel label')
+      .filter({ hasText: /^Build$/ })
+      .click();
+    await page.locator('#options-panel label').filter({ hasText: /^2$/ }).click();
+    await page.screenshot({ path: '/tmp/arno-code-options.png' });
+    await page.keyboard.press('Escape');
+    await page.getByLabel('Message', { exact: true }).fill('/budget 2.50');
+    await page.getByLabel('Message', { exact: true }).press('Control+Enter');
+    assert.deepEqual(await chips(), ['Caveman', 'Build', 'Workers: 2', '$2.50 budget']);
+    assert.equal(await page.getByLabel('Message', { exact: true }).inputValue(), '');
   } finally {
     await browser.close();
   }

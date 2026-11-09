@@ -4,6 +4,7 @@
 
 - `npm install`, then `npm test`: ESLint, `prettier --check`, and the unit tests (`node --test test.mjs`, with test-hooks.mjs stubbing cloudflare:workers), which cover the backend, protocols, encryption, rendering, context, streaming usage, publication, and a wrangler bundle build. `npm run fmt` formats with Prettier.
 - `node design-test.cjs` drives the local web/ files in the system Chromium through Playwright (a dev dependency) with mocked API responses. Set CHROMIUM_PATH if Chromium is not /usr/bin/chromium. Screenshots go to /tmp/arno-*.png.
+- `node serve-test.mjs` drives the real `arno --serve` (turn protocol, /load, staged edits, cancel) against `~/r/arno/build/stub`. It runs from `~/.cache`, not /tmp, because arno's jail has a /tmp of its own that would hide the stage.
 - `node offline-test.cjs` serves web/ and mocked /api/ replies from a local server, lets the service worker warm its cache, cuts the network, reloads and checks a conversation, its image and artifact, the usage page, the offline banner and the disabled composer, then goes back online.
 - `node browser-test.cjs` runs the same suite against the files served by the deployed endpoint (`ARNO_TEST_LIVE=1`).
 
@@ -15,7 +16,15 @@ Keep UI, protocol and provider changes testable separately. Add security tests f
 
 ## Deployment
 
-`npx wrangler deploy` (log in first with `npx wrangler login`). wrangler.jsonc names the Worker, the PROBE Durable Object binding and its ArnoProbe sqlite export (keep both to preserve session routing and storage), the pinned container image digest, the web/ assets directory and the login allowlist. Secrets persist across deploys. When a deploy changes any file in web/, bump `VERSION` in web/sw.js so installed apps take the new shell at once.
+`npx wrangler deploy` (log in first with `npx wrangler login`). wrangler.jsonc names the Worker, the PROBE Durable Object binding and its ArnoProbe sqlite export (keep both to preserve session routing and storage), the pinned container image digest, the web/ assets directory and the login allowlist. Secrets persist across deploys. When a deploy changes any file in web/, bump `VERSION` in web/sw.js so installed apps offer the new shell: they show an "Update available" bar, and the new worker takes over when the user taps Update (or on the next launch after all windows close).
+
+### Runner image
+
+runner/Dockerfile is Arch Linux because arno is built on the Arch host and is dynamically linked to its glibc, openssl, brotli and zstd. It adds base-devel, git, node, python, ripgrep, fd and w3m. Go and Rust are left out to keep the image near 1.35 GB on a 4 GB disk. Wrangler cannot build the Dockerfile at deploy: it needs a digest-pinned image in Cloudflare's registry. To rebuild after changing arno or the Dockerfile:
+
+1. `concha runner/prepare.cn` builds `~/r/arno` and copies the binary next to the Dockerfile.
+2. `npx wrangler containers build runner -t arno-runner:vN -p --platform linux/amd64` builds and pushes it, and prints a digest.
+3. Put that digest in wrangler.jsonc (`registry.cloudflare.com/<account>/arno-runner@sha256:…`), then `npx wrangler deploy`.
 
 Encrypted Worker secrets:
 
@@ -48,9 +57,11 @@ Keep live conversation coordination in per-session Durable Objects; use D1 for c
 
 ## Troubleshooting
 
-- Long delays: open Usage & workspace after a measured turn; preparation, agent execution, checkpointing and total are recorded separately, and the activity panel shows the current phase. A warm workspace skips restoration, but the CLI process still starts every turn.
-- Forgotten conversation: check the session ID is unchanged. The host passes the retained transcript each turn, bounded by turn count and prompt size, so older turns may drop out. Switching models keeps history.
+- Long delays: open Usage & workspace after a measured turn; preparation, agent execution, checkpointing and total are recorded separately, and the activity panel shows the current phase. A warm workspace skips restoration, but Arno starts (`arno --serve`) every turn.
+- Forgotten conversation: check the session ID is unchanged. Arno reloads its own saved conversation (`session.arnoConversation`) each turn; when it no longer has it (a new container, `/clear`), the host passes the retained transcript instead, bounded by turn count and prompt size, so older turns may drop out. Switching models keeps history.
 - Missing repositories: wait for Search complete, not the first cards. If GitHub denies an organization, review OAuth authorization and SSO. See "Accounts, providers and BYOK" in [ARCHITECTURE.md](ARCHITECTURE.md) for scope and GitHub App installation.
+- Turn ends with a time-limit message: a coding turn is cancelled after 10 minutes (4 in Fast, 13 with the Build approach); the work so far is kept. Split the task or choose Build.
+- git push fails with a sign-in message: the session's GitHub token is missing or expired. Reconnect GitHub and send a message (the token is refreshed with each message). A refused branch deletion is deliberate; force pushes should be blocked by branch protection on GitHub.
 - Task interrupted: job status persists outside the container; reopen the session to resume polling. Do not resend an uncertain request with a new task ID. Review failed work before retrying; the last completed checkpoint is the restore point.
 - Publish failure: if the review is stale, reopen it. If GitHub rejects branch creation, check whether the branch exists. If the branch exists but the PR failed, open the branch and create the PR on GitHub. Never force-update a user branch.
 
@@ -72,7 +83,7 @@ A fixture on the production Durable Object, runner image and Ollama Cloud Mistra
 | 2 | Recall phrase, check remote and branch, confirm note.txt | 45 ms (warm) | 39,283 ms | 2,279 ms | 41,622 ms | 4 / 17,466 / 298 |
 | 3 (after redeploy) | Recall phrase, create final.txt | 172 ms (restored) | 34,196 ms | 2,187 ms | n/a | 3 / 13,471 / 271 |
 
-All exited 0; turn 2 recalled the phrase exactly and verified origin. Turn 3's review diff contained both new files and the exporter returned their exact contents; the transcript migrated to per-turn records and kept all three turns. A fresh Arno process still starts each turn.
+All exited 0; turn 2 recalled the phrase exactly and verified origin. Turn 3's review diff contained both new files and the exporter returned their exact contents; the transcript migrated to per-turn records and kept all three turns. Arno started as a fresh process each turn at that time.
 
 Streaming: a real Mistral Large 4 chat call delivered its first preview in 1,256 ms, with three updates during the run. Reconnecting replayed the current preview, and the job finished after the second viewer left; the answer had 2,114 characters plus 1,572 of thinking, in 8,997 ms with no container. Automated tests cover unchanged coding-gateway SSE bytes, display-field filtering, stale round/turn rejection, replay after object recreation, viewer cancellation, escaped collapsed thinking and replacing the provisional response.
 

@@ -238,10 +238,18 @@
                 </div>
                 <small id="opt-approach-note" class="option-note"></small>
               </fieldset>
-              <label class="option-switch" data-code-only>
-                <span>Workers <small>the lead hands steps to parallel agents</small></span>
-                <input id="opt-workers" type="checkbox" role="switch" />
-              </label>
+              <fieldset data-code-only>
+                <legend>Workers side by side</legend>
+                <div class="option-pills">
+                  <label><input type="radio" name="workers" value="off" />Off</label>
+                  <label><input type="radio" name="workers" value="1" />1</label>
+                  <label><input type="radio" name="workers" value="2" />2</label>
+                  <label><input type="radio" name="workers" value="4" />4</label>
+                </div>
+                <small class="option-note"
+                  >The lead hands steps of a larger job to agents of its own</small
+                >
+              </fieldset>
               <fieldset data-code-only>
                 <legend>Budget per message</legend>
                 <div class="option-pills">
@@ -290,6 +298,14 @@
         <button data-close class="ghost icon" aria-label="Close actions">×</button>
       </div>
       <div id="action-items" class="modal-body">
+        <button
+          id="another-session"
+          class="model-option"
+          type="button"
+          data-online="Reconnect to start a coding session"
+        >
+          New session on this repository
+        </button>
         <button id="rename-conversation" class="model-option" type="button">
           Rename conversation
         </button>

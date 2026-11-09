@@ -67,6 +67,13 @@ assert.ok(
 );
 console.log('PASS serve: turn, tool, loaded conversation, worker');
 
+// Commands are not turns: each ends with what arno said of it.
+const notes = await turn('/notes', one.t.conversation);
+assert.match(replyOf(notes.t), /no notes/);
+const cleared = await turn('/clear', one.t.conversation);
+assert.match(replyOf(cleared.t), /history cleared/);
+console.log('PASS serve: commands');
+
 // Staged, as in the container: a shell edit in the copy, applied at the end
 // of the turn when its diff is asked about and answered yes.
 writeFileSync(

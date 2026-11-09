@@ -431,6 +431,12 @@ async function searchRepos(query) {
   }
   await page(1);
 }
+/** Starts another session on the open session's repository, from the branch
+ * it is on (the one it last pushed, if the checkout followed it). */
+export function anotherSession() {
+  const s = state.session;
+  if (s?.repo) openRepo({ full_name: s.repo, default_branch: s.ref || 'main' });
+}
 async function openRepo(repo) {
   state.search++;
   const gen = ++state.generation;

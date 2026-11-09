@@ -23,13 +23,14 @@ export const DEEP_RESEARCH =
 const RANK = ['off', 'low', 'medium', 'high'];
 
 /** Arno's settings for a coding turn's options, as config lines: its mode,
- * the workers the lead may delegate to (the same model, so they run side by
- * side on the same provider), and the turn's budget at list price. */
+ * the workers the lead may delegate to (the same model, on the same
+ * provider) and how many run side by side, and the turn's budget at list
+ * price. */
 export function codeSettings(model, options = DEFAULTS) {
   const o = { ...DEFAULTS, ...options };
   return [
     o.approach !== 'auto' && 'mode = ' + o.approach,
-    o.workers && 'workers = ' + model,
+    o.workers !== 'off' && 'workers = ' + model + '\nmax_workers = ' + o.workers,
     o.budget !== 'auto' && 'turn_budget = ' + o.budget,
     o.budget !== 'auto' && 'build_budget = ' + o.budget,
   ]

@@ -79,6 +79,29 @@ function choose(key, value) {
   save(o);
 }
 
+/** A composer line /budget or /workers, in a coding session, sets the
+ * conversation's option instead of going to arno, whose own /budget lasts
+ * only the turn's process. Returns what it did, or '' for another line. */
+export function optionCommand(text) {
+  const m = /^\/(budget|workers)(?:\s+\$?(\S+))?\s*$/.exec(text);
+  if (!m || kind() === 'chat') return '';
+  const [, key, raw = ''] = m,
+    value = { none: 'auto', off: key === 'budget' ? 'auto' : 'off' }[raw] || raw;
+  if (!value)
+    return key === 'budget'
+      ? 'Budget per message: ' +
+          (messageOptions().budget === 'auto' ? 'auto' : '$' + messageOptions().budget)
+      : 'Workers side by side: ' + messageOptions().workers;
+  const o = checkOptions({ ...messageOptions(), [key]: value }, 'code');
+  if (!o)
+    return key === 'budget'
+      ? 'A budget is auto or dollars from 0.1 to 100: /budget 2.50'
+      : 'Workers: off or 1 to 4';
+  save(o);
+  return key === 'budget'
+    ? 'Budget per message: ' + (value === 'auto' ? 'auto' : '$' + value)
+    : 'Workers side by side: ' + value;
+}
 /** Paints the chips and, when open, the popover from the current options. */
 export function render() {
   const o = messageOptions(),
@@ -93,7 +116,10 @@ export function render() {
       ? []
       : [
           o.approach !== 'auto' && ['approach', o.approach[0].toUpperCase() + o.approach.slice(1)],
-          !o.workers && ['workers', 'No workers'],
+          o.workers !== '4' && [
+            'workers',
+            o.workers === 'off' ? 'No workers' : 'Workers: ' + o.workers,
+          ],
           o.budget !== 'auto' && ['budget', '$' + o.budget + ' budget'],
         ]),
   ].filter(Boolean);
@@ -114,8 +140,7 @@ export function render() {
   button.classList.toggle('active', chips.length > 0);
   button.title = chips.length ? 'Options: ' + optionTags(o).join(', ') : 'Message options';
   $('#opt-search').checked = o.search;
-  $('#opt-workers').checked = o.workers;
-  for (const name of ['mode', 'effort', 'style', 'approach', 'budget'])
+  for (const name of ['mode', 'effort', 'style', 'approach', 'workers', 'budget'])
     for (const input of panel.querySelectorAll('input[name="' + name + '"]'))
       input.checked = input.value === o[name];
   panel.querySelector('[data-chat-only]').hidden = !chat;
@@ -153,7 +178,6 @@ button.onclick = () => open(panel.hidden);
 panel.onchange = e => {
   const t = e.target;
   if (t.id === 'opt-search') choose('search', t.checked);
-  else if (t.id === 'opt-workers') choose('workers', t.checked);
   else if (t.name) choose(t.name, t.value);
 };
 $('#option-chips').onclick = e => {

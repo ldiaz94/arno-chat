@@ -1,6 +1,6 @@
 # Architecture
 
-Arno Chat turns a GitHub repository snapshot into a resumable remote coding workspace. The browser owns presentation; a Cloudflare Worker owns authentication and GitHub publication; one Durable Object per session owns coordination, transcript, task state, and the container.
+Arno Chat turns a GitHub repository clone into a resumable remote coding workspace. The browser owns presentation; a Cloudflare Worker owns authentication, credentials and GitHub access; one Durable Object per session owns coordination, transcript, task state, and the container.
 
 ## Source map
 
@@ -14,7 +14,9 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 | session-routes.mjs | Internal /session/* routes of a coding or chat session object |
 | store-routes.mjs | Internal routes of the per-user index/profile and auth/OAuth store objects |
 | gateway-routes.mjs | Internal callbacks from the model and MCP gateways (permits, progress, usage, research state) |
-| gateways.mjs | ModelGateway and McpGateway entrypoints the container's traffic is routed through |
+| gateways.mjs | ModelGateway, McpGateway and GitGateway entrypoints the container's traffic is routed through |
+| git.mjs | Git over HTTP for the container: smart-HTTP request matching, push-command check, forwarding to GitHub with the owner's token |
+| serve.mjs | Drives `arno --serve` for one turn: hello, /load, the line, streamed entries, reply and transcript |
 | prices.mjs | Daily-cached list prices (Ollama, Gemini, DeepSeek, Mistral and Meta pricing pages, OpenRouter for Anthropic/OpenAI/Kimi), turn cost by part, and web search/read rates derived from the account's Ollama usage data |
 | gateway.mjs | Fixed-destination Ollama gateway, bounded payloads, streaming usage observation |
 | context.mjs | Repository provenance and bounded conversation context for every Arno invocation |
@@ -22,7 +24,7 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 | account.mjs | Masked account settings, AES-GCM key envelopes, provider discovery |
 | chat.mjs | Container-free conversation and research loop for every provider |
 | web.mjs | Multi-result search, page reading, host-assigned citations, built-in research MCP |
-| plan.mjs | What a turn's composer options change: web tools, effort, instructions, output, rounds, research budgets, time limit |
+| plan.mjs | What a turn's composer options change: web tools, effort, instructions, output, rounds, research budgets, time limit; for coding, Arno's settings (`codeSettings`) and request and time limits (`codeLimits`) |
 | mcp.mjs | Account-approved HTTPS MCP proxy and initialization test |
 | files.mjs | Read-only directory and UTF-8 code navigation |
 | publish.mjs | Worktree export, host-side validation, cumulative diff including new files |
@@ -53,13 +55,16 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 | web/outbox.js | The outbox: keeps offline messages, new chats, renames and preferences in IndexedDB, shows them in the thread, sends them in order once online, asks on conflicts |
 | web/queue.mjs | The outbox's rules (order per conversation, merging edits, conflict test, local → real id), with injected storage, tested in Node |
 | web/sw.js | Service worker (registered at boot): app-shell precache, saved API reads for offline use, push notices and their clicks |
+| web/update.js | The "Update available" bar: shows a waiting worker, posts SKIP_WAITING on Update, reloads on controllerchange; checks for updates on visibility and every 30 minutes |
 | web/manifest.webmanifest | Installable web app manifest (standalone, maskable icon; needed for push on iPhone and iPad) |
 | web/style.css | Responsive dark/light design tokens, layout, typography, reduced-motion rules |
 | web/render.mjs | Escaping Markdown renderer, table sizing, CLI-banner cleanup, safe diff rendering (shared by browser and tests) |
 | web/highlight.mjs | Syntax highlighting: `highlight(lang, code)`, `detect({ path, fence, code })` and `diffLines(diff)`, a table-driven scanner per language (shared by browser and tests) |
 | web/_headers | Security headers for the static files, including the page's CSP |
-| wrangler.jsonc | Worker config, durable namespace, pinned container image, observability; `npx wrangler deploy` |
+| wrangler.jsonc | Worker config, durable namespace, digest-pinned container image, observability; `npx wrangler deploy` |
+| runner/ | The container image (Dockerfile, prepare.cn builds and copies in the arno binary); rebuilding is in [OPERATIONS.md](OPERATIONS.md) |
 | test.mjs | Backend and rendering regression tests; test-hooks.mjs stubs cloudflare:workers for Node |
+| serve-test.mjs | Runs the real `arno --serve` against Arno's stub model through serve.mjs |
 | design-test.cjs | Playwright browser workflow and viewport tests against the local web/ files; browser-test.cjs runs it against the deployed ones |
 | offline-test.cjs | Playwright offline test: a local server for web/ and mocked /api/, warm, cut the network, reload and read |
 
@@ -72,19 +77,19 @@ Security boundaries are in [SECURITY.md](SECURITY.md); testing and deployment in
 ## A session's lifecycle
 
 1. The browser authenticates with GitHub using an opaque HttpOnly session cookie.
-2. The user selects a repository and model. The Worker resolves the selected branch to an exact GitHub commit before downloading its archive.
-3. The session's container imports the archive, creates a synthetic local baseline, configures the credential-free GitHub origin, records the source commit, and names the local branch.
-4. The Durable Object checkpoints the filesystem and atomically saves its session metadata with the checkpoint handle.
+2. The user selects a repository and model. The Worker resolves the selected branch to an exact GitHub commit and sends the session's container the owner's GitHub token with the request. The session object keeps it sealed (AES-GCM, account.mjs `seal`) under `github`; every later message refreshes it (`/session/owner`).
+3. The container runs `git clone --filter=blob:none --branch REF http://git.internal/OWNER/REPO.git`. The container has no network of its own: it intercepts `git.internal` and hands the request to GitGateway (git.mjs), which forwards git's smart-HTTP requests (info/refs, git-upload-pack, git-receive-pack) to `https://github.com/OWNER/REPO.git` with Basic `x-access-token:<token>`. The gateway reads the token through `/git-account` only while a clone or a turn runs, so the token never enters the container. It reaches only the session's repository, and a push whose commands delete a ref (read from the pkt-lines before forwarding) is refused. Force pushes cannot be told apart; protect branches on GitHub.
+4. The container records the source commit as `arno.sourceCommit` and sets the committer to the user's GitHub login with `id+login@users.noreply.github.com`. The Durable Object checkpoints the filesystem and atomically saves its session metadata with the checkpoint handle.
 5. The recent-session index stores the session ID under the authenticated GitHub user ID.
 6. Completed turns reuse the same running container. If it has stopped, start restores the saved checkpoint.
 
-The imported archive does not contain the original Git object database. The synthetic local baseline is used for review; GitHub publication uses the original remote commit as its parent. This distinction is deliberate and is included in the model context.
+The clone has real history, so Arno can branch, commit, pull and push. Review and Publish still diff against `arno.sourceCommit` and publish on that commit. Sessions made before clones started from an archive with a synthetic baseline commit; the next turn migrates them: fetch the source commit (depth 1) and `git reset --soft` onto it, which keeps the work tree. After a turn, `followPush` checks whether a branch pushed during the turn has a tree equal to the project's; if so the checkout moves onto it and `session.ref` records it, so the next turn starts clean on that branch.
 
 ## A turn's lifecycle
 
 Submission stores a job and schedules an alarm, then immediately responds with HTTP 202. A repeated submission with the same ID returns the same job. An active session rejects a different concurrent job.
 
-The alarm changes the job from queued to running and invokes Arno with a four-minute process deadline. The job records phases:
+The alarm changes the job from queued to running and runs Arno for the turn, within the time limit from `codeLimits` (10 minutes; 4 in Fast; 13 with the Build approach), after which the turn is cancelled. The job records phases:
 
 - preparing: reuse of a running workspace;
 - restoring: restart from the saved filesystem;
@@ -93,7 +98,15 @@ The alarm changes the job from queued to running and invokes Arno with a four-mi
 
 Stop is an explicit user action. It cancels the job, revokes its model quota, and destroys the container so child processes cannot continue. The next turn restores the last completed checkpoint. The UI warns that uncheckpointed work will be discarded. Stopping is rejected once checkpointing has begun.
 
-Arno is a fresh CLI process per turn. The container and repository remain the same. To preserve conversation semantics, context.mjs supplies host-owned repository identity and the most recent 20 turns, bounded to 32,000 characters, before the current request. This is bounded conversational continuity, not an unlimited context window or a persistent interactive Arno process.
+Coding turns run `arno --serve` (arno-serve(5)) once per turn, driven by serve.mjs, on the same container and repository:
+
+- hello carries a host prompt (context.mjs `sessionPrompt`: repository identity and the pushing rules);
+- the session's Arno conversation (`session.arnoConversation`) is `/load`ed when Arno still has it. Otherwise the older prompt is used: the most recent 20 turns, bounded to 32,000 characters, inlined before the request. Arno's own history is therefore the memory, with the inlined transcript as a fallback;
+- every approval is answered `y`: the container is the sandbox;
+- entries Arno streams show in the live view as an "activity" line; the reply is the lead's last assistant text; the tool and worker transcript goes to "Execution details" (`result.diagnostics`); Arno's own statistics are kept as `result.arno`;
+- a line that starts with `/` is sent to Arno as a command. `hostCommand` (session-routes.mjs) refuses `/model`, `/models`, `/provider` (use the model button), `/budget` and `/workers` (set in the options panel; web/options.js `optionCommand` also handles a typed `/budget 2.50` or `/workers 2` in the browser), and `/safety`, `/quit`, `/exit`, `/attach`, `/paste`, `/stage`.
+
+writeConfig writes Arno's config for the turn: the gateway URLs, `safety = auto` (edits are staged in a copy and applied at the turn's end), `context_files = yes`, `jail = no` (containers may mask /proc, so Arno's namespace jail cannot mount it; the container is the sandbox), a `price` line from prices.mjs so Arno's budget works, and the coding options from `codeSettings`. This is bounded conversational continuity, not an unlimited context window or a persistent interactive Arno process.
 
 After execution, the host collects the cumulative diff, model request count, provider-reported usage, phase timings, and raw diagnostics. It saves the filesystem checkpoint, transcript, and cumulative statistics before returning a completed job. Each turn is stored as an individual bounded record, with lazy migration from the original single history value. The browser polls saved status and may leave/reopen without replaying work.
 
@@ -137,7 +150,7 @@ All API routes require the GitHub-authenticated session cookie except GET /api/m
 
 Payloads worth knowing:
 
-- Create session: `repo` is owner/name, `ref` the selected branch, `model` an approved model ID. The host resolves `ref` to a 40-character source commit and downloads that exact archive. The response has id, repo, ref, model, sourceSha, remoteUrl, createdAt.
+- Create session: `repo` is owner/name, `ref` the selected branch, `model` an approved model ID. The host resolves `ref` to a 40-character source commit and the container clones that branch. The response has id, repo, ref, model, sourceSha, remoteUrl, createdAt.
 - Submit task: `id` is a client-generated UUID, `prompt` is 1-8,000 characters. Reusing an ID deduplicates an uncertain submission; a different ID gets 409 while a turn is queued or running. Never retry an uncertain request with a new UUID. In a regular chat, optional `editAt` (a saved turn's `at`) replaces that turn: it and every later turn are left out of the context and deleted once the new answer is saved. Optional `options` are the composer options (see Composer options); anything unknown, out of range, or deep research in a coding session gets 400.
 - Publish: `digest` must match the reviewed files and source revision. `branch` is `arno/` plus an alphanumeric, underscore or hyphen name. `title` is the commit/PR title, at most 200 characters. The result has branch, commit, url, and a `warning` if the branch exists but the PR could not be opened.
 
@@ -168,11 +181,12 @@ One Durable Object class (ArnoProbe) has separate named instances:
 - `index:<github user id>`: that user's recent-session entries;
 - `code:<github user id>:<session id>`: repository metadata, checkpoint, transcript, task, statistics.
 
-Internal /session, /model, /auth and /index paths are binding-only; no public router reaches them. The model gateway can request a quota permit and report usage but has no GitHub publication authority.
+Internal /session, /model, /auth and /index paths are binding-only; no public router reaches them. The model gateway can request a quota permit and report usage but has no GitHub authority. The git gateway reads the sealed token and may forward only git requests for the session's repository.
 
 Keys in a session object:
 
-- `session`: repository provenance and selected model.
+- `session`: repository provenance (`ref`, which follows a branch the model pushed; `sourceSha`), selected model and `arnoConversation`.
+- `github`: the owner's login, noreply address and GitHub token, sealed; read only by the git gateway.
 - `snapshot`: the opaque Cloudflare checkpoint handle.
 - `turn:<timestamp>:<uuid>`: one retained transcript turn each; `history` is the legacy key, migrated after a successful turn.
 - `stats`: measured cumulative counters.
@@ -222,7 +236,7 @@ Statistics are cumulative from when measurement was added. Missing provider usag
 
 ## Composer options
 
-Every message carries `options` = `{search, effort, mode, style}` (web/options.mjs; defaults `true`, `'auto'`, `'standard'`, `'normal'`; missing ones take their defaults). enqueue checks them strictly and keeps them on the job; the saved turn keeps them as `options`, and its footer tags the non-default ones ("Deep research", "Caveman", "Thinking: high", "No search"). Outbox entries keep the body, so queued sends, retries and edits carry them too. The browser keeps them per conversation in localStorage (`options:<id>`, moved with an offline chat's id), and a conversation without any starts from `options:last`.
+Every message carries `options` = `{search, effort, mode, style}`, and in coding sessions also `{approach, workers, budget}` (web/options.mjs; defaults `true`, `'auto'`, `'standard'`, `'normal'`, `'auto'`, `'off'`, `'auto'`; missing ones take their defaults). enqueue checks them strictly and keeps them on the job; the saved turn keeps them as `options`, and its footer tags the non-default ones ("Deep research", "Caveman", "Thinking: high", "No search"). Outbox entries keep the body, so queued sends, retries and edits carry them too. The browser keeps them per conversation in localStorage (`options:<id>`, moved with an offline chat's id), and a conversation without any starts from `options:last`.
 
 plan.mjs turns them into a plan both kinds of turn follow:
 
@@ -232,6 +246,9 @@ plan.mjs turns them into a plan both kinds of turn follow:
 | effort | `requestFields` adds the provider's fields | the model gateway adds them when it rebuilds the payload |
 | fast | effort `off` unless chosen, "Answer briefly and directly.", 4,096 output tokens; the browser also turns search off (it can be turned back on) | the same, through the gateway |
 | deep (chats only) | 10 searches, 20 reads, 60 kept sources (instead of 3, 6, 30), 16 model rounds, effort at least medium, a 12-minute limit (an alarm may run 15), and instructions to plan sub-questions, read primary sources, compare and save a cited report with create_artifact ("Research: …") before a short reply | refused |
+| approach (coding only) | refused | `auto`, `pair`, `build` or `review`: Arno's `mode`; build also raises the limits (`codeLimits`) |
+| workers (coding only) | refused | `off` or 1 to 4: Arno gets `workers = <lead model>` and `max_workers = N`, so workers run side by side on the same model |
+| budget (coding only) | refused | `auto` or $0.1 to $100: Arno's `turn_budget` and `build_budget` |
 | style | concise: be brief; caveman: few words, no articles or filler, facts, numbers and code exact | added to the gateway's instructions for every request of the turn |
 
 The gateway reads the running turn's options from `modelQuota` (via /model-account). Effort `auto` sends nothing (the provider's default). Each provider declares in `PROVIDERS` (account.mjs) which models take an effort and its fields; `/api/models` marks each model `effort: true|false` (Ollama's from /api/tags capabilities), and the popover disables Thinking with "Not available for this model" when false.
@@ -257,7 +274,7 @@ Regular and coding conversations both have search and page-reading tools. The ho
 Bring-your-own search: an account can save its own SearXNG (Settings › Providers › Web search) as `{url, auth: none|access|bearer, clientId, secret}`. The URL must be public HTTPS (at most 500 characters, no credentials, query or fragment); the Cloudflare Access client secret or bearer token is sealed like provider keys (field `search:secret`), and reads return only url, auth, clientId and `hasSecret`. `POST /api/account/search` saves (`{remove: true}` removes); `POST /api/account/search-test` runs one query and reports the result count and latency. With a connection saved, web_search sends `GET <url>/search?q=…&format=json&language=auto&safesearch=0` with `CF-Access-Client-Id`/`CF-Access-Client-Secret` or `Authorization: Bearer`, no redirects, 10 s timeout and the bounded JSON reader, and maps the top six `results[]` into the same source records. On an error, timeout, non-JSON answer (403 usually means `format=json` is disabled) or no results, it falls back to Ollama search. Per turn `webUsage.searxng` counts SearXNG searches (free) and `webUsage.searches` only Ollama's (billed); the three-search limit counts both. web_read always uses Ollama.
 
 - Search returns up to six results. The model is told to compare them, prefer primary documentation, read original pages, and read at least two credible pages for a comparison.
-- Per turn: up to three searches and six page reads (deep research: 10 and 20, passed to `research()` as `limits`). Regular chat allows up to eight model rounds (deep research 16), the last one without tools. Coding uses Arno's MCP tool loop with its usual call and process limits.
+- Per turn: up to three searches and six page reads (deep research: 10 and 20, passed to `research()` as `limits`). Regular chat allows up to eight model rounds (deep research 16), the last one without tools. Coding uses Arno's MCP tool loop within the turn's time and request limits (Limits and retention).
 - Web content is evidence, not instructions. Tool failures are reported as failures.
 - Regular chat uses OpenAI/Ollama function calls or Anthropic tool-use blocks, answering in the provider's own protocol. Coding gets the same read-only tools (web_web_search, web_web_read) from an internal MCP server, trusted in Arno's configuration so reading several sources does not use up its interactive approval input.
 - The host numbers actual results. A source record holds URL, title, excerpt and retrieval time; the recent registry holds 30 records, and retained turns keep their own. The model cites as [1], [2]; the renderer makes a button only for IDs in the answer's saved records, so invented numbers stay plain text. A button or source card opens a preview with domain, title, excerpt, retrieval time and original link. This makes citations inspectable, not correct.
@@ -278,7 +295,7 @@ The push carries no payload, so there is no RFC 8291 encryption. web/sw.js wakes
 
 The app is an installable PWA that reads every conversation with no network, and keeps what the user does offline in an outbox, sent once the network is back. Changing the model, API keys, connections (web search, MCP), the profile picture, coding sessions and account deletion need the network.
 
-- Shell: web/sw.js precaches every static file in its `SHELL` list into `arno-shell-<VERSION>` on install (test.mjs fails when a file in web/ is missing from it). Pages are network-first with a 3 s timeout, then the cached `/`; other static files are stale-while-revalidate. Bump `VERSION` in sw.js whenever a shell file changes: the new worker installs a fresh shell at once (skipWaiting) and deletes the old one.
+- Shell: web/sw.js precaches every static file in its `SHELL` list into `arno-shell-<VERSION>` on install (test.mjs fails when a file in web/ is missing from it). Pages are network-first with a 3 s timeout, then the cached `/`; other static files are stale-while-revalidate. Bump `VERSION` in sw.js whenever a shell file changes: the new worker waits (skipWaiting only on a first install). web/update.js shows an "Update available" bar; its Update button posts SKIP_WAITING, the page reloads on controllerchange, and the new worker deletes the old shell. update.js checks for a new worker when the page becomes visible and every 30 minutes.
 - Saved reads: GETs of /api/me, /api/models, /api/account, /api/account/avatar, /api/sessions, /api/sessions/:id, its artifacts list and artifacts, its attachments, and /api/usage/requests are network-first with a 6 s timeout. Each 2xx reply is kept in the `arno-data` cache (the avatar under one key, without its stamp); a 404 drops the kept copy. When the network fails or times out, the kept copy is served with `X-Arno-Offline: 1`, or a 503 JSON error if there is none. Never kept: anything but GET, non-2xx replies, /job, /events, /api/notifications/latest, /api/image, /api/usage/ollama and every other route.
 - Warming: two seconds after an online boot, offline.js refetches the boot reads (on a first visit the page loaded before the worker took over), then walks the session list three at a time with low-priority fetches through the worker. A conversation is refetched, with its artifacts, when it is not kept or its kept `updatedAt` or `title` differs from the list entry; `alarm()` stamps `updatedAt` on the session and its list entry after each turn (`touch()`), so a turn on another device marks the copy stale. Image attachments are kept while a 50 MB budget per pass lasts, most recent conversations first. A finished turn refetches its conversation; coming back online starts a pass; a pass drops kept replies of conversations no longer listed.
 - Offline state: `navigator.onLine` false, or an api() reply marked `X-Arno-Offline` (core.js dispatches `arno:reply`), shows the banner "Offline · showing saved conversations" (or "Offline · N waiting to send") and disables the model buttons and every control marked `data-online="Reconnect to …"`, whose text becomes its tooltip; job polling does not start. The `online` event, or the next reply from the network, restores them. api() throws errors marked `network` when the fetch fails, and, with `fresh`, when the worker answered from the device.
@@ -298,7 +315,7 @@ Remote coding is presented as a workspace, not a terminal transcript.
 - Layout: a 252px sidebar that becomes an off-canvas drawer on phones; transcript capped at a readable width and the only scrolling element, with the composer in the surrounding flex layout. The shell follows visualViewport height and offset so the mobile keyboard shrinks the transcript. Inputs use 16px text to avoid Safari focus zoom. Code, tables and diffs scroll in their own containers. The code browser docks beside chat on ultrawide screens and opens as a dialog on smaller ones. Provider marks (web/marks.js) are drawn for the provider that bills: ids prefixed `openai/`, `anthropic/`, `gemini/`, `deepseek/`, `kimi/`, `mistral/` or `meta/` get theirs, every other id (Ollama Cloud models of any vendor included) gets Ollama's. Account settings open from the avatar/name, as a full-height sheet with a persistent save area on mobile.
 - Images: Markdown `![alt](https://…)` renders as an `<img>` pointing at `/api/image?url=…` (proxyImage in api.mjs), wrapped in a link to the original; the page CSP's `img-src 'self'` is enough, and a GET without an Origin header passes sameOrigin. - Reading: safe Markdown; CLI setup banners collapse into execution details; code blocks have language labels and copy buttons; tables size to content (short cells on one line, long ones wrap near 40 characters, wide ones scroll, column edges drag, double-click resets).
 - Modes: a Chat | Code switch tops the sidebar (the phone drawer too). Each mode has its own home page, list (plain chats vs coding sessions, most recently active first by `updatedAt`, else `createdAt`, with times like "2m", "3h", "Yesterday"), New button (New chat; New session, disabled offline) and last open conversation (sessionStorage `session:chat` / `session:code`); the mode is kept in localStorage `mode`. Opening a conversation, from the list or a `?session=` link, switches to its mode. A finished turn, or a sent queued message, stamps the row's `updatedAt` on the client so it moves to the top at once; the server's list (`/index/list`) uses the same order, as `touch()` stamps the index entry after each turn.
-- Home pages: a greeting by time of day and the Today card. Chat home adds a "What's on your mind?" box that starts a chat with its text, and starter chips that fill it; Code home has a compact card, recent coding sessions and repository search. The card's widgets are set in the profile's `home` (`{quote, fact, moon, weather, place, lat?, lon?}`, checked by `homeSettings` in account.mjs): quote and fact of the day (web/home-content.js, the same all day, "Another" steps on), the moon (mean synodic month from the 2000-01-06 new moon: phase name, % lit, days to full, an SVG), and, off by default, weather. The browser asks Open-Meteo directly (forecast, and the geocoder for a typed place; both in the page CSP's connect-src, geolocation allowed for the page itself and asked only on "Use my location", rounded to 0.1°). The last forecast is kept in localStorage and shown with its time when older than 30 minutes or offline; tiles keep their size while it loads.
+- Home pages: a greeting by time of day and the Today card. Chat home adds a "What's on your mind?" box that starts a chat with its text, and starter chips that fill it; Code home has a compact card, recent coding sessions and repository search. Opening a repository card always makes a new session; the session actions (⋯) dialog has "New session on this repository", which starts another on the same repo from the session's branch. The card's widgets are set in the profile's `home` (`{quote, fact, moon, weather, place, lat?, lon?}`, checked by `homeSettings` in account.mjs): quote and fact of the day (web/home-content.js, the same all day, "Another" steps on), the moon (mean synodic month from the 2000-01-06 new moon: phase name, % lit, days to full, an SVG), and, off by default, weather. The browser asks Open-Meteo directly (forecast, and the geocoder for a typed place; both in the page CSP's connect-src, geolocation allowed for the page itself and asked only on "Use my location", rounded to 0.1°). The last forecast is kept in localStorage and shown with its time when older than 30 minutes or offline; tiles keep their size while it loads.
 - Input: send button always sends; Cmd/Ctrl+Enter sends; Enter alone sends unless the profile's `enterSends` is false (Settings → You → Composer & defaults), then it adds a newline. Shift+Enter always adds a newline. The composer, the chat home's box and the message edit box follow the same rule (`sendKey` in core.js), and the hints say which applies. New chats and coding sessions start with the model picked on the home page, else the profile's `defaultModel` (checked with modelAllowed), else Mistral Large 4. Drafts persist per session in the tab. The model dialog searches names and IDs, and opens with Cmd/Ctrl+K. Regular-chat messages have an Edit button: sending an edit replaces that message and the turns after it.
 - Footers and usage: each turn footer shows completion, wall time, measured tokens and list-price cost when available. The Usage & workspace dialog separates provider counters, phase timings and repository identity; unknown values show a dash with an explanation.
 - Honest state: search reports progress until every page is scanned; task activity distinguishes restoring, preparing, execution and checkpointing; a warm workspace is labeled apart from a saved sleeping one. No account balances, live tool traces or completion percentages are invented.
@@ -311,10 +328,10 @@ Client state: drafts and each mode's last open session ID live in sessionStorage
 
 - Cloudflare checkpoints are kept 30 days, refreshed by restoration.
 - Up to 20 turns are retained; very large diffs and logs are truncated for display.
-- Each task allows up to 16 model calls, a four-minute CLI deadline and 16,384 output tokens per inference request (regular chat too; 4,096 in fast mode; Gemini keeps its own default, since thinking counts against it). A regular chat turn has four minutes, twelve for deep research. Gateway bodies are capped at 1 MB; repository archives at 50 MB.
-- Container Internet access is off. Model inference, built-in research and enabled remote MCP are host-mediated exceptions. Arbitrary dependency downloads are unavailable.
+- A coding turn allows up to 150 model requests (40 in Fast, 400 with Build; workers' included) and runs 10 minutes (4, 13), then is cancelled (`codeLimits`). Output is 16,384 tokens per inference request (regular chat too; 4,096 in fast mode; Gemini keeps its own default, since thinking counts against it). A regular chat turn has four minutes, twelve for deep research. Gateway bodies are capped at 1 MB.
+- Container Internet access is off. Model inference, built-in research, enabled remote MCP and git (git.internal, to the session's repository only) are host-mediated exceptions. Arbitrary dependency downloads are unavailable.
 - Publishing takes up to 50 regular UTF-8 changed files totaling 1 MB; binary files and symlinks are rejected.
-- Answer text and provider-exposed thinking stream live over SSE; coding previews show the current model pass. Tool arguments and raw tool events are not streamed; the final coding result appears after its checkpoint.
+- Answer text and provider-exposed thinking stream live over SSE; coding previews show the current model pass and an activity line from Arno's entries. Raw tool arguments are not streamed; the tool and worker transcript appears in Execution details after the turn, and the final coding result after its checkpoint.
 - Regular chat uses no VM, with a bounded host-side research loop and a quiet loading state.
 - Not available: account balance, unlimited context, a live terminal, MCP OAuth/stdio.
 
