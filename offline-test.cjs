@@ -363,6 +363,14 @@ function serve(port) {
     await page.click('[data-session="' + two + '"]');
     await page.waitForSelector('#thread .turn');
     assert.equal(await page.isDisabled('#send'), false);
+    // The device asks its worker which version it runs (the About card).
+    const version = fs
+      .readFileSync(__dirname + '/web/sw.js', 'utf8')
+      .match(/const VERSION = '(v\d+)'/)[1];
+    assert.equal(
+      await page.evaluate(() => import('/update.js').then(m => m.appVersion())),
+      version,
+    );
     // A deploy: the new worker waits, the bar offers it, Update reloads under it.
     assert.equal(await page.locator('.update-bar').count(), 0);
     swTag = '\n// deploy 2\n';

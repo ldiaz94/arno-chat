@@ -7,6 +7,7 @@ import { sidebar } from './layout.js';
 import { geocode } from './home.js';
 import { clearData } from './offline.js';
 import { diagnostics, diagnosticsOn, developerOn, setDeveloper, debugReport } from './diag.js';
+import { appVersion, checkForUpdate } from './update.js';
 const PICTURE_SIDE = 256; // pictures are shrunk to this many pixels square before upload
 const PICTURE_MAX = 256 * 1024; // the server's size limit, in bytes
 const initials = () => (state.user?.login || 'A').slice(0, 2).toUpperCase();
@@ -24,6 +25,7 @@ export function profilePanel(account) {
     composerCard(account) +
     homeCard(account.home || {}) +
     PRIVACY +
+    '<section class="setting-card" id="about-card"><strong>About</strong><div class="setting-row"><span id="about-version">Arno Chat</span><button type="button" id="update-check" class="ghost">Check for updates</button></div><p class="caption" id="about-build"></p></section>' +
     '<section class="setting-card"><label class="check"><input type="checkbox" id="developer"> Developer mode</label><p class="caption">Tools for debugging the app on this device.</p><div id="dev-tools" hidden><div class="setting-row"><span>Layout diagnostics: the screen measurements over the app</span><button type="button" id="diag-toggle" class="ghost"></button></div><div class="setting-row"><span>Debug report: measurements and app state, for a bug report</span><button type="button" id="debug-copy" class="ghost">Copy</button></div><div class="setting-row"><span>GitHub connection check: what the app can see on GitHub</span><button type="button" id="github-check" class="ghost">Check</button></div><pre id="github-check-out" class="debug-out" hidden></pre></div></section>' +
     DANGER +
     '</section>'
@@ -210,8 +212,28 @@ async function deleteAccount() {
     $('#delete-go').disabled = false;
   }
 }
+/** The About card: the version this device runs and the server's build. */
+async function showVersion() {
+  const v = await appVersion(),
+    b = state.build || {};
+  $('#about-version').textContent =
+    'Arno Chat ' + (v ? v.replace(/^v/, 'version ') : '(no offline copy)');
+  $('#about-build').textContent = b.commit
+    ? 'Server build ' + b.commit + (b.deployed ? ', deployed ' + b.deployed : '')
+    : '';
+}
 /** Connects the panel's controls; call once after its markup is in the page. */
 export function wireProfile() {
+  showVersion();
+  $('#update-check').onclick = async () => {
+    const b = $('#update-check');
+    b.disabled = true;
+    b.textContent = 'Checking…';
+    const waiting = await checkForUpdate();
+    b.disabled = false;
+    b.textContent = 'Check for updates';
+    toast(waiting ? 'A new version is ready: tap Update' : 'You have the latest version');
+  };
   const toggle = $('#diag-toggle'),
     label = () => (toggle.textContent = diagnosticsOn() ? 'Turn off' : 'Turn on'),
     developer = $('#developer');

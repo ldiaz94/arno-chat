@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "test": "eslint . && prettier --check . && node --import ./test-hooks.mjs --test test.mjs",
-    "fmt": "prettier --write ."
+    "fmt": "prettier --write .",
+    "deploy": "wrangler deploy --var BUILD:$(git rev-parse --short HEAD)$(git diff --quiet HEAD || echo +) --var DEPLOYED:$(date -u +%Y-%m-%dT%H:%MZ)"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

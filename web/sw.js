@@ -15,7 +15,7 @@
  * fetch the new shell. A new worker waits until the page's Update button
  * (update.js) sends SKIP_WAITING (test.mjs checks SHELL lists every web/ file).
  */
-const VERSION = 'v24';
+const VERSION = 'v25';
 const SHELL_CACHE = 'arno-shell-' + VERSION;
 const DATA_CACHE = 'arno-data'; // cleared by offline.js on sign-out
 const SHELL = [
@@ -78,6 +78,8 @@ self.addEventListener('install', e =>
 
 self.addEventListener('message', e => {
   if (e.data?.type === 'SKIP_WAITING') self.skipWaiting();
+  // The You tab's About card asks which version this device runs.
+  if (e.data?.type === 'VERSION') e.source?.postMessage({ type: 'VERSION', version: VERSION });
 });
 
 self.addEventListener('activate', e =>

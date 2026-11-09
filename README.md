@@ -44,7 +44,7 @@ If GitHub shows only 17 repositories, check the connection permissions rather th
 - `node design-test.cjs`: Playwright against the local web/ files in the system Chromium (set CHROMIUM_PATH if it is not /usr/bin/chromium). `node browser-test.cjs` runs it against the deployed files.
 - `node serve-test.mjs`: drives the real `arno --serve` against Arno's stub model (see OPERATIONS.md).
 - `node offline-test.cjs`: Playwright offline reading against a local server (warm, go offline, reload, open a conversation and artifact; queue messages, a rename and a new chat, then check they reach the server in order once back online).
-- Deploy with `npx wrangler deploy`.
+- Deploy with `npm run deploy`; the You tab's About card shows the version and build.
 
 Browser fixtures are not evidence of real OAuth or GitHub publication. Real provider, container, MCP and research runs are in the validation record in [OPERATIONS.md](OPERATIONS.md).
 

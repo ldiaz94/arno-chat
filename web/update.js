@@ -12,6 +12,36 @@ const CHECK_EVERY = 30 * 60 * 1000; // ms between update checks
 let bar = null; // the bar, once shown
 let reloading = false; // set by the Update button; the reload happens once
 
+/** The version of the app this device runs, as its service worker says
+ * ('v24'), or '' when there is none or it doesn't answer within a second. */
+export function appVersion() {
+  const worker = navigator.serviceWorker?.controller;
+  if (!worker) return Promise.resolve('');
+  return new Promise(done => {
+    const timer = setTimeout(() => done(''), 1000);
+    const heard = e => {
+      if (e.data?.type !== 'VERSION') return;
+      clearTimeout(timer);
+      navigator.serviceWorker.removeEventListener('message', heard);
+      done(e.data.version);
+    };
+    navigator.serviceWorker.addEventListener('message', heard);
+    worker.postMessage({ type: 'VERSION' });
+  });
+}
+/** Asks the server for a new version now: true when one is waiting after. */
+export async function checkForUpdate() {
+  const registration = await navigator.serviceWorker?.getRegistration();
+  if (!registration) return false;
+  await registration.update().catch(() => {});
+  if (registration.installing)
+    await new Promise(done =>
+      registration.installing.addEventListener('statechange', function wait() {
+        if (this.state !== 'installing') done();
+      }),
+    );
+  return !!registration.waiting;
+}
 /** Watches a registration for a waiting worker and checks for new ones. */
 export function watchUpdates(registration) {
   const offer = () => {

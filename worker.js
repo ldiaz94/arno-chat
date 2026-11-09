@@ -27,6 +27,8 @@ export default {
           repoAccess: auth ? await repoAccess(auth) : null,
           scopes: auth?.scopes || null,
           githubConfigured: !!(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
+          // Set by npm run deploy: the commit deployed and when.
+          build: { commit: env.BUILD || null, deployed: env.DEPLOYED || null },
         });
       if (!auth) return json({ error: 'Sign in required' }, 401);
       const allowed = (env.ALLOWED_GITHUB_LOGINS || '')

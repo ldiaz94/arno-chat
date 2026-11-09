@@ -16,7 +16,7 @@ Keep UI, protocol and provider changes testable separately. Add security tests f
 
 ## Deployment
 
-`npx wrangler deploy` (log in first with `npx wrangler login`). wrangler.jsonc names the Worker, the PROBE Durable Object binding and its ArnoProbe sqlite export (keep both to preserve session routing and storage), the pinned container image digest, the web/ assets directory and the login allowlist. Secrets persist across deploys. When a deploy changes any file in web/, bump `VERSION` in web/sw.js so installed apps offer the new shell: they show an "Update available" bar, and the new worker takes over when the user taps Update (or on the next launch after all windows close).
+`npm run deploy` (log in first with `npx wrangler login`): `wrangler deploy` with the commit (`+` when the tree has uncommitted changes) and the time as the BUILD and DEPLOYED vars, which /api/me returns and the You tab's About card shows beside the version the device runs (sw.js VERSION). Commit before deploying, so the build names a commit. wrangler.jsonc names the Worker, the PROBE Durable Object binding and its ArnoProbe sqlite export (keep both to preserve session routing and storage), the pinned container image digest, the web/ assets directory and the login allowlist. Secrets persist across deploys. When a deploy changes any file in web/, bump `VERSION` in web/sw.js so installed apps offer the new shell: they show an "Update available" bar, and the new worker takes over when the user taps Update (or on the next launch after all windows close).
 
 ### Runner image
 
@@ -24,7 +24,7 @@ runner/Dockerfile is Arch Linux because arno is built on the Arch host and is dy
 
 1. `concha runner/prepare.cn` builds `~/r/arno` and copies the binary next to the Dockerfile.
 2. `npx wrangler containers build runner -t arno-runner:vN -p --platform linux/amd64` builds and pushes it, and prints a digest.
-3. Put that digest in wrangler.jsonc (`registry.cloudflare.com/<account>/arno-runner@sha256:…`), then `npx wrangler deploy`.
+3. Put that digest in wrangler.jsonc (`registry.cloudflare.com/<account>/arno-runner@sha256:…`), then `npm run deploy`.
 
 Encrypted Worker secrets:
 
