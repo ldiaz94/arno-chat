@@ -2,7 +2,7 @@
  * The Durable Object and gateway classes live in their own modules and are
  * re-exported here for the runtime. */
 import { SECURITY, json, sameOrigin } from './http.mjs';
-import { currentAuth, handleOAuth } from './auth.mjs';
+import { currentAuth, handleOAuth, repoAccess } from './auth.mjs';
 import { apiRoutes, sessionPaths } from './api.mjs';
 
 export { ArnoProbe } from './session.mjs';
@@ -24,6 +24,7 @@ export default {
         return json({
           user: auth?.user || null,
           githubConnected: auth?.githubConnected ?? null,
+          repoAccess: auth ? await repoAccess(auth) : null,
           scopes: auth?.scopes || null,
           githubConfigured: !!(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
         });

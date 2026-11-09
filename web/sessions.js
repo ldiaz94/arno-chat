@@ -155,6 +155,46 @@ export async function newChat(text) {
     showError(e);
   }
 }
+/** On the Code home: a note when private repositories can't be reached, saying
+ * what to change on GitHub. Nothing when every repository is reachable, or
+ * when GitHub couldn't be asked. */
+function repoBanner() {
+  const r = state.repoAccess;
+  if (!r || r.access === 'all' || r.access === 'unknown') return '';
+  const [head, text, link, label] = r.app
+    ? r.access === 'selected'
+      ? [
+          'Arno can reach only some of your repositories',
+          'The Arno GitHub app is installed on selected repositories. To work on others, add them on GitHub, or choose All repositories.',
+          r.configure,
+          'Choose repositories on GitHub',
+        ]
+      : [
+          'Private repositories aren’t connected',
+          'The Arno GitHub app isn’t installed on your account, so only public repositories show. Install it with All repositories; an organisation’s repositories need the app installed there too.',
+          r.configure,
+          'Install on GitHub',
+        ]
+    : [
+        'Private repositories aren’t connected',
+        'Signing in only lets Arno see your public repositories. Connect repository access to work on private ones.',
+        '/auth/github?repos=1',
+        'Connect GitHub repositories',
+      ];
+  return (
+    '<div class="connect-repos"><div><strong>' +
+    head +
+    '</strong><p class="caption">' +
+    text +
+    '</p></div><a class="primary button-link" href="' +
+    esc(link) +
+    '"' +
+    (r.app ? ' target="_blank" rel="noopener noreferrer"' : '') +
+    '>' +
+    label +
+    '</a></div>'
+  );
+}
 export async function home() {
   $('#code-dialog').close();
   ++state.generation;
@@ -259,10 +299,7 @@ function codeHome() {
           .join('') +
         '</div>'
       : '') +
-    // Without repository access GitHub shows only public repositories.
-    (state.githubConnected
-      ? ''
-      : '<div class="connect-repos"><div><strong>Private repositories aren’t connected</strong><p class="caption">Signing in only lets Arno see your public repositories. Connect repository access to search, clone and publish private ones. For an organisation’s repositories, approve Arno for that organisation on the GitHub page that opens.</p></div><a class="primary button-link" href="/auth/github?repos=1">Connect GitHub repositories</a></div>') +
+    repoBanner() +
     '<div class="section-title"><h2>Start from a repository</h2>' +
     modelChip() +
     '</div><div class="searchbox">' +

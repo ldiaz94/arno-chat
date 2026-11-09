@@ -2298,3 +2298,29 @@ test('coding: search off leaves the web MCP server out of the runner config', as
   assert.match(await configFor(turnPlan()), /mcp = web /);
   assert.doesNotMatch(await configFor(turnPlan({ search: false })), /mcp = web /);
 });
+test('repository access: GitHub App installations decide what is reachable', async () => {
+  const { repoAccess } = await import('./auth.mjs');
+  const realFetch = globalThis.fetch;
+  const reply = installations => (globalThis.fetch = async () => Response.json({ installations }));
+  const auth = { token: 'ghu_x', user: { login: 'me' } };
+  try {
+    reply([{ account: { login: 'me' }, repository_selection: 'all', html_url: 'https://g/1' }]);
+    assert.equal((await repoAccess(auth)).access, 'all');
+    reply([
+      { account: { login: 'me' }, repository_selection: 'selected', html_url: 'https://g/1' },
+    ]);
+    assert.deepEqual(await repoAccess(auth), {
+      app: true,
+      access: 'selected',
+      configure: 'https://g/1',
+    });
+    reply([{ account: { login: 'someone-else' }, repository_selection: 'all' }]);
+    assert.equal((await repoAccess(auth)).access, 'public');
+    assert.deepEqual(await repoAccess({ token: 'gho_y', githubConnected: true }), {
+      app: false,
+      access: 'all',
+    });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

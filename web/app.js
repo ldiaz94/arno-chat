@@ -156,6 +156,7 @@ async function boot() {
     const d = await api('/api/me');
     state.user = d.user;
     state.githubConnected = d.githubConnected;
+    state.repoAccess = d.repoAccess;
     if (!state.user) {
       if (!state.offline) clearData(); // signed out: drop the device's copy
       title('Welcome to Arno', 'Your code, wherever you are');

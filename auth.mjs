@@ -2,9 +2,6 @@
  * in its own Durable Object, and an authenticated GitHub API client. */
 import { COOKIE, SECURITY, json, cookie, sessionCookie } from './http.mjs';
 
-/** Remembers that this browser connected repository access (no secret in it). */
-const REPOS_COOKIE = 'arno_repos';
-
 export function authObject(env, id) {
   return env.PROBE.getByName(`auth:${id}`);
 }
@@ -29,16 +26,34 @@ export async function github(path, token, init = {}) {
   });
 }
 
+/** What repositories the connection reaches. A GitHub App user token (ghu_)
+ * has no scopes: it reaches what the app is installed on, so ask GitHub for
+ * the installations ('all' or 'selected' repositories). An OAuth token reaches
+ * private repositories when it has the repo scope. */
+export async function repoAccess(auth) {
+  if (!/^ghu_/.test(auth.token))
+    return { app: false, access: auth.githubConnected ? 'all' : 'public' };
+  try {
+    const r = await github('/user/installations', auth.token);
+    if (!r.ok) return { app: true, access: 'unknown' };
+    const { installations = [] } = await r.json(),
+      mine = installations.find(i => i.account?.login === auth.user.login);
+    return {
+      app: true,
+      access: !mine ? 'public' : mine.repository_selection === 'all' ? 'all' : 'selected',
+      configure: mine?.html_url || 'https://github.com/settings/installations',
+    };
+  } catch {
+    return { app: true, access: 'unknown' };
+  }
+}
+
 export async function handleOAuth(request, env, url) {
   if (url.pathname === '/auth/github') {
     if (!env.GITHUB_CLIENT_ID || !env.GITHUB_CLIENT_SECRET)
       return json({ error: 'GitHub OAuth is not configured' }, 503);
     const state = crypto.randomUUID();
-    // Repository access is asked for when connecting it, and on every later
-    // sign-in from a browser that connected it (REPOS_COOKIE): otherwise signing
-    // in again would replace the token with one that sees no private repos.
-    const asked = url.searchParams.get('repos') === '1',
-      connectRepos = asked || cookie(request, REPOS_COOKIE) === '1';
+    const connectRepos = url.searchParams.get('repos') === '1';
     await authObject(env, state).fetch('https://internal/oauth/put', {
       method: 'POST',
       body: JSON.stringify({ origin: url.origin, connectRepos }),
@@ -47,7 +62,7 @@ export async function handleOAuth(request, env, url) {
     target.searchParams.set('client_id', env.GITHUB_CLIENT_ID);
     target.searchParams.set('redirect_uri', `${url.origin}/auth/callback`);
     target.searchParams.set('scope', connectRepos ? 'read:user repo' : 'read:user');
-    if (asked) target.searchParams.set('prompt', 'select_account');
+    if (connectRepos) target.searchParams.set('prompt', 'select_account');
     target.searchParams.set('state', state);
     return new Response(null, {
       status: 302,
@@ -111,14 +126,10 @@ export async function handleOAuth(request, env, url) {
       method: 'POST',
       body: JSON.stringify({ id }),
     });
-    const headers = new Headers({ Location: '/', ...SECURITY });
-    headers.append('Set-Cookie', sessionCookie(id));
-    if (scopes.includes('repo'))
-      headers.append(
-        'Set-Cookie',
-        REPOS_COOKIE + '=1; Path=/auth/; HttpOnly; Secure; SameSite=Lax; Max-Age=31536000',
-      );
-    return new Response(null, { status: 302, headers });
+    return new Response(null, {
+      status: 302,
+      headers: { Location: '/', 'Set-Cookie': sessionCookie(id), ...SECURITY },
+    });
   }
   if (url.pathname === '/auth/logout') {
     const id = cookie(request, COOKIE);
