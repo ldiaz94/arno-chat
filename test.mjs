@@ -5,6 +5,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { catalog } from './models.mjs';
 import { markdown, cleanOutput } from './web/render.mjs';
 import { Outbox, conflicted, isLocal } from './web/queue.mjs';
+import { moon, byRecent, ago, daily, weatherText } from './web/today.mjs';
+import { QUOTES, FACTS } from './web/home-content.js';
 import { buildPrompt } from './context.mjs';
 import { validateFiles } from './publish.mjs';
 import { usageStream, modelRequest, displayDelta } from './gateway.mjs';
@@ -577,6 +579,116 @@ test('account validates and returns the about-you text', async () => {
   const r = await save('Ana, a nurse');
   assert.equal(r.status, 200);
   assert.equal((await r.json()).about, 'Ana, a nurse');
+});
+test('account validates the home page, Enter key and default model', async () => {
+  const f = fixture(),
+    env = {
+      ACCOUNT_ENCRYPTION_KEY: btoa(String.fromCharCode(...new Uint8Array(32).fill(9))),
+      PROBE: { getByName: () => ({ fetch: (url, opt) => f.obj.fetch(new Request(url, opt)) }) },
+    };
+  const save = extra =>
+    accountRoute(
+      new Request('https://arno.test/api/account', {
+        method: 'POST',
+        body: JSON.stringify({ systemPrompt: '', skills: [], mcp: [], models: [], ...extra }),
+      }),
+      env,
+      1,
+    );
+  // Defaults before anything is saved.
+  let d = await (await save({})).json();
+  assert.deepEqual(d.home, { quote: true, fact: true, moon: true, weather: false, place: '' });
+  assert.equal(d.enterSends, false); // today's behaviour: Enter adds a line
+  assert.equal(d.defaultModel, '');
+  for (const bad of [
+    { home: 'yes' },
+    { home: { quote: 'yes' } },
+    { home: { place: 'x'.repeat(101) } },
+    { home: { lat: 95, lon: 0 } },
+    { home: { lat: 'a', lon: 2 } },
+    { enterSends: 'no' },
+    { defaultModel: 5 },
+    { defaultModel: 'meta/muse-spark-1.3-contributor' },
+  ])
+    assert.equal((await save(bad)).status, 400, JSON.stringify(bad));
+  d = await (
+    await save({
+      home: { quote: false, weather: true, lat: 38.7223, lon: -9.1393 },
+      enterSends: false,
+      defaultModel: 'openai/gpt-test',
+    })
+  ).json();
+  // Coordinates are kept only to about 10 km.
+  assert.deepEqual(d.home, {
+    quote: false,
+    fact: true,
+    moon: true,
+    weather: true,
+    place: '',
+    lat: 38.7,
+    lon: -9.1,
+  });
+  assert.equal(d.enterSends, false);
+  assert.equal(d.defaultModel, 'openai/gpt-test');
+  // A save that leaves them out keeps them.
+  d = await (await save({ about: 'Ana' })).json();
+  assert.equal(d.enterSends, false);
+  assert.equal(d.home.weather, true);
+});
+test('moon phase matches known new and full moons', () => {
+  const near = (phase, target) => Math.min(Math.abs(phase - target), 1 - Math.abs(phase - target));
+  // New moons of the total solar eclipses of 2017-08-21 and 2024-04-08.
+  for (const at of ['2017-08-21T18:30Z', '2024-04-08T18:21Z']) {
+    const m = moon(new Date(at));
+    assert.ok(near(m.phase, 0) < 0.03, at);
+    assert.equal(m.name, 'New moon');
+    assert.ok(m.lit < 0.02);
+    assert.ok(Math.abs(m.toFull - 14.8) < 1);
+  }
+  // Full moon of the total lunar eclipse of 2025-03-14.
+  const m = moon(new Date('2025-03-14T06:55Z'));
+  assert.ok(near(m.phase, 0.5) < 0.03);
+  assert.equal(m.name, 'Full moon');
+  assert.ok(m.lit > 0.98);
+  assert.equal(moon(new Date('2025-03-21T12:00Z')).name, 'Last quarter');
+});
+test('home page picks one quote and fact a day, and reads weather codes', () => {
+  const day = new Date(2026, 10, 9, 8),
+    evening = new Date(2026, 10, 9, 22);
+  assert.equal(daily(QUOTES, day), daily(QUOTES, evening));
+  assert.notEqual(daily(QUOTES, day), daily(QUOTES, new Date(2026, 10, 10, 8)));
+  assert.notEqual(daily(FACTS, day), daily(FACTS, day, 1));
+  assert.ok(QUOTES.length >= 80 && FACTS.length >= 60);
+  assert.ok(QUOTES.every(([text, author]) => text && typeof author === 'string'));
+  assert.equal(weatherText(0).text, 'Clear sky');
+  assert.equal(weatherText(63).text, 'Rain');
+  assert.equal(weatherText(99).text, 'Thunderstorm with hail');
+  assert.equal(weatherText(1234).text, 'Unknown');
+});
+test('conversations are ordered by last activity, with relative times', async () => {
+  const list = [
+    { id: 'old', createdAt: 1 },
+    { id: 'busy', createdAt: 2, updatedAt: 50 },
+    { id: 'new', createdAt: 10 },
+  ];
+  assert.deepEqual(
+    byRecent(list).map(s => s.id),
+    ['busy', 'new', 'old'],
+  );
+  const now = new Date(2026, 10, 9, 15).getTime();
+  assert.equal(ago(now - 20000, now), 'now');
+  assert.equal(ago(now - 2 * 60000, now), '2m');
+  assert.equal(ago(now - 3 * 3600000, now), '3h');
+  assert.equal(ago(new Date(2026, 10, 8, 23).getTime(), now), 'Yesterday');
+  assert.equal(ago(0, now), '');
+  // The server's list is in the same order.
+  const f = fixture();
+  f.ctx.storage.list = async () => new Map(list.map(s => ['session:' + s.id, s]));
+  const r = await f.obj.fetch(new Request('https://internal/index/list'));
+  assert.deepEqual(
+    (await r.json()).sessions.map(s => s.id),
+    ['busy', 'new', 'old'],
+  );
 });
 test('Anthropic gateway uses native protocol and merges usage without exposing credentials', async () => {
   let seen, usage;

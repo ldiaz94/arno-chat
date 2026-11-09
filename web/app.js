@@ -17,6 +17,7 @@ import {
   main,
   prompt,
   loadAvatar,
+  sendKey,
 } from './core.js';
 import { drawer, title, sidebar, theme } from './layout.js';
 import { loadModels, openModels, renderModels, chooseModel } from './models.js';
@@ -28,6 +29,7 @@ import { artifactClick } from './artifacts.js';
 import {
   resume,
   newChat,
+  switchMode,
   home,
   exportChat,
   renameConversation,
@@ -60,7 +62,7 @@ $('#model-search').oninput = renderModels;
 $('#composer').onsubmit = submit;
 $('#jump-bottom').onclick = () => scrollDown(true);
 $('#publish').onclick = reviewPublish;
-$('#new-chat').onclick = newChat;
+$('#new-chat').onclick = () => newChat();
 $('#rename-conversation').onclick = () => renameConversation();
 $('#delete-conversation').onclick = () => deleteConversation();
 $('#list-rename').onclick = () => renameConversation(state.menuTarget);
@@ -101,11 +103,13 @@ prompt.oninput = () => {
   if (state.session) sessionStorage.setItem('draft:' + state.session.id, prompt.value);
 };
 prompt.onkeydown = e => {
-  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+  if (sendKey(e)) {
     e.preventDefault();
     $('#composer').requestSubmit();
   }
 };
+for (const b of document.querySelectorAll('[data-mode]'))
+  b.onclick = () => switchMode(b.dataset.mode);
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') drawer(false);
   if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -140,7 +144,6 @@ document.addEventListener('click', e => {
     resizePrompt();
     prompt.focus();
   }
-  if (e.target.closest('[data-new-chat]')) newChat();
   const close = e.target.closest('[data-close]');
   if (close) close.closest('dialog').close();
   const code = e.target.closest('.copy-code');
@@ -163,13 +166,19 @@ async function boot() {
       loadModels(),
       loadAvatar(),
       api('/api/sessions').then(d => (state.sessions = d.sessions)),
+      // The preferences (home page, Enter, default model); defaults without them.
+      api('/api/account')
+        .then(d => (state.profile = d))
+        .catch(() => {}),
     ]);
     await startOutbox(); // chats made offline join the list
     sidebar();
     // A notification links to /?session=<id>: open it, then tidy the address.
     const linked = new URLSearchParams(location.search).get('session');
     if (linked) history.replaceState(null, '', location.pathname);
-    const saved = /^[0-9a-f-]{36}$/.test(linked || '') ? linked : sessionStorage.getItem('session');
+    const saved = /^[0-9a-f-]{36}$/.test(linked || '')
+      ? linked
+      : sessionStorage.getItem('session:' + state.mode);
     if (saved) await resume(saved);
     else await home();
     flush(); // whatever waited from an earlier visit

@@ -16,6 +16,10 @@ export function providerOf(id) {
 export function modelLabel(id) {
   return providerMark(providerOf(id), 16) + '<span>' + esc(modelName(id)) + '</span>';
 }
+const FALLBACK = 'mistral-large-4:cloud'; // when nothing else names a model
+/** The model a new chat or coding session starts with: the one picked on the
+ * home page, else the profile's default model. */
+export const startModel = () => state.selectedModel || state.profile.defaultModel || FALLBACK;
 export async function loadModels() {
   try {
     const d = await api('/api/models');
@@ -23,11 +27,11 @@ export async function loadModels() {
     state.fallback = d.fallback;
     if (d.fallback) toast('Live model catalog unavailable. Showing saved models.');
   } catch {
-    state.models = [{ id: 'mistral-large-4:cloud', name: 'Mistral Large 4 · Le Chonk' }];
+    state.models = [{ id: FALLBACK, name: 'Mistral Large 4 · Le Chonk' }];
   }
 }
 export function modelButton() {
-  const id = state.session?.model || state.selectedModel || 'mistral-large-4:cloud';
+  const id = state.session?.model || startModel();
   $('#model-button').innerHTML = modelLabel(id) + '<span aria-hidden="true">⌄</span>';
 }
 export function openModels(target) {
@@ -40,7 +44,7 @@ export function openModels(target) {
 }
 export function renderModels() {
   const q = $('#model-search').value.toLowerCase(),
-    current = state.session?.model || state.selectedModel || 'mistral-large-4:cloud';
+    current = state.session?.model || startModel();
   const models = state.models.some(m => m.id === current)
     ? state.models
     : [{ id: current, name: current }, ...state.models];

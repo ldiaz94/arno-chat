@@ -8,7 +8,7 @@ import { $, state, esc, api, toast, unreachable } from './core.js';
 import { fit } from './layout.js';
 import { loadModels } from './models.js';
 import { providerMark } from './marks.js';
-import { profilePanel, wireProfile } from './profile.js';
+import { profilePanel, wireProfile, profilePrefs } from './profile.js';
 import { pushState, enablePush, disablePush } from './push.js';
 import { controls } from './offline.js';
 import { queueProfile } from './outbox.js';
@@ -449,9 +449,17 @@ async function saveAccount() {
     button = $('#save-account');
   button.disabled = true;
   status.textContent = 'Saving preferences…';
+  let prefs;
+  try {
+    prefs = await profilePrefs();
+  } catch (e) {
+    status.textContent = e.message;
+    button.disabled = false;
+    return;
+  }
   const body = {
     systemPrompt: $('#system-prompt').value,
-    about: $('#about').value,
+    ...prefs,
     skills: [...document.querySelectorAll('.skill-card')].map(n => ({
       name: n.querySelector('.skill-name').value,
       content: n.querySelector('.skill-content').value,
@@ -480,10 +488,14 @@ async function saveAccount() {
       // connections can't change offline; their saved tokens stay as they are.
       body.mcp = body.mcp.map(m => ({ ...m, token: undefined, clearToken: false }));
       await queueProfile(body, account.updatedAt || 0);
+      state.profile = { ...state.profile, ...prefs }; // applies on this device now
+      dispatchEvent(new Event('arno:prefs'));
       status.textContent = 'Saved on this device · sends when online.';
       return;
     }
     document.querySelectorAll('#account-body input[type=password]').forEach(n => (n.value = ''));
+    state.profile = account;
+    dispatchEvent(new Event('arno:prefs'));
     status.textContent = 'Saved. Instructions, skills, and connections apply to subsequent turns.';
     await loadModels();
     toast('Account preferences saved');

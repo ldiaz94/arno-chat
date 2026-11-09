@@ -18,7 +18,7 @@
  */
 import { Outbox, isLocal, conflicted } from './queue.mjs';
 import { $, state, esc, api, toast, showError } from './core.js';
-import { sidebar, title } from './layout.js';
+import { sidebar, title, bump } from './layout.js';
 import { message, failure, scrollDown } from './thread.js';
 import { watchJob } from './turns.js';
 import { uploadFile, bytes } from './attach.js';
@@ -378,7 +378,7 @@ async function createChat(e) {
   state.sessions = state.sessions.map(r => (r.id === local ? row : r));
   if (state.session?.id === local) {
     state.session = { ...state.session, ...row, history: state.session.history };
-    sessionStorage.setItem('session', s.id);
+    sessionStorage.setItem('session:chat', s.id);
     const draft = sessionStorage.getItem('draft:' + local);
     if (draft) sessionStorage.setItem('draft:' + s.id, draft);
   }
@@ -413,6 +413,7 @@ async function sendMessage(e) {
       await settle(sid);
     }
   await outbox.remove(e.key);
+  bump(sid); // sent: the conversation moves to the top of the list
   showQueued();
   if (state.session?.id === sid) {
     const gen = state.generation;

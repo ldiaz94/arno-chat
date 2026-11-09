@@ -18,7 +18,20 @@ export const state = {
   modelTarget: null,
   avatar: 0, // cache-busting stamp of the profile picture; 0 when there is none
   offline: false, // no network: showing saved conversations (offline.js)
+  mode: localStorage.getItem('mode') === 'code' ? 'code' : 'chat', // the sidebar's Chat | Code
+  profile: {}, // the account's preferences (GET /api/account): home, enterSends, defaultModel
 };
+/** The mode a conversation belongs to: plain chats to Chat, the rest to Code. */
+export const modeOf = s => (s?.kind === 'chat' ? 'chat' : 'code');
+/** Whether Enter alone sends (the default), or adds a new line. */
+export const enterSends = () => state.profile.enterSends === true;
+/** Whether a key press in a message box sends it: Ctrl/⌘+Enter always does,
+ * Enter alone when the profile says so; Shift+Enter and IME input never. */
+export const sendKey = e =>
+  e.key === 'Enter' && !e.shiftKey && !e.isComposing && (e.metaKey || e.ctrlKey || enterSends());
+/** The hint under a message box. */
+export const sendHint = () =>
+  enterSends() ? 'Enter to send · Shift + Enter for a new line' : '⌘ / Ctrl + Enter to send';
 export const esc = s =>
   String(s ?? '').replace(
     /[&<>"']/g,
@@ -79,11 +92,6 @@ export function duration(ms) {
 }
 export function modelName(id) {
   return state.models.find(m => m.id === id)?.name || id || 'Choose model';
-}
-export function date(ms) {
-  return ms
-    ? new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-    : 'Saved session';
 }
 /** The error api() throws when the network is gone; the outbox (outbox.js) keeps
  * what failed this way and sends it later. */

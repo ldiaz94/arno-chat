@@ -1,6 +1,9 @@
-/** Sessions and the home page: open, create, list, search, export, rename and delete
- * conversations. Offline, a new chat and a rename wait in the outbox. Depends on core,
- * layout, models, thread, turns, attach, offline, outbox, queue.mjs and render.mjs.
+/** Sessions and the home pages: switch between Chat and Code, open, create, list,
+ * search, export, rename and delete conversations. Each mode has its own home and
+ * remembers its last open conversation (sessionStorage `session:chat`,
+ * `session:code`); the mode itself survives reloads (localStorage `mode`).
+ * Offline, a new chat and a rename wait in the outbox. Depends on core, layout,
+ * models, thread, turns, attach, home, offline, outbox, queue.mjs and render.mjs.
  */
 import { cleanOutput } from './render.mjs';
 import {
@@ -15,12 +18,17 @@ import {
   main,
   composer,
   prompt,
+  shell,
+  modeOf,
+  sendKey,
+  sendHint,
 } from './core.js';
 import { drawer, busy, title, sidebar } from './layout.js';
-import { modelButton, modelLabel, openModels } from './models.js';
+import { modelButton, modelLabel, openModels, startModel } from './models.js';
 import { message, failure, scrollDown, suggestions } from './thread.js';
 import { watchJob, resizePrompt } from './turns.js';
 import { clearAttachments } from './attach.js';
+import { greeting, todayCard, wireToday } from './home.js';
 import { controls } from './offline.js';
 import {
   showQueued,
@@ -32,6 +40,7 @@ import {
   retryChat,
 } from './outbox.js';
 import { isLocal } from './queue.mjs';
+import { byRecent, ago, activeAt } from './today.mjs';
 export async function resume(id) {
   $('#code-dialog').close();
   const gen = ++state.generation;
@@ -48,13 +57,11 @@ export async function resume(id) {
     state.session = { id, ...s };
     state.job = null;
     state.busy = false;
+    setMode(modeOf(s));
     clearAttachments();
-    sessionStorage.setItem('session', id);
+    sessionStorage.setItem('session:' + state.mode, id);
     sidebar();
-    $('.composer-hint').textContent =
-      s.kind === 'chat'
-        ? '⌘ / Ctrl + Enter to send · Conversations are saved automatically'
-        : '⌘ / Ctrl + Enter to send · Changes are saved after each turn';
+    $('.composer-hint').textContent = composerHint(s);
     prompt.placeholder =
       s.kind === 'chat' ? 'Message Arno…' : 'Ask Arno to build, fix, or explain…';
     $('#code').hidden = s.kind === 'chat';
@@ -109,8 +116,29 @@ export async function resume(id) {
     $('#retry-open').onclick = () => resume(id);
   }
 }
-export async function newChat() {
-  const model = state.session?.model || state.selectedModel || 'mistral-large-4:cloud';
+const composerHint = s =>
+  sendHint() +
+  (s.kind === 'chat'
+    ? ' · Conversations are saved automatically'
+    : ' · Changes are saved after each turn');
+function setMode(mode) {
+  state.mode = mode;
+  localStorage.setItem('mode', mode);
+}
+/** Shows the other mode: its last open conversation, else its home. On a phone
+ * the drawer stays open, so its list of conversations is what you see. */
+export async function switchMode(mode) {
+  if (mode === state.mode && state.session) return;
+  const open = shell.classList.contains('drawer-open'),
+    last = sessionStorage.getItem('session:' + mode);
+  setMode(mode);
+  if (last && state.sessions.some(s => s.id === last)) await resume(last);
+  else await home();
+  if (open) drawer(true);
+}
+/** Starts a chat with the default model; with `text`, sends it as the first message. */
+export async function newChat(text) {
+  const model = startModel();
   try {
     let s;
     try {
@@ -122,6 +150,10 @@ export async function newChat() {
     }
     state.sessions.unshift(s);
     await resume(s.id);
+    if (text && state.session?.id === s.id) {
+      prompt.value = text;
+      $('#composer').requestSubmit();
+    }
   } catch (e) {
     showError(e);
   }
@@ -137,21 +169,107 @@ export async function home() {
   busy(false);
   drawer(false);
   composer.hidden = true;
-  sessionStorage.removeItem('session');
-  title('Your workspace', 'Build from wherever you are');
+  sessionStorage.removeItem('session:' + state.mode);
   sidebar();
+  if (state.mode === 'chat') chatHome();
+  else codeHome();
+  $('#home-model').onclick = () => openModels('home');
+  wireToday();
+  controls();
+}
+// Saved preferences show at once: the home page again, or the composer's hint.
+addEventListener('arno:prefs', () => {
+  if (!state.session && main.querySelector('.home')) home();
+  else if (state.session) $('.composer-hint').textContent = composerHint(state.session);
+});
+/** Opening lines for the chat home's chips: each fills the box, to finish and send. */
+const STARTERS = [
+  ['Explain', 'Explain like I’m new to it: '],
+  ['Plan', 'Help me plan '],
+  ['Write', 'Help me write '],
+  ['Brainstorm', 'Brainstorm ideas for '],
+  ['Summarize', 'Summarize this for me:\n\n'],
+];
+const modelChip = () =>
+  '<button id="home-model" class="ghost model-button" type="button" aria-label="Model for new conversations">' +
+  modelLabel(startModel()) +
+  '</button>';
+function chatHome() {
+  title('Chat', 'Ask, think and research');
   main.innerHTML =
-    '<div class="home"><div class="welcome"><div class="eyebrow">Arno / Remote coding</div><h1>Good ideas don’t wait<br>for a desk.</h1><p>Pick a repository. Start a conversation. Turn the next idea into working code.</p></div><div class="home-actions"><button class="primary" data-new-chat>＋ Start a regular chat</button><a class="caption" href="/auth/github?repos=1">Connect / refresh GitHub repository access ↗</a></div><div class="overview"><div class="metric"><b>' +
-    state.sessions.length +
-    '</b><span>Saved sessions</span></div><div class="metric"><b>' +
-    state.models.length +
-    '</b><span>Cloud models</span></div><div class="metric"><b>' +
-    icon('check') +
-    '</b><span>Persistent conversations</span></div></div><div class="section-title"><h2>Your repositories</h2><button id="home-model" class="ghost">' +
-    modelLabel(state.selectedModel || 'mistral-large-4:cloud') +
-    '</button></div><div class="searchbox">' +
+    '<div class="home home-chat">' +
+    greeting('Arno / Chat', 'Ask anything. Arno can search the web and cite its sources.') +
+    '<form id="home-ask" class="home-ask"><textarea id="home-prompt" rows="2" maxlength="8000" placeholder="What’s on your mind?" aria-label="Start a chat"></textarea><div class="home-ask-bar">' +
+    modelChip() +
+    '<span class="caption home-hint">' +
+    sendHint() +
+    '</span><button class="primary" type="submit" aria-label="Start chat">' +
+    icon('arrow') +
+    '</button></div></form><div class="chips">' +
+    STARTERS.map(
+      ([label, text]) =>
+        '<button type="button" class="chip" data-starter="' +
+        esc(text) +
+        '">' +
+        label +
+        '</button>',
+    ).join('') +
+    '</div>' +
+    todayCard(false) +
+    '</div>';
+  const box = $('#home-prompt'),
+    start = () => box.value.trim() && newChat(box.value.trim());
+  $('#home-ask').onsubmit = e => {
+    e.preventDefault();
+    start();
+  };
+  box.onkeydown = e => {
+    if (!sendKey(e)) return;
+    e.preventDefault();
+    start();
+  };
+  for (const chip of main.querySelectorAll('[data-starter]'))
+    chip.onclick = () => {
+      box.value = chip.dataset.starter;
+      box.focus();
+      box.setSelectionRange(box.value.length, box.value.length);
+    };
+}
+function codeHome() {
+  title('Code', 'Build from wherever you are');
+  const recent = byRecent(state.sessions.filter(s => modeOf(s) === 'code')).slice(0, 4);
+  main.innerHTML =
+    '<div class="home home-code">' +
+    greeting(
+      'Arno / Code',
+      'Pick a repository, start a session, turn the next idea into working code.',
+    ) +
+    todayCard(true) +
+    (recent.length
+      ? '<div class="section-title"><h2>Recent sessions</h2></div><div class="recent-grid">' +
+        recent
+          .map(
+            s =>
+              '<button type="button" class="recent-card" data-session="' +
+              esc(s.id) +
+              '"><strong>' +
+              esc(s.title || s.repo) +
+              '</strong><small>' +
+              esc(s.repo) +
+              ' · ' +
+              esc(s.ref || 'main') +
+              ' · ' +
+              ago(activeAt(s)) +
+              '</small></button>',
+          )
+          .join('') +
+        '</div>'
+      : '') +
+    '<div class="section-title"><h2>Start from a repository</h2>' +
+    modelChip() +
+    '</div><div class="searchbox">' +
     icon('search') +
-    '<input id="search" type="search" placeholder="Search all accessible repositories" aria-label="Search repositories" autocomplete="off"></div><div id="repo-progress" class="search-progress" role="status"></div><div id="repos" class="repo-grid"></div><div id="more-repos"></div></div>';
+    '<input id="search" type="search" placeholder="Search all accessible repositories" aria-label="Search repositories" autocomplete="off"></div><div id="repo-progress" class="search-progress" role="status"></div><div id="repos" class="repo-grid"></div><div id="more-repos"></div><p><a class="caption" href="/auth/github?repos=1">Connect / refresh GitHub repository access ↗</a></p></div>';
   let timer;
   $('#search').oninput = () => {
     state.search++;
@@ -159,8 +277,6 @@ export async function home() {
     $('#repo-progress').textContent = 'Searching…';
     timer = setTimeout(() => searchRepos($('#search').value), 250);
   };
-  $('#home-model').onclick = () => openModels('home');
-  controls();
   searchRepos('');
 }
 function repoCard(r) {
@@ -294,7 +410,7 @@ async function openRepo(repo) {
       body: JSON.stringify({
         repo: repo.full_name,
         ref: repo.default_branch,
-        model: state.selectedModel || 'mistral-large-4:cloud',
+        model: startModel(),
       }),
     });
     state.sessions.unshift({ id: s.id, ...s });

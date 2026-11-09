@@ -4,8 +4,8 @@
  * sessions, attach, offline, outbox, queue.mjs and render.mjs.
  */
 import { markdown } from './render.mjs';
-import { $, state, esc, duration, api, toast, showError, prompt } from './core.js';
-import { busy, title, sidebar } from './layout.js';
+import { $, state, esc, duration, api, toast, showError, prompt, sendKey } from './core.js';
+import { busy, title, bump } from './layout.js';
 import { message, failure, scrollDown, place } from './thread.js';
 import { resume } from './sessions.js';
 import { uploading, takeReady, restore } from './attach.js';
@@ -168,7 +168,6 @@ export async function watchJob(id, gen, expected) {
               saved = updated.history?.at(-1)?.at;
             if (asked && saved) asked.dataset.at = saved;
             state.sessions = state.sessions.map(s => (s.id === id ? { ...s, ...updated } : s));
-            sidebar();
             title(
               updated.title || updated.repo,
               updated.kind === 'chat'
@@ -176,6 +175,7 @@ export async function watchJob(id, gen, expected) {
                 : (updated.ref || 'main') + ' · GitHub workspace',
             );
           }
+          bump(id); // the conversation moves to the top of the list
           toast(
             state.session?.kind === 'chat' ? 'Response saved' : 'Turn complete · workspace saved',
           );
@@ -248,6 +248,11 @@ export function editMessage(node, text) {
   const [cancel, save] = box.querySelectorAll('button');
   cancel.onclick = () => {
     box.textContent = text;
+  };
+  area.onkeydown = e => {
+    if (!sendKey(e)) return;
+    e.preventDefault();
+    save.click();
   };
   save.onclick = () => {
     const v = area.value.trim();

@@ -40,8 +40,10 @@ const { chromium } = require('playwright'),
     model = 'mistral-large-4:cloud',
     plain = false,
     plainPolls = 0,
-    renamed = '';
-  const id = '11111111-1111-1111-1111-111111111111';
+    renamed = '',
+    chatModel = null;
+  const id = '11111111-1111-1111-1111-111111111111',
+    oldChat = '44444444-4444-4444-4444-444444444444';
   const answer =
     '## What this repository does\n\nThis is **rlsp**, a library for the [Raz language](https://github.com/ldiaz94/raz).\n\n- Wire framing\n- Protocol types\n- Client sessions\n\n```raz\nMODULE Example;\nEND Example.\n```\n\n| Module | Role |\n| --- | --- |\n| LspWire | Framing |';
   const diff =
@@ -211,6 +213,7 @@ const { chromium } = require('playwright'),
       d = preferences;
     } else if (u.pathname === '/api/account/search-test') d = { ok: true, results: 9, ms: 412 };
     else if (u.pathname === '/api/chats') {
+      chatModel = route.request().postDataJSON().model;
       plain = true;
       submitted = null;
       d = {
@@ -303,13 +306,24 @@ const { chromium } = require('playwright'),
       assert.equal(route.request().postDataJSON().digest, 'reviewed');
       d = { url: 'https://github.com/ldiaz94/rlsp/pull/1' };
     } else if (u.pathname === '/api/sessions')
-      d = { sessions: [{ id, repo: session.repo, ref: 'main', createdAt: Date.now() }] };
+      d = {
+        sessions: [
+          { id, repo: session.repo, ref: 'main', createdAt: Date.now() },
+          {
+            id: oldChat,
+            kind: 'chat',
+            repo: 'General chat',
+            title: 'Old chat',
+            createdAt: Date.now() - 60000,
+          },
+        ],
+      };
     else if (u.pathname.startsWith('/api/sessions/')) {
       if (route.request().method() === 'PATCH') renamed = route.request().postDataJSON().title;
       d =
         route.request().method() === 'DELETE'
           ? { deleted: true }
-          : plain
+          : plain && !u.pathname.includes(id)
             ? {
                 kind: 'chat',
                 repo: 'General chat',
@@ -340,12 +354,35 @@ const { chromium } = require('playwright'),
     await route.fulfill({ json: d });
   });
   await page.goto('https://arno.test/');
+  // Chat mode first: its home greets, shows the today card (weather off by
+  // default) and lists only chats.
+  await page
+    .getByRole('heading', { name: /^Good (morning|afternoon|evening), ldiaz94$|^Still up/ })
+    .waitFor();
+  for (const tile of ['moon', 'quote', 'fact'])
+    assert.equal(await page.locator('.today-' + tile).count(), 1, tile);
+  assert.equal(await page.locator('.today-weather').count(), 0);
+  assert.equal(await page.locator('.today-moon svg path').count(), 1);
+  const quote = await page.locator('[data-today="quote"]').textContent();
+  await page.locator('[data-another="quote"]').click();
+  assert.notEqual(await page.locator('[data-today="quote"]').textContent(), quote);
+  await page.screenshot({ path: '/tmp/arno-chat-home-mobile.png', fullPage: true });
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  const listed = () =>
+    page.locator('.session-item').evaluateAll(ns => ns.map(n => n.dataset.session));
+  assert.deepEqual(await listed(), [oldChat]);
+  await page.getByRole('button', { name: 'Open sessions', exact: true }).click();
+  await page.locator('[data-mode="code"]').click();
+  await page.getByRole('heading', { name: 'Start from a repository' }).waitFor();
+  assert.deepEqual(await listed(), [id]);
+  assert.equal(await page.locator('#new-chat').isHidden(), true);
+  await page.locator('#overlay').click({ position: { x: 370, y: 400 } });
   await page.getByPlaceholder('Search all accessible repositories').fill('target');
   await page.getByRole('heading', { name: 'ldiaz94/target-repo' }).waitFor();
   assert.ok(checked.includes(3));
   await page.screenshot({ path: '/tmp/arno-home-mobile.png', fullPage: true });
   await page.getByRole('button', { name: 'Open sessions', exact: true }).click();
-  await page.locator('[data-session]').click();
+  await page.locator('.session-item[data-session="' + id + '"]').click();
   await page.getByRole('heading', { name: 'What this repository does' }).waitFor();
   assert.equal(await page.locator('.prose strong').first().textContent(), 'rlsp');
   assert.equal(await page.locator('.prose script').count(), 0);
@@ -475,17 +512,44 @@ const { chromium } = require('playwright'),
   await page.getByRole('button', { name: 'Close code' }).click();
   await page.getByRole('button', { name: 'Toggle color theme' }).click();
   await page.screenshot({ path: '/tmp/arno-chat-light.png', fullPage: true });
+  // Settings: Enter adds a new line, and new chats start with Kimi.
+  await page.getByRole('button', { name: 'Account settings', exact: true }).click();
+  await page.locator('#enter-line').check();
+  await page.locator('#default-model').selectOption('kimi-k3.1-pro');
+  await page.getByRole('button', { name: 'Save preferences' }).click();
+  await page.waitForFunction(() =>
+    document.querySelector('#account-save-status').textContent.startsWith('Saved.'),
+  );
+  assert.equal(preferences.enterSends, false);
+  assert.equal(preferences.defaultModel, 'kimi-k3.1-pro');
+  await page.getByRole('button', { name: 'Close account settings' }).click();
+  await page.locator('[data-mode="chat"]').click();
+  await page.locator('#home-prompt').waitFor();
+  assert.equal(await page.locator('.home-hint').textContent(), '⌘ / Ctrl + Enter to send');
+  await page.locator('#home-prompt').fill('Hello');
+  await page.locator('#home-prompt').press('Enter');
+  assert.equal(await page.locator('#home-prompt').inputValue(), 'Hello\n');
+  assert.equal(chatModel, null, 'Enter must not start a chat');
   await page.getByRole('button', { name: 'New chat', exact: false }).click();
   await page.getByRole('heading', { name: 'A little space to think.' }).waitFor();
+  assert.equal(chatModel, 'kimi-k3.1-pro');
+  // The new chat has no activity yet: the older chat stays first until a turn ends.
+  assert.deepEqual(await listed(), [oldChat, '22222222-2222-2222-2222-222222222222']);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByLabel('Message', { exact: true }).fill('Tell me something interesting');
+  await page.getByLabel('Message', { exact: true }).press('Enter');
+  assert.equal(submitted, null, 'Enter adds a new line');
+  assert.equal(
+    await page.getByLabel('Message', { exact: true }).inputValue(),
+    'Tell me something interesting\n',
+  );
   await page
     .locator('#attach-input')
     .setInputFiles({ name: 'dot.png', mimeType: 'image/png', buffer: png });
   await page.locator('#attach-chips .attach-chip:not(.uploading) .attach-name').waitFor();
   assert.equal(await page.locator('#attach-chips .attach-name').innerText(), 'dot.png');
   assert.equal(uploadHeaders['x-filename'], 'dot.png');
-  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.getByLabel('Message', { exact: true }).press('Control+Enter');
   await page.locator('#thread .turn.user .attach-thumb img').waitFor();
   assert.deepEqual(submitted.attachments, ['att-1']);
   assert.equal(await page.locator('#attach-chips .attach-chip').count(), 0);
@@ -509,6 +573,8 @@ const { chromium } = require('playwright'),
   await page.screenshot({ path: '/tmp/arno-plain-thinking.png', fullPage: true });
   await page.getByText('Recovered after lost response', { exact: true }).waitFor();
   assert.equal(await page.locator('#live-response').count(), 0);
+  // The finished turn moved the chat to the top.
+  assert.deepEqual(await listed(), ['22222222-2222-2222-2222-222222222222', oldChat]);
   await page.getByRole('button', { name: 'Session actions' }).click();
   page.once('dialog', d => d.accept('Research notes'));
   await page.getByRole('button', { name: 'Rename conversation', exact: true }).click();
@@ -598,6 +664,7 @@ const { chromium } = require('playwright'),
   await page.screenshot({ path: '/tmp/arno-account-mobile.png', fullPage: true });
   await page.getByRole('button', { name: 'Close account settings' }).click();
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.locator('[data-mode="code"]').click();
   await page.locator('[data-session-menu="' + id + '"]').click();
   page.once('dialog', d => d.accept());
   await page.locator('#list-delete').click();
@@ -639,9 +706,13 @@ const { chromium } = require('playwright'),
   await page.locator('#delete-go').click();
   await page.getByText('Account deleted', { exact: true }).waitFor();
   assert.deepEqual(deleted, { confirm: 'LDiaz94' });
+  // A link to a coding session opens Code mode, whatever mode was last used.
+  await page.goto('https://arno.test/?session=' + id);
+  await page.getByRole('heading', { name: 'What this repository does' }).waitFor();
+  assert.equal(await page.locator('[data-mode="code"]').getAttribute('aria-pressed'), 'true');
   await browser.close();
   console.log(
-    'PASS: page-three search, session drawer, Markdown/code/table rendering, model change, usage, reviewed publishing, dropped-response recovery, themes, mobile/keyboard/desktop overflow.',
+    'PASS: Chat/Code modes and lists, home today card, Enter and default-model settings, sidebar order, page-three search, session drawer, Markdown/code/table rendering, model change, usage, reviewed publishing, dropped-response recovery, themes, mobile/keyboard/desktop overflow.',
   );
 })().catch(e => {
   console.error(e);

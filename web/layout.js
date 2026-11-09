@@ -1,7 +1,9 @@
 /** Page chrome: viewport fitting, the drawer, the busy flag, the title bar, the session
- * sidebar and the theme. Depends on core, offline and outbox.
+ * sidebar (the Chat | Code switch and that mode's conversations, most recently
+ * active first) and the theme. Depends on core, today.mjs, offline and outbox.
  */
-import { $, state, esc, icon, date, avatar, shell } from './core.js';
+import { $, state, esc, icon, avatar, shell, modeOf } from './core.js';
+import { byRecent, ago, activeAt } from './today.mjs';
 import { controls } from './offline.js';
 import { waiting, chatFailure } from './outbox.js';
 /** Pin the shell to the visible area only while the keyboard may be up;
@@ -73,8 +75,15 @@ export function title(name, subtitle) {
 export function sidebar() {
   $('#account').textContent = state.user?.login || 'Guest';
   $('#account-avatar').innerHTML = avatar((state.user?.login || 'A').slice(0, 2).toUpperCase());
-  $('#session-list').innerHTML = state.sessions.length
-    ? state.sessions
+  const code = state.mode === 'code';
+  for (const b of document.querySelectorAll('[data-mode]'))
+    b.setAttribute('aria-pressed', String(b.dataset.mode === state.mode));
+  $('#new-chat').hidden = code;
+  $('#new-session').hidden = !code;
+  $('#list-heading').textContent = code ? 'Coding sessions' : 'Chats';
+  const rows = byRecent(state.sessions.filter(s => modeOf(s) === state.mode));
+  $('#session-list').innerHTML = rows.length
+    ? rows
         .map(
           s =>
             '<div class="session-row"><button class="session-item ' +
@@ -84,9 +93,10 @@ export function sidebar() {
             '"><strong>' +
             esc(s.title || s.repo) +
             '</strong><small>' +
-            esc(s.kind === 'chat' ? 'Plain chat' : s.ref || 'main') +
-            ' · ' +
-            date(s.createdAt) +
+            (code ? esc(s.ref || 'main') + ' · ' : '') +
+            '<time>' +
+            ago(activeAt(s)) +
+            '</time>' +
             (chatFailure(s.id)
               ? ' · <span class="failed-mark">Not created</span>'
               : waiting(s.id)
@@ -99,7 +109,15 @@ export function sidebar() {
             '">⋯</button></div>',
         )
         .join('')
-    : '<div class="empty caption">Your coding sessions will appear here.</div>';
+    : '<div class="empty caption">' +
+      (code ? 'Your coding sessions will appear here.' : 'Your chats will appear here.') +
+      '</div>';
+}
+/** Marks a conversation active now, so it moves to the top of the list. */
+export function bump(id) {
+  const now = Date.now();
+  state.sessions = state.sessions.map(s => (s.id === id ? { ...s, updatedAt: now } : s));
+  sidebar();
 }
 /** The browser and status bar colour follows the app's theme, not the system's. */
 function themeColor() {

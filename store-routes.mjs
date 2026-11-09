@@ -106,7 +106,9 @@ export const storeRoutes = {
   },
   async '* /index/list'() {
     const entries = await this.ctx.storage.list({ prefix: 'session:' });
-    return json({ sessions: [...entries.values()].sort((a, b) => b.createdAt - a.createdAt) });
+    // Most recently active first: touch() stamps updatedAt after each turn.
+    const active = s => s.updatedAt || s.createdAt;
+    return json({ sessions: [...entries.values()].sort((a, b) => active(b) - active(a)) });
   },
   async '* /index/add'(request) {
     const entry = await request.json();

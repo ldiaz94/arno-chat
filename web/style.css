@@ -1223,13 +1223,6 @@ body.light {
   vertical-align: middle;
   margin-right: 6px;
 }
-.home-actions {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin: 20px 0;
-}
 .access-notice {
   margin-top: 20px;
   padding: 16px;
@@ -2395,4 +2388,230 @@ details.setting-card.collapsible[open] > summary {
 .diagnostics b {
   color: #fff;
   font-weight: 600;
+}
+/* The sidebar's Chat | Code switch. */
+.mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+}
+.mode-switch button {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  padding: 8px;
+  border-radius: 9px;
+  font-weight: 600;
+}
+.mode-switch button[aria-pressed='true'] {
+  background: var(--raised);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.session-item time {
+  font-variant-numeric: tabular-nums;
+}
+/* Home pages: the chat prompt box, its starter chips, recent coding sessions. */
+.home-chat {
+  max-width: 760px;
+}
+.home-ask {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  padding: 12px 12px 10px;
+  box-shadow: var(--shadow);
+}
+.home-ask:focus-within {
+  border-color: var(--accent);
+}
+.home-ask textarea {
+  width: 100%;
+  border: 0;
+  outline: none !important;
+  background: none;
+  resize: none;
+  font-size: 16px;
+  min-height: 52px;
+  padding: 4px 6px;
+}
+.home-ask-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.home-hint {
+  flex: 1;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.home-ask-bar .primary {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+}
+.home-chat .chips {
+  margin: 14px 0 0;
+}
+.home-chat .chip {
+  font-size: 13px;
+  padding: 7px 14px;
+}
+.recent-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.recent-card {
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 12px 14px;
+  display: grid;
+  /* Buttons centre their content by default; a card reads from the left. */
+  justify-content: stretch;
+  justify-items: start;
+  gap: 4px;
+}
+.recent-card strong,
+.recent-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recent-card small {
+  color: var(--muted);
+}
+/* The today card: moon, weather, quote and fact tiles. Each tile keeps its
+   size while its content loads, so nothing below it jumps. */
+.today {
+  margin: 28px 0 0;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: linear-gradient(160deg, var(--accent-bg), var(--panel) 55%);
+  padding: 16px;
+}
+.home-code .today {
+  margin: 0 0 8px;
+}
+.today-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.today-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.today-tile {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 12px 14px;
+  min-height: 84px;
+}
+.today-quote,
+.today-fact {
+  grid-column: 1 / -1;
+}
+.today-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.today-label .link {
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--accent);
+}
+.today-body {
+  font-size: 14px;
+  line-height: 1.55;
+}
+.today-moon .today-body,
+.today-weather .today-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+}
+.today-body strong {
+  display: block;
+  font-weight: 600;
+}
+.today-body small {
+  color: var(--muted);
+}
+.today-body p,
+.today-body blockquote {
+  margin: 0;
+}
+.today-body blockquote {
+  font-size: 15px;
+}
+.today-body cite {
+  display: block;
+  margin-top: 6px;
+  font-style: normal;
+  font-size: 12px;
+  color: var(--muted);
+}
+.moon {
+  width: 40px;
+  height: 40px;
+  flex: none;
+}
+.moon circle {
+  fill: var(--raised);
+  stroke: var(--line);
+}
+.moon path {
+  fill: #f3efd8;
+}
+.weather-icon {
+  font-size: 30px;
+  line-height: 1;
+  width: 40px;
+  text-align: center;
+  flex: none;
+}
+.today.compact .today-tile {
+  min-height: 0;
+}
+.today.compact .today-body {
+  font-size: 13px;
+}
+.today.compact .today-body blockquote {
+  font-size: 13px;
+}
+@media (max-width: 640px) {
+  .today-grid,
+  .recent-grid {
+    grid-template-columns: 1fr;
+  }
+  .home-hint {
+    display: none;
+  }
+  .home-ask-bar {
+    justify-content: space-between;
+  }
 }

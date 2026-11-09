@@ -3,6 +3,7 @@
  * Only masked connection metadata is ever returned by public GET routes.
  */
 import { publicWebUrl, searxngSearch } from './web.mjs';
+import { modelAllowed } from './models.mjs';
 /** Each provider's API: where models are listed and where chat requests go,
  * and how a streamed chat request differs between them:
  * - output: the name of the output-token limit, or none to keep the
@@ -153,10 +154,36 @@ export async function credential(env, userId, p, provider) {
   const own = await unseal(env, userId, 'provider:' + provider, p.keys?.[provider]);
   return own || (provider === 'ollama' ? env.OLLAMA_API_KEY || '' : '');
 }
+/** The home page's widgets as saved: which are on, and where the weather is
+ * for (a typed place, or coordinates rounded to about 10 km). */
+const HOME = { quote: true, fact: true, moon: true, weather: false, place: '' };
+/** Checks the home page settings; throws on anything malformed. */
+export function homeSettings(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw Error('Invalid home page settings');
+  const home = {};
+  for (const [key, fallback] of Object.entries(HOME)) {
+    const v = value[key] ?? fallback;
+    if (typeof v !== typeof fallback) throw Error('Invalid home page settings');
+    home[key] = v;
+  }
+  if (home.place.length > 100) throw Error('The place name must be at most 100 characters');
+  if (value.lat != null || value.lon != null) {
+    const { lat, lon } = value;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180)
+      throw Error('Invalid location');
+    home.lat = Math.round(lat * 10) / 10;
+    home.lon = Math.round(lon * 10) / 10;
+  }
+  return home;
+}
 export function publicProfile(env, p) {
   return {
     systemPrompt: p.systemPrompt || '',
     about: p.about || '',
+    home: p.home || HOME,
+    enterSends: p.enterSends ?? false, // false (default): Enter adds a line, Ctrl/⌘+Enter sends; true: Enter sends
+    defaultModel: p.defaultModel || '', // '' : the app's own default
     updatedAt: p.updatedAt || 0, // when preferences were last saved; offline edits compare it
     skills: p.skills || [],
     models: p.models || [],
@@ -352,6 +379,15 @@ export async function accountRoute(request, env, userId) {
       const about = body.about ?? p.about ?? '';
       if (typeof about !== 'string' || about.length > 2000)
         throw Error('About you must be at most 2,000 characters');
+      const home = homeSettings(body.home ?? p.home ?? HOME),
+        enterSends = body.enterSends ?? p.enterSends ?? false,
+        defaultModel = body.defaultModel ?? p.defaultModel ?? '';
+      if (typeof enterSends !== 'boolean') throw Error('Invalid Enter key setting');
+      if (
+        typeof defaultModel !== 'string' ||
+        (defaultModel && defaultModel !== p.defaultModel && !(await modelAllowed(defaultModel)))
+      )
+        throw Error('Unsupported default model');
       if (!Array.isArray(body.skills) || body.skills.length > 10)
         throw Error('At most 10 skills are supported');
       const skills = body.skills.map(s => {
@@ -404,6 +440,9 @@ export async function accountRoute(request, env, userId) {
       await save({
         systemPrompt: body.systemPrompt,
         about,
+        home,
+        enterSends,
+        defaultModel,
         skills,
         mcp,
         models,
