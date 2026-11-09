@@ -22,7 +22,15 @@ import { message, failure, scrollDown, suggestions } from './thread.js';
 import { watchJob, resizePrompt } from './turns.js';
 import { clearAttachments } from './attach.js';
 import { controls } from './offline.js';
-import { showQueued, localChat, queueChat, queueRename, dropSession } from './outbox.js';
+import {
+  showQueued,
+  localChat,
+  queueChat,
+  queueRename,
+  dropSession,
+  chatFailure,
+  retryChat,
+} from './outbox.js';
 import { isLocal } from './queue.mjs';
 export async function resume(id) {
   $('#code-dialog').close();
@@ -69,6 +77,23 @@ export async function resume(id) {
         else message('Arno', t.summary, t);
       }
     showQueued();
+    const refused = isLocal(id) && chatFailure(id);
+    if (refused) {
+      const card = document.createElement('div');
+      card.className = 'failure';
+      card.setAttribute('role', 'alert');
+      card.innerHTML =
+        '<p>This chat was made offline and the server refused to create it: ' +
+        esc(refused) +
+        '</p><div class="failure-actions"><button type="button" data-chat-delete>Delete</button><button type="button" class="primary" data-chat-retry>Retry</button></div>';
+      card.querySelector('[data-chat-retry]').onclick = async () => {
+        await retryChat(id);
+        card.remove();
+        sidebar();
+      };
+      card.querySelector('[data-chat-delete]').onclick = () => deleteConversation(id);
+      $('#thread').prepend(card);
+    }
     composer.hidden = false;
     modelButton();
     busy(false);

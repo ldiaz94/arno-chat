@@ -76,10 +76,12 @@ const TURN_MS = 1500; // how long a mocked turn runs
 const received = [];
 const jobs = {}; // each conversation's latest turn, by session id
 let refusedBusy = 0; // messages sent while a turn ran (the app should wait instead)
+let refuseChats = 1; // the first offline chat is refused once, to test Retry
 
 /** The writes the outbox sends. Returns [status, reply], or null. */
 function write(method, p, body) {
   if (method === 'POST' && p === '/api/chats') {
+    if (refuseChats-- > 0) return [400, { error: 'Unsupported model' }];
     sessions[fresh] = { ...row(fresh, 'General chat'), history: [] };
     received.push({ what: 'chat', body });
     return [201, sessions[fresh]];
@@ -313,6 +315,12 @@ function serve(port) {
     await page.waitForFunction(() => !document.querySelector('.turn.queued'), null, {
       timeout: 30000,
     });
+    // The server refuses the offline chat once: the sidebar says so, and opening
+    // it shows why, with Retry; retrying creates it and sends its message.
+    await page.waitForSelector('.session-item .failed-mark', { timeout: 30000 });
+    await page.click('.session-item:has(.failed-mark)');
+    await page.waitForSelector('.failure >> text=Unsupported model');
+    await page.click('[data-chat-retry]');
     for (let t = Date.now(); received.length < 5; await new Promise(r => setTimeout(r, 100)))
       assert.ok(Date.now() - t < 30000, 'not everything was sent: ' + JSON.stringify(received));
     const sent = sid => received.filter(r => r.what === 'message' && r.sid === sid);
@@ -340,6 +348,8 @@ function serve(port) {
       },
     );
     assert.equal(refusedBusy, 0);
+    await page.waitForSelector('.failure', { state: 'detached' });
+    await page.click('[data-session="' + two + '"]');
     await page.waitForSelector('#thread .turn.assistant >> text=Noted: Offline two');
     await page.waitForSelector('[data-session="' + fresh + '"]');
     assert.equal(await page.locator('.queued-mark').count(), 0);
@@ -349,7 +359,7 @@ function serve(port) {
     assert.equal(await page.isDisabled('#send'), false);
     assert.deepEqual(errors, []);
     console.log(
-      'PASS: precache, warming, offline reload, saved conversation, image, artifact, usage, banner, model disabled, outbox (queued messages, rename, new chat, reload, flush in order), back online.',
+      'PASS: precache, warming, offline reload, saved conversation, image, artifact, usage, banner, model disabled, outbox (queued messages, rename, new chat, reload, flush in order, refused chat retried), back online.',
     );
   } catch (e) {
     await page.screenshot({ path: '/tmp/arno-offline-failure.png' }).catch(() => {});

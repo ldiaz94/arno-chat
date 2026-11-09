@@ -3,7 +3,7 @@
  */
 import { $, state, esc, icon, date, avatar, shell } from './core.js';
 import { controls } from './offline.js';
-import { waiting } from './outbox.js';
+import { waiting, chatFailure } from './outbox.js';
 export function fit() {
   const v = window.visualViewport;
   shell.style.height = (v ? v.height : innerHeight) + 'px';
@@ -76,7 +76,11 @@ export function sidebar() {
             esc(s.kind === 'chat' ? 'Plain chat' : s.ref || 'main') +
             ' · ' +
             date(s.createdAt) +
-            (waiting(s.id) ? ' · <span class="queued-mark">Queued</span>' : '') +
+            (chatFailure(s.id)
+              ? ' · <span class="failed-mark">Not created</span>'
+              : waiting(s.id)
+                ? ' · <span class="queued-mark">Queued</span>'
+                : '') +
             '</small></button><button class="session-more" type="button" data-session-menu="' +
             esc(s.id) +
             '" aria-label="Conversation actions for ' +

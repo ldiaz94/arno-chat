@@ -2349,3 +2349,8 @@ details.setting-card.collapsible[open] > summary {
     gap: 8px;
   }
 }
+
+/* A chat made offline that the server refused to create. */
+.failed-mark {
+  color: var(--red);
+}

@@ -148,6 +148,21 @@ export async function queueProfile(body, base) {
   flush();
 }
 
+/** Why a chat made offline couldn't be created on the server, or null. */
+export function chatFailure(id) {
+  const e = outbox.entries.find(x => x.kind === 'chat' && x.sessionId === id);
+  return e?.state === 'failed' ? e.error || 'The server refused it.' : null;
+}
+
+/** Tries creating a failed offline chat again; its waiting messages follow. */
+export async function retryChat(id) {
+  const e = outbox.entries.find(x => x.kind === 'chat' && x.sessionId === id);
+  if (!e) return;
+  await outbox.update(e.key, { state: 'queued', error: undefined });
+  banner();
+  flush();
+}
+
 /** Drops a chat made offline, with everything waiting for it. */
 export async function dropSession(id) {
   await outbox.dropSession(id);
