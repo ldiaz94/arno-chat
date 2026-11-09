@@ -7,7 +7,7 @@ import {catalog} from './models.mjs';
 import {markdown,cleanOutput} from './render.mjs';
 import {buildPrompt} from './context.mjs';
 import {validateFiles} from './publish.mjs';
-import {usageStream,modelRequest} from './gateway.mjs';
+import {usageStream,modelRequest,displayDelta} from './gateway.mjs';
 import {plainChat} from './chat.mjs';
 import {validPath} from './files.mjs';
 import {seal,unseal,publicProfile,instructions,validMcpUrl,accountRoute} from './account.mjs';
@@ -41,6 +41,42 @@ function fixture(values={}){
  ctx.storage.list=async({prefix,reverse,limit}={})=>new Map([...map.entries()].filter(([k])=>k.startsWith(prefix||'')).sort(([a],[b])=>reverse?b.localeCompare(a):a.localeCompare(b)).slice(0,limit||Infinity));
  return {obj:new ArnoProbe(ctx,{}),ctx,starts};
 }
+test('provider display fields exclude tool arguments and opaque reasoning blocks',()=>{
+ assert.deepEqual(displayDelta({choices:[{delta:{content:'Hello',reasoning_content:'Visible thought',tool_calls:[{function:{arguments:'SECRET'}}]}}]}),{text:'Hello',reasoning:'Visible thought'});
+ assert.deepEqual(displayDelta({delta:{type:'thinking_delta',thinking:'Visible'}}),{text:'',reasoning:'Visible'});
+ assert.deepEqual(displayDelta({delta:{type:'signature_delta',signature:'PRIVATE'},content_block:{type:'redacted_thinking',data:'PRIVATE'}}),{text:'',reasoning:''});
+});
+test('coding gateway observes answer/thinking without changing the provider stream',async()=>{
+ const previews=[],events=[{choices:[{delta:{reasoning_content:'Display explanation'}}]},{choices:[{delta:{content:'Hello'}}]},{choices:[{delta:{content:' world',tool_calls:[{function:{arguments:'private tool body'}}]}}]}];
+ const wire=events.map(e=>'data: '+JSON.stringify(e)+'\n\n').join('')+'data: [DONE]\n\n';
+ const observed=new Response(new Response(wire).body.pipeThrough(usageStream(async()=>{},async p=>previews.push(p))));
+ assert.equal(await observed.text(),wire);assert.equal(previews.at(-1).text,'Hello world');assert.equal(previews.at(-1).reasoning,'Display explanation');assert.equal(previews.at(-1).final,true);assert.ok(!JSON.stringify(previews).includes('private tool body'));
+});
+test('plain chat publishes text before completion and keeps thinking out of answer text',async()=>{
+ let controller,ready;const shown=new Promise(r=>ready=r),previews=[];
+ const pending=plainChat({model:'fixture',history:[],prompt:'hello',key:'test',onProgress:async p=>{previews.push(p);ready()},upstream:async()=>new Response(new ReadableStream({start:c=>controller=c}))});
+ await new Promise(r=>setImmediate(r));
+ controller.enqueue(new TextEncoder().encode('data: '+JSON.stringify({choices:[{delta:{content:'Hello',reasoning_content:'Model explanation'}}]})+'\n\n'));
+ await shown;assert.equal(previews[0].text,'Hello');assert.equal(previews[0].reasoning,'Model explanation');
+ controller.enqueue(new TextEncoder().encode('data: '+JSON.stringify({choices:[{delta:{content:' world'}}]})+'\n\n'));controller.close();
+ const result=await pending;assert.equal(result.summary,'Hello world');assert.equal(result.reasoning,'Model explanation');assert.equal(previews.at(-1).final,true);
+});
+test('live SSE replays bounded progress, rejects stale rounds and survives viewer disconnect',async()=>{
+ const f=fixture({job:{id:'job',status:'running'}});
+ await f.obj.progress({jobId:'job',round:2,text:'Hello',reasoning:'Optional',final:true});
+ await f.obj.progress({jobId:'other-job',round:3,text:'Wrong user turn'});
+ await f.obj.progress({jobId:'job',round:1,text:'Old round'});
+ const r=await f.obj.events(),reader=r.body.getReader(),decode=v=>new TextDecoder().decode(v);
+ assert.equal(r.headers.get('Content-Type'),'text/event-stream');
+ await reader.read();assert.match(decode((await reader.read()).value),/Hello/);
+ await f.obj.progress({jobId:'job',round:2,text:'Hello world',reasoning:'Optional',final:true});
+ assert.match(decode((await reader.read()).value),/Hello world/);
+ await reader.cancel();assert.equal(f.obj.viewers.size,0);assert.equal((await f.ctx.storage.get('job')).status,'running');
+ const recreated=new ArnoProbe(f.ctx,{}),poll=await recreated.fetch(new Request('https://internal/session/job'));
+ assert.equal((await poll.json()).preview.text,'Hello world');
+ f.ctx.storage.put('job',{id:'job',status:'cancelled'});await f.obj.progress({round:3,text:'After cancel'});
+ assert.equal(f.obj.live.text,'Hello world');
+});
 test('cold session starts from saved checkpoint, with internet disabled',async()=>{
  const f=fixture({snapshot:{id:'saved'}});
  await f.obj.start('mistral-large-4:cloud');

@@ -66,8 +66,12 @@ The same implementation class has separate named instances:
 
 Internal /session, /model, /auth, and /index paths are binding-only and have no public router. The model gateway can request a quota permit and report token usage, but has no GitHub publication authority.
 
+GET /api/sessions/:id/events returns an authenticated text/event-stream view of that user's session. Preview events contain jobId, round, text, reasoning, and updatedAt. Events are complete bounded snapshots, so reconnecting never duplicates answer tokens. The current preview is replayed on connection and included in GET /api/sessions/:id/job as a polling fallback. Closing a stream does not cancel its job. Clients must use durable job completion as the final saved result.
+
 ## Persistence keys
 
 session holds repository provenance and selected model. snapshot holds the opaque Cloudflare checkpoint handle. turn:timestamp:uuid keys hold individual retained transcript turns; history is the legacy key migrated after a successful turn. stats holds measured cumulative counters. job holds the latest task state. modelQuota holds the current turn ID, deadline, used calls, and measured usage.
+
+live holds the latest bounded preview, persisted at most once a second plus model-pass completion. In-memory previews may be newer; a reconnect can briefly replay the persisted snapshot after an object restart. Preview state is scoped to a job ID. Thinking comes only from provider-designated display fields, is optional and collapsed in the UI, and is excluded from subsequent conversational prompts. Encrypted/redacted reasoning and signatures are never exposed.
 
 The checkpoint, current transcript record, and statistics are written together after successful persistence. Snapshot failure never replaces the last known good checkpoint.

@@ -24,19 +24,28 @@ async function readBounded(body) {
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 
-export function usageStream(onUsage) {
-  const decoder=new TextDecoder();let buffer='',usage=null;
-  const read=line=>{if(!line.startsWith('data:'))return;try{const data=JSON.parse(line.slice(5).trim());const u=data.message?.usage||data.usage;if(u)usage={...(usage||{}),...u}}catch{}};
+/** Only provider-designated display fields cross into the UI. Never expose
+ * tool arguments, signatures, encrypted reasoning, request bodies or headers. */
+export function displayDelta(data){
+  const d=data.choices?.[0]?.delta||data.delta||{};
+  return {text:typeof d.content==='string'?d.content:typeof d.text==='string'?d.text:'',
+    reasoning:typeof d.reasoning_content==='string'?d.reasoning_content:typeof d.reasoning==='string'?d.reasoning:d.type==='thinking_delta'&&typeof d.thinking==='string'?d.thinking:''};
+}
+export function usageStream(onUsage,onProgress=async()=>{}) {
+  const decoder=new TextDecoder();let buffer='',usage=null,text='',reasoning='',last=0,dirty=false;
+  const read=line=>{if(!line.startsWith('data:'))return;try{const data=JSON.parse(line.slice(5).trim());const u=data.message?.usage||data.usage;if(u)usage={...(usage||{}),...u};const d=displayDelta(data);text=(text+d.text).slice(0,16000);reasoning=(reasoning+d.reasoning).slice(0,12000);dirty||=!!(d.text||d.reasoning)}catch{}};
+  const publish=async force=>{if((dirty||force)&&(text||reasoning)&&(force||Date.now()-last>=200)){last=Date.now();dirty=false;try{await onProgress({text,reasoning,final:force})}catch{console.error('live_preview_failed')}}};
   return new TransformStream({
-    transform(chunk,controller){
+    async transform(chunk,controller){
       controller.enqueue(chunk);buffer+=decoder.decode(chunk,{stream:true});
       const lines=buffer.split('\n');buffer=lines.pop();for(const line of lines)read(line);
       if(buffer.length>65536)buffer='';
+      await publish(false);
     },
-    async flush(){buffer+=decoder.decode();read(buffer);if(usage)await onUsage({prompt_tokens:usage.prompt_tokens??usage.input_tokens??0,completion_tokens:usage.completion_tokens??usage.output_tokens??0})}
+    async flush(){buffer+=decoder.decode();read(buffer);await publish(true);if(usage)await onUsage({prompt_tokens:usage.prompt_tokens??usage.input_tokens??0,completion_tokens:usage.completion_tokens??usage.output_tokens??0})}
   });
 }
-export async function modelRequest(request, { key, model,provider='ollama',instructions='',authorize, onUsage=async()=>{}, upstream = fetch }) {
+export async function modelRequest(request, { key, model,provider='ollama',instructions='',authorize, onUsage=async()=>{},onProgress=async()=>{}, upstream = fetch }) {
   const url = new URL(request.url);
   if (url.hostname !== 'model.internal' || url.port || url.search ||
       url.pathname !== (provider==='anthropic'?'/v1/messages':'/v1/chat/completions') || request.method !== 'POST') {
@@ -83,7 +92,7 @@ export async function modelRequest(request, { key, model,provider='ollama',instr
     if (response.body) await response.body.cancel();
     return new Response(provider+' rejected the request', { status: 502 });
   }
-  return new Response(response.body?.pipeThrough(usageStream(async usage=>{try{await onUsage(usage)}catch{console.error('usage_record_failed')}})), {
+  return new Response(response.body?.pipeThrough(usageStream(async usage=>{try{await onUsage(usage)}catch{console.error('usage_record_failed')}},onProgress)), {
     headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store' }
   });
 }

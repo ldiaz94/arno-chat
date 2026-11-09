@@ -28,6 +28,7 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
   else if(u.pathname.endsWith('/files'))d=u.searchParams.get('path')?{directory:false,path:'README.md',content:'# Example\nRegular source text',bytes:30}:{directory:true,path:'',entries:[{name:'README.md',path:'README.md',directory:false}]};
   else if(u.pathname==='/api/models')d={models:[{id:model,name:'Mistral Large 4 · Le Chonk'},{id:'kimi-k3.1-pro',name:'Kimi K3.1 Pro'}]};
   else if(u.pathname.endsWith('/messages')){submitted=route.request().postDataJSON();await route.abort('failed');return}
+  else if(u.pathname.endsWith('/events')){const preview={jobId:submitted?.id,round:1,text:'A **streamed answer**',reasoning:'A model-provided explanation <script>never HTML</script>',updatedAt:2};await route.fulfill({contentType:'text/event-stream',body:[preview,{...preview,text:'Older partial text',updatedAt:1}].map(p=>'event: preview\ndata: '+JSON.stringify(p)+'\n\n').join('')});return}
   else if(u.pathname.endsWith('/job'))d=submitted?plain&&plainPolls++<2?{id:submitted.id,prompt:submitted.prompt,status:'running',stage:'thinking',createdAt:Date.now()}:{id:submitted.id,prompt:submitted.prompt,status:'completed',result:{...turn,summary:'Recovered after lost response'},finishedAt:Date.now()}:{status:'idle'};
   else if(u.pathname.endsWith('/model')){model=route.request().postDataJSON().model;d={model}}
   else if(u.pathname.endsWith('/changes'))d={repo:'ldiaz94/rlsp',ref:'main',sourceSha:'a'.repeat(40),digest:'reviewed',files:[{path:'src/demo.raz',bytes:100}]};
@@ -100,11 +101,19 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
  await page.getByLabel('Message',{exact:true}).fill('Tell me something interesting');
  await page.getByRole('button',{name:'Send',exact:true}).click();
  await page.locator('.chat-activity').waitFor();
+ await page.locator('#live-response .prose strong').waitFor();
+ assert.equal(await page.locator('#live-response .prose strong').innerText(),'streamed answer');
+ assert.equal(await page.locator('#live-response .model-thinking').getAttribute('open'),null);
+ await page.locator('#live-response .model-thinking summary').click();
+ assert.match(await page.locator('#live-response .thinking-text').innerText(),/<script>never HTML<\/script>/);
+ assert.equal(await page.locator('#live-response script').count(),0);
+ await page.screenshot({path:'/tmp/arno-streaming-mobile.png',fullPage:true});
  await page.waitForTimeout(250);
  assert.equal(await page.locator('.chat-activity .steps').count(),0);
  assert.equal(await page.getByLabel('Message',{exact:true}).getAttribute('placeholder'),'Message Arno…');
  await page.screenshot({path:'/tmp/arno-plain-thinking.png',fullPage:true});
  await page.getByText('Recovered after lost response',{exact:true}).waitFor();
+ assert.equal(await page.locator('#live-response').count(),0);
  await page.getByRole('button',{name:'Session actions'}).click();
  page.once('dialog',d=>d.accept('Research notes'));
  await page.getByRole('button',{name:'Rename conversation',exact:true}).click();

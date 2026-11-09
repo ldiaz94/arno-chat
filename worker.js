@@ -75,12 +75,13 @@ export class ModelGateway extends WorkerEntrypoint {
     const task = this.env.PROBE.get(this.env.PROBE.idFromString(this.ctx.props.task));
     const {ownerId}=await (await task.fetch('https://internal/model-account')).json();
     const preferences=await profile(this.env,ownerId),selection=providerModel(this.ctx.props.model);
-    let turnId;
+    let turnId,round;
     return modelRequest(request, {
       key:await credential(this.env,ownerId,preferences,selection.provider),
       model:selection.id,provider:selection.provider,instructions:[instructions(preferences),WEB_INSTRUCTIONS].filter(Boolean).join('\n\n'),
-      authorize: async () => {const r=await task.fetch('https://internal/model-permit',{method:'POST'});turnId=r.headers.get('X-Turn-Id');return r.ok},
-      onUsage: usage=>task.fetch('https://internal/model-usage',{method:'POST',body:JSON.stringify({turnId,usage})})
+      authorize: async () => {const r=await task.fetch('https://internal/model-permit',{method:'POST'});turnId=r.headers.get('X-Turn-Id');round=Number(r.headers.get('X-Model-Round'));return r.ok},
+      onUsage: usage=>task.fetch('https://internal/model-usage',{method:'POST',body:JSON.stringify({turnId,usage})}),
+      onProgress: preview=>task.fetch('https://internal/model-progress',{method:'POST',body:JSON.stringify({turnId,round,...preview})})
     });
   }
 }
@@ -99,14 +100,45 @@ export class McpGateway extends WorkerEntrypoint {
 }
 
 export class ArnoProbe extends DurableObject {
+  /** Full bounded snapshots make SSE reconnects idempotent. This is a view of
+   * the durable job, never its execution lifetime. Slow readers are disconnected
+   * rather than allowing their buffers to grow without bound. */
+  broadcast(preview){
+    const frame=new TextEncoder().encode('event: preview\ndata: '+JSON.stringify(preview)+'\n\n');
+    for(const c of this.viewers||[]){try{if(c.desiredSize<=0){c.close();this.viewers.delete(c)}else c.enqueue(frame)}catch{this.viewers.delete(c)}}
+  }
+  async progress(preview){
+    const job=await this.ctx.storage.get('job');
+    if(job?.status!=='running'||preview.jobId&&preview.jobId!==job.id)return;
+    const old=this.live?.jobId===job.id?this.live:null;
+    if(old&&preview.round<old.round)return;
+    this.live={jobId:job.id,round:preview.round,text:String(preview.text||'').slice(0,16000),reasoning:String(preview.reasoning||'').slice(0,12000),updatedAt:Math.max(Date.now(),(old?.updatedAt||0)+1)};
+    if(new TextEncoder().encode(JSON.stringify(this.live)).byteLength>100000){this.live.text=this.live.text.slice(0,8000);this.live.reasoning=this.live.reasoning.slice(0,6000)}
+    this.broadcast(this.live);
+    if(preview.final||!this.liveSavedAt||Date.now()-this.liveSavedAt>=1000){this.liveSavedAt=Date.now();await this.ctx.storage.put('live',this.live)}
+  }
+  async events(){
+    const job=await this.ctx.storage.get('job');
+    if(!job)return json({error:'No active conversation task'},404);
+    const saved=this.live||await this.ctx.storage.get('live');
+    this.viewers||=new Set();
+    if(this.viewers.size>=8)return json({error:'Too many live viewers'},429);
+    let controller,timer;
+    const remove=()=>{clearInterval(timer);this.viewers.delete(controller)};
+    const stream=new ReadableStream({
+      start:c=>{controller=c;this.viewers.add(c);c.enqueue(new TextEncoder().encode('retry: 1500\n\n'));if(saved?.jobId===job.id)c.enqueue(new TextEncoder().encode('event: preview\ndata: '+JSON.stringify(saved)+'\n\n'));timer=setInterval(()=>{try{if(c.desiredSize<=0){c.close();remove()}else c.enqueue(new TextEncoder().encode(': heartbeat\n\n'))}catch{remove()}},15000)},
+      cancel:remove
+    });
+    return new Response(stream,{headers:{...SECURITY,'Content-Type':'text/event-stream','X-Accel-Buffering':'no'}});
+  }
   /** Shared persistent transcript/statistics path for plain and coding turns. */
   async saveTurn(result,prompt,snapshot,sourceRegistry){
     // Keep individual KV values bounded even with multi-byte code/log output.
     const clip=(s,n)=>new TextDecoder().decode(new TextEncoder().encode(s||'').slice(0,n));
-    result.summary=clip(result.summary,16000);result.diff=clip(result.diff,40000);result.diagnostics=clip(result.diagnostics,8000);
+    result.summary=clip(result.summary,16000);result.reasoning=clip(result.reasoning,12000);result.diff=clip(result.diff,40000);result.diagnostics=clip(result.diagnostics,8000);
     if(new TextEncoder().encode(JSON.stringify({prompt,...result})).byteLength>115000){
       result.sources=(result.sources||[]).map(s=>({...s,excerpt:s.excerpt?.slice(0,80)}));
-      result.diff=clip(result.diff,24000);result.diagnostics=clip(result.diagnostics,4000);result.truncated=true;
+      result.diff=clip(result.diff,24000);result.diagnostics=clip(result.diagnostics,4000);result.reasoning=clip(result.reasoning,4000);result.truncated=true;
     }
     const stats=(await this.ctx.storage.get('stats'))||{turns:0,calls:0,inputTokens:0,outputTokens:0,measuredCalls:0,totalMs:0};
     stats.turns++;stats.calls+=result.usage.calls;stats.measuredCalls+=result.usage.measuredCalls;stats.inputTokens+=result.usage.inputTokens||0;stats.outputTokens+=result.usage.outputTokens||0;stats.totalMs+=result.timing.totalMs;
@@ -126,8 +158,10 @@ export class ArnoProbe extends DurableObject {
       const p=await profile(this.env,session.ownerId),selected=providerModel(session.model);
       const sources=[...(session.sources||[])],counts={searches:0,reads:0},webKey=await credential(this.env,session.ownerId,p,'ollama');
       const previous=await this.history();
+      const jobId=(await this.ctx.storage.get('job'))?.id;
       const result=await plainChat({model:selected.id,provider:selected.provider,history:previous,prompt,key:await credential(this.env,session.ownerId,p,selected.provider),instructions:[instructions(p),WEB_INSTRUCTIONS].filter(Boolean).join('\n\n'),signal:this.chatAbort.signal,
        onRound:()=>this.phase('thinking',{workspace:'chat',startupMs:0}),
+       onProgress:preview=>this.progress({...preview,jobId}),
        runTool:async(name,args)=>{await this.phase(name==='web_search'?'searching':'reading',{workspace:'chat'});const data=await research(name,args,{key:webKey,sources,counts});await this.phase('thinking',{workspace:'chat',webCounts:{...counts},sourceCount:sources.length});return data}
       });
       result.model=session.model;
@@ -302,8 +336,10 @@ export class ArnoProbe extends DurableObject {
     }
     if(url.pathname==='/session/job' && request.method==='GET'){
       const job=await this.ctx.storage.get('job');
-      return json(job||{status:'idle'});
+      const live=this.live||await this.ctx.storage.get('live');
+      return json(job?{...job,preview:live?.jobId===job.id?live:undefined}:{status:'idle'});
     }
+    if(url.pathname==='/session/events'&&request.method==='GET')return this.events();
     if(url.pathname==='/session/enqueue' && request.method==='POST'){
       const body=await request.json();
       if(typeof body.prompt!=='string'||!body.prompt.trim()||body.prompt.length>8000||!/^[-a-f0-9]{36}$/.test(body.id||''))return json({error:'Invalid message'},400);
@@ -373,16 +409,22 @@ export class ArnoProbe extends DurableObject {
       return Response.json(value);
     }
     if (url.pathname === '/model-permit' && request.method === 'POST') {
-      let turnId='';
+      let turnId='',round=0;
       const allowed = await this.ctx.storage.transaction(async txn => {
         const quota = await txn.get('modelQuota');
         if (!quota || quota.deadline < Date.now() || quota.used >= 16) return false;
         quota.used += 1;
+        round=quota.used;
         turnId=quota.turnId||'';
         await txn.put('modelQuota', quota);
         return true;
       });
-      return new Response(null, { status: allowed ? 204 : 429,headers:{'X-Turn-Id':turnId} });
+      return new Response(null, { status: allowed ? 204 : 429,headers:{'X-Turn-Id':turnId,'X-Model-Round':String(round)} });
+    }
+    if(url.pathname==='/model-progress'&&request.method==='POST'){
+      const preview=await request.json(),q=await this.ctx.storage.get('modelQuota');
+      if(!q||q.turnId!==preview.turnId||q.deadline<Date.now()||preview.round!==q.used)return new Response(null,{status:409});
+      await this.progress(preview);return new Response(null,{status:204});
     }
     if(url.pathname==='/model-usage'&&request.method==='POST'){
       const {turnId,usage}=await request.json();
@@ -462,6 +504,7 @@ export class ArnoProbe extends DurableObject {
           summary: (stdout || stderr || `Arno exited with code ${output.exitCode}`).slice(-12000),
           diff: diffResult.stdout.slice(-40000),
           diagnostics:stderr,
+          reasoning:this.live?.jobId===(await this.ctx.storage.get('job'))?.id?this.live?.reasoning||'':'',
           timing:{startupMs,executionMs,workspace}
         };
         const q=await this.ctx.storage.get('modelQuota');
@@ -693,6 +736,8 @@ export default {
       const match = url.pathname.match(/^\/api\/sessions\/([0-9a-f-]{36})\/messages$/);
       const jobMatch=url.pathname.match(/^\/api\/sessions\/([0-9a-f-]{36})\/job$/);
       if(jobMatch && request.method==='GET')return env.PROBE.getByName('code:'+auth.user.id+':'+jobMatch[1]).fetch('https://internal/session/job');
+      const eventsMatch=url.pathname.match(/^\/api\/sessions\/([0-9a-f-]{36})\/events$/);
+      if(eventsMatch&&request.method==='GET')return env.PROBE.getByName('code:'+auth.user.id+':'+eventsMatch[1]).fetch('https://internal/session/events');
       if (match && request.method === 'POST') {
         const body = await boundedJson(request);
         const object = env.PROBE.getByName(`code:${auth.user.id}:${match[1]}`);

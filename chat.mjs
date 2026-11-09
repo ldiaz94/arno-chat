@@ -1,14 +1,15 @@
 import {WEB_TOOLS} from './web.mjs';
+import {displayDelta} from './gateway.mjs';
 
 /** Decode text, native tool calls, and reported usage from either provider's
  * streaming dialect. Credential-bearing headers never enter these results. */
-async function readReply(response){
+async function readReply(response,onProgress){
  const reader=response.body.getReader(),decoder=new TextDecoder(),calls=new Map();
- let buffer='',summary='',usage=null,size=0;
+ let buffer='',summary='',reasoning='',usage=null,size=0,last=0;
  const line=s=>{
   if(!s.startsWith('data:'))return;let v;try{v=JSON.parse(s.slice(5).trim())}catch{return}
   const u=v.message?.usage||v.usage;if(u)usage={...(usage||{}),...u};
-  summary+=v.choices?.[0]?.delta?.content||v.delta?.text||'';
+  const delta=displayDelta(v);summary+=delta.text;reasoning=(reasoning+delta.reasoning).slice(0,12000);
   for(const c of v.choices?.[0]?.delta?.tool_calls||[]){
    const old=calls.get(c.index)||{id:'',name:'',arguments:''};
    if(c.id)old.id=c.id;if(c.function?.name)old.name=c.function.name;
@@ -19,15 +20,15 @@ async function readReply(response){
   if(summary.length>60000)throw Error('Chat response exceeded its display limit');
  };
  try{
-  for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>2000000)throw Error('Oversized provider response');buffer+=decoder.decode(value,{stream:true});const lines=buffer.split('\n');buffer=lines.pop();for(const s of lines)line(s)}
-  line(buffer);
+  for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>2000000)throw Error('Oversized provider response');buffer+=decoder.decode(value,{stream:true});const lines=buffer.split('\n');buffer=lines.pop();for(const s of lines)line(s);if(Date.now()-last>=200){last=Date.now();await onProgress({text:summary,reasoning})}}
+  line(buffer+decoder.decode());await onProgress({text:summary,reasoning,final:true});
  }finally{reader.releaseLock()}
- return {summary,calls:[...calls.values()],usage};
+ return {summary,reasoning,calls:[...calls.values()],usage};
 }
 
 /** Plain chat is a host-side bounded tool loop, never a coding VM. The same
  * provider adapter supports Ollama/OpenAI function calls and Anthropic tools. */
-export async function plainChat({model,history,prompt,key,provider='ollama',instructions='',signal,runTool,onRound=async()=>{},upstream=fetch}){
+export async function plainChat({model,history,prompt,key,provider='ollama',instructions='',signal,runTool,onRound=async()=>{},onProgress=async()=>{},upstream=fetch}){
  const messages=[];let size=0;
  for(const t of history.slice(-20).reverse()){
   const sourceContext=t.sources?.length?'\nSources for this earlier answer: '+t.sources.map(s=>'['+s.id+'] '+s.title+' '+s.url).join('; '):'';
@@ -46,11 +47,11 @@ export async function plainChat({model,history,prompt,key,provider='ollama',inst
    body:JSON.stringify({model,messages,stream:true,tools,...(provider==='anthropic'?{system:instructions||'You are a helpful assistant.'}:{stream_options:{include_usage:true}}),...(provider==='openai'?{max_completion_tokens:4096}:{max_tokens:4096})})});
   total.calls++;
   if(!response.ok){await response.body?.cancel();throw Error(provider+' could not complete this chat ('+response.status+')')}
-  const reply=await readReply(response);
+  const reply=await readReply(response,preview=>onProgress({...preview,round:round+1}));
   if(reply.usage){total.measuredCalls++;total.inputTokens+=reply.usage.prompt_tokens??reply.usage.input_tokens??0;total.outputTokens+=reply.usage.completion_tokens??reply.usage.output_tokens??0}
   if(!reply.calls.length){
    if(!reply.summary.trim())throw Error('The model returned no text. Try another model or a shorter request.');
-   return {exitCode:0,model,summary:reply.summary.trim(),diff:'',usage:{...total,inputTokens:total.measuredCalls?total.inputTokens:null,outputTokens:total.measuredCalls?total.outputTokens:null}};
+   return {exitCode:0,model,summary:reply.summary.trim(),reasoning:reply.reasoning,diff:'',usage:{...total,inputTokens:total.measuredCalls?total.inputTokens:null,outputTokens:total.measuredCalls?total.outputTokens:null}};
   }
   if(!runTool)throw Error('This response requested unavailable tools');
   const parsed=reply.calls.map(c=>{try{return {...c,args:c.arguments?JSON.parse(c.arguments):c.input||{}}}catch{return {...c,args:null}}});

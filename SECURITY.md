@@ -14,6 +14,8 @@ The model gateway accepts only the selected provider's internal chat-completions
 
 The Markdown renderer escapes raw HTML and supports only HTTP(S) links. Code and diff output is escaped. Citation links are created only for host-recorded source IDs. The app loads no third-party scripts or fonts; upstream artwork is served from the same origin. CSP restricts resources to the application and same-origin API.
 
+The authenticated event stream uses the same owner-scoped session routing as polling. Only provider-designated answer and thinking text is displayed; tool arguments, opaque/redacted thinking and reasoning signatures are excluded. Thinking is escaped, stored with its private conversation, and never added to subsequent model context. Streams are bounded to eight concurrent viewers per session, disconnect slow readers, and do not control the job lifetime.
+
 ## Execution boundary
 
 The container has no general Internet access and no GitHub or Ollama token. Repository code can read and modify all files inside that disposable container, including Arno configuration and other workspace files. The host must not trust results from programs inside it.

@@ -22,7 +22,7 @@ function showError(e){toast(e.message||String(e))}
 function fit(){const v=window.visualViewport;shell.style.height=(v?v.height:innerHeight)+'px';shell.style.top=(v?v.offsetTop:0)+'px';const d=$('#account-dialog');if(d){d.style.height=d.open&&innerWidth<=800?(v?v.height:innerHeight)+'px':'';d.style.top=d.open&&innerWidth<=800?(v?v.offsetTop:0)+'px':''}const code=$('#code-dialog');if(code?.open){const dock=innerWidth>=1600;if(dock!==document.body.classList.contains('code-open')){code.close();if(dock)code.show();else code.showModal();document.body.classList.toggle('code-open',dock)}}}
 window.visualViewport?.addEventListener('resize',fit);window.visualViewport?.addEventListener('scroll',fit);window.addEventListener('resize',fit);fit();
 function drawer(open){shell.classList.toggle('drawer-open',open);$('#menu').setAttribute('aria-expanded',String(open))}
-function busy(value){state.busy=value;$('#send').disabled=value;$('#stop').hidden=!value;$('#model-button').disabled=value;$('#home-model')?.toggleAttribute('disabled',value);$('#send').innerHTML=value?(state.session?.kind==='chat'?'Thinking…':'<span class="spinner"></span> Working'):icon('arrow')+'<span>Send</span>'}
+function busy(value){state.busy=value;$('#send').disabled=value;$('#stop').hidden=!value;$('#model-button').disabled=value;$('#home-model')?.toggleAttribute('disabled',value);$('#send').innerHTML=value?(state.session?.kind==='chat'?($('#live-response .prose')?.textContent?'Responding…':'Thinking…'):'<span class="spinner"></span> Working'):icon('arrow')+'<span>Send</span>'}
 function title(name,subtitle){$('#title').textContent=name;$('#subtitle').textContent=subtitle;$('#workspace-pill').hidden=!state.session||state.session.kind==='chat';$('#workspace-label').textContent=state.session?.workspaceState==='warm'?'Workspace warm':'Workspace saved'}
 function sidebar(){
  $('#account').textContent=state.user?.login||'Guest';$('#account-avatar').textContent=(state.user?.login||'A').slice(0,2).toUpperCase();
@@ -52,6 +52,7 @@ function message(role,text,result={}){
  if(role==='You'){node.innerHTML+='<div class="user-content">'+esc(text)+'</div>'}
  else {
   const cleaned=cleanOutput(text);
+  if(result.reasoning)node.innerHTML+='<details class="model-thinking"><summary>Thinking <span>Provided by the model</span></summary><div class="thinking-text">'+esc(result.reasoning)+'</div></details>';
   node.innerHTML+='<div class="prose">'+markdown(cleaned||'Task finished without a text response.',result.sources||[])+'</div>';
   node._sources=result.sources||[];
   if(node._sources.length)node.innerHTML+='<div class="source-strip">'+node._sources.slice(0,3).map(s=>'<button class="source-card" type="button" data-citation="'+s.id+'"><span class="source-domain">'+esc(sourceDomain(s.url))+' <b>'+s.id+'</b></span><strong>'+esc(s.title||s.url)+'</strong></button>').join('')+(node._sources.length>3?'<button class="source-card" data-all-sources>View all '+node._sources.length+' sources</button>':'')+'</div>';
@@ -165,7 +166,7 @@ function activity(job){
  let node=$('#activity');if(!node){node=document.createElement('div');node.id='activity';node.className='activity';$('#thread').append(node)}
  if(state.session?.kind==='chat'){
   node.className='chat-activity';
-  const label=job.stage==='searching'?'Searching the web':job.stage==='reading'?'Reading sources':'Thinking';
+  const label=job.stage==='searching'?'Searching the web':job.stage==='reading'?'Reading sources':job.stage==='saving'?'Saving response':$('#live-response .prose')?.textContent?'Responding':'Thinking';
   node.innerHTML='<div class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></div><span>'+label+'…</span>';
   scrollDown();return;
  }
@@ -173,14 +174,37 @@ function activity(job){
  const labels={queued:'Task saved · waiting to start',preparing:'Preparing your warm workspace',restoring:'Restoring your saved workspace',thinking:'Arno is reading, reasoning, and working',checkpointing:'Saving your changes and conversation'};
  node.innerHTML='<div class="activity-top"><span class="spinner"></span><strong>'+esc(labels[stage]||'Working…')+'</strong><span class="spacer"></span><span class="caption">'+duration(Date.now()-(job.createdAt||Date.now()))+'</span></div><small>'+(stage==='restoring'?'Your existing workspace is being restored, not checked out again.':stage==='checkpointing'?'Your answer will appear when its workspace checkpoint is safely saved.':'This task continues if you close the page.')+'</small><div class="steps">'+order.map((s,i)=>'<span class="'+(i<=at?'done':'')+'"></span>').join('')+'</div>';scrollDown();
 }
+/** Live text is provisional until the durable result arrives. Native details
+ * preserve keyboard accessibility and keep model thinking optional/collapsed.
+ * Only the answer is rendered as Markdown; thinking is escaped plain text. */
+function livePreview(preview){
+ if(!preview||preview.jobId!==state.job?.id||!['queued','running'].includes(state.job.status)||(!preview.text&&!preview.reasoning))return;
+ let node=$('#live-response');
+ if(!node){node=document.createElement('article');node.id='live-response';node.className='turn assistant streaming';node.innerHTML='<div class="turn-header"><div class="avatar arno-avatar"></div><strong>Arno</strong><span class="caption live-label">Live response</span></div><details class="model-thinking"><summary>Thinking <span>Provided by the model</span></summary><div class="thinking-text"></div></details><div class="prose"></div><small class="caption live-pass"></small>';$('#thread').insertBefore(node,$('#activity'))}
+ const round=Number(node.dataset.round||0),updatedAt=Number(node.dataset.updatedAt||0);
+ if(preview.round<round||preview.round===round&&preview.updatedAt<=updatedAt)return;
+ node.dataset.round=preview.round;node.dataset.updatedAt=preview.updatedAt;
+ const thinking=node.querySelector('.model-thinking');thinking.hidden=!preview.reasoning;node.querySelector('.thinking-text').textContent=preview.reasoning||'';
+ node.querySelector('.prose').innerHTML=markdown(preview.text||'');
+ if(state.session?.kind==='chat'&&preview.text){const label=$('#activity > span');if(label)label.textContent='Responding…';$('#send').textContent='Responding…'}
+ node.querySelector('.live-pass').textContent=state.session?.kind==='chat'?'Streaming · response not yet saved':'Model pass '+preview.round+' · workspace not yet saved';scrollDown();
+}
+function watchLive(id,gen){
+ if(!window.EventSource)return ()=>{};
+ const stream=new EventSource('/api/sessions/'+id+'/events');
+ stream.addEventListener('preview',e=>{if(gen!==state.generation){stream.close();return}try{livePreview(JSON.parse(e.data))}catch{}});
+ // EventSource reconnects itself. Polling below remains the fallback and source
+ // of truth for final results, errors, cancellation, and workspace checkpoints.
+ return ()=>stream.close();
+}
 // Poll durable task state. expected is an idempotency record for a new send;
 // without it, resume only follows an active job and avoids duplicate old answers.
 async function watchJob(id,gen,expected){
- let active=false;
+ let active=false,stopLive;
  try{
   for(let attempt=0;attempt<240&&gen===state.generation;attempt++){
    let job;try{job=await api('/api/sessions/'+id+'/job')}catch{
-    if(gen!==state.generation)return;busy(true);if(!$('#activity'))activity({stage:'queued'});$('#activity strong').textContent='Connection interrupted · reconnecting';await new Promise(r=>setTimeout(r,3000));continue;
+    if(gen!==state.generation)return;busy(true);if(!$('#activity'))activity({stage:'queued'});const label=$('#activity strong')||$('#activity span');if(label)label.textContent='Connection interrupted · reconnecting';await new Promise(r=>setTimeout(r,3000));continue;
    }
    if(gen!==state.generation)return;
    if(!expected&&!active&&!['queued','running'].includes(job.status))return;
@@ -188,16 +212,16 @@ async function watchJob(id,gen,expected){
    if(expected&&job.id!==expected.id)return;
    if(!active&&!expected&&job.prompt)message('You',job.prompt);active=true;state.job=job;
    if(job.status==='completed'||job.status==='failed'||job.status==='cancelled'){
-    $('#activity')?.remove();
+    stopLive?.();$('#activity')?.remove();$('#live-response')?.remove();
     if(job.status==='completed'){message('Arno',job.result.summary,{...job.result,at:job.finishedAt});const updated=await api('/api/sessions/'+id);if(gen===state.generation){state.session={id,...updated};state.sessions=state.sessions.map(s=>s.id===id?{...s,...updated}:s);sidebar();title(updated.title||updated.repo,updated.kind==='chat'?'Private chat · Web research enabled':(updated.ref||'main')+' · GitHub workspace')}toast(state.session?.kind==='chat'?'Response saved':'Turn complete · workspace saved')}
     else{const node=document.createElement('div');node.className='banner';node.textContent=job.status==='cancelled'?'Task stopped. The next turn restores the last completed checkpoint.':job.result?.error||'Task failed. Your previous checkpoint is preserved.';$('#thread').append(node);prompt.value=job.prompt||'';toast(job.status==='cancelled'?'Task stopped':'Task failed. Review the error and retry when ready.')}
     return;
    }
-   busy(true);activity(job);await new Promise(r=>setTimeout(r,2000));
+   busy(true);activity(job);if(!stopLive)stopLive=watchLive(id,gen);livePreview(job.preview);await new Promise(r=>setTimeout(r,2000));
   }
   if(gen===state.generation)toast('Task is still saved. Reopen the session to check its status.');
  }catch(e){showError(e)}
- finally{if(gen===state.generation){busy(false);state.job=null}}
+ finally{stopLive?.();if(gen===state.generation){busy(false);state.job=null}}
 }
 async function submit(e){
  e.preventDefault();if(!state.session||state.busy||!prompt.value.trim())return;

@@ -94,7 +94,7 @@ Existing branches are never overwritten. If pull-request creation fails after br
 - Each task permits up to 16 model calls, a four-minute CLI deadline, and 4,096 maximum output tokens per inference request.
 - General container Internet access is disabled. Model inference, built-in web research, and enabled remote MCP are host-mediated exceptions. Arbitrary dependency downloads remain unavailable.
 - Publishing supports up to 50 regular UTF-8 changed files totaling 1 MB. Binary files and symlinks are rejected.
-- Coding output is displayed after the turn and checkpoint complete; this version does not stream individual tool events live.
+- Answer text and provider-exposed thinking stream live through authenticated SSE; coding previews show the current model pass. Tool arguments and raw tool events are not streamed. The final coding result appears after its checkpoint completes.
 - Regular chat uses no VM. It supports a bounded host-side research loop and a quiet chat-specific loading state.
 - Physical iPhone keyboard testing remains necessary alongside automated viewport tests.
 - Account balance, pricing-based cost, and unlimited context are not available.
