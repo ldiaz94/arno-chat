@@ -39,6 +39,7 @@ const paths = {
   clock: 'M12 7v5l3 2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0',
   repo: 'M4 4h15v17H4zM4 17h15M8 4v9',
   logout: 'M9 4H3v16h6m6-5 4-3-4-3m-6 3h10',
+  clip: 'm21 11-9 9a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l8-8',
 };
 export function icon(name) {
   return (
@@ -78,7 +79,7 @@ export async function api(path, opt = {}) {
   } catch {
     throw Error('The server could not complete this request. Please try again.');
   }
-  if (!r.ok) throw Error(d.error || 'Request failed');
+  if (!r.ok) throw Object.assign(Error(d.error || 'Request failed'), { status: r.status });
   return d;
 }
 export function toast(text) {

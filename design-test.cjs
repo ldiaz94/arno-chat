@@ -26,7 +26,12 @@ const { chromium } = require('playwright'),
   });
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
-  let submitted = null,
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  let uploadHeaders = null,
+    submitted = null,
     checked = [],
     published = false,
     model = 'mistral-large-4:cloud',
@@ -158,7 +163,17 @@ const { chromium } = require('playwright'),
           { id: 'kimi-k3.1-pro', name: 'Kimi K3.1 Pro' },
         ],
       };
-    else if (u.pathname.endsWith('/messages')) {
+    else if (u.pathname.endsWith('/attachments')) {
+      uploadHeaders = route.request().headers();
+      await route.fulfill({
+        status: 201,
+        json: { id: 'att-1', name: 'dot.png', type: 'image/png', size: png.length, kind: 'image' },
+      });
+      return;
+    } else if (u.pathname.endsWith('/attachments/att-1')) {
+      await route.fulfill({ contentType: 'image/png', body: png });
+      return;
+    } else if (u.pathname.endsWith('/messages')) {
       submitted = route.request().postDataJSON();
       await route.abort('failed');
       return;
@@ -344,7 +359,16 @@ const { chromium } = require('playwright'),
   await page.getByRole('heading', { name: 'A little space to think.' }).waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByLabel('Message', { exact: true }).fill('Tell me something interesting');
+  await page
+    .locator('#attach-input')
+    .setInputFiles({ name: 'dot.png', mimeType: 'image/png', buffer: png });
+  await page.locator('#attach-chips .attach-chip:not(.uploading) .attach-name').waitFor();
+  assert.equal(await page.locator('#attach-chips .attach-name').innerText(), 'dot.png');
+  assert.equal(uploadHeaders['x-filename'], 'dot.png');
   await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.locator('#thread .turn.user .attach-thumb img').waitFor();
+  assert.deepEqual(submitted.attachments, ['att-1']);
+  assert.equal(await page.locator('#attach-chips .attach-chip').count(), 0);
   await page.locator('.chat-activity').waitFor();
   await page.locator('#live-response .prose strong').waitFor();
   assert.equal(await page.locator('#live-response .prose strong').innerText(), 'streamed answer');

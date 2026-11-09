@@ -910,3 +910,213 @@ test('failed turns stay in the transcript, out of context, until a retry replace
   assert.equal(after.length, 1);
   assert.equal(after[0].error, 'boom again');
 });
+async function vapidKey() {
+  const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, [
+    'sign',
+    'verify',
+  ]);
+  return JSON.stringify(await crypto.subtle.exportKey('jwk', pair.privateKey));
+}
+/** An index object for push tests, reached through env.PROBE. */
+function pushIndex(env) {
+  const f = fixture();
+  env.PROBE = { getByName: () => f.obj };
+  return f;
+}
+test('VAPID JWT is ES256 over the claims and verifies with the served public key', async () => {
+  const { vapidJwt, publicKey, pushApiRoutes } = await import('./push.mjs');
+  const env = { VAPID_KEY: await vapidKey() },
+    jwk = JSON.parse(env.VAPID_KEY);
+  const served = await (await pushApiRoutes['GET /api/push/key'](null, env)).json();
+  assert.equal(served.key, publicKey(jwk));
+  const jwt = await vapidJwt(jwk, 'https://fcm.googleapis.com', 'https://arno.example', 0);
+  const [head, claims, signature] = jwt.split('.'),
+    bytes = s => Buffer.from(s, 'base64url');
+  assert.deepEqual(JSON.parse(bytes(head)), { typ: 'JWT', alg: 'ES256' });
+  assert.deepEqual(JSON.parse(bytes(claims)), {
+    aud: 'https://fcm.googleapis.com',
+    exp: 12 * 3600,
+    sub: 'https://arno.example',
+  });
+  const key = await crypto.subtle.importKey(
+    'raw',
+    bytes(served.key),
+    { name: 'ECDSA', namedCurve: 'P-256' },
+    false,
+    ['verify'],
+  );
+  assert.ok(
+    await crypto.subtle.verify(
+      { name: 'ECDSA', hash: 'SHA-256' },
+      key,
+      bytes(signature),
+      new TextEncoder().encode(head + '.' + claims),
+    ),
+  );
+});
+test('push subscribe accepts only known push services', async () => {
+  const { pushApiRoutes } = await import('./push.mjs');
+  const env = {},
+    f = pushIndex(env),
+    auth = { user: { id: 7 } };
+  const subscribe = endpoint =>
+    pushApiRoutes['POST /api/push/subscribe'](
+      new Request('https://arno.example/api/push/subscribe', {
+        method: 'POST',
+        body: JSON.stringify({ endpoint, keys: {} }),
+      }),
+      env,
+      new URL('https://arno.example/api/push/subscribe'),
+      auth,
+    );
+  for (const bad of [
+    'https://169.254.169.254/latest',
+    'http://fcm.googleapis.com/fcm/send/x',
+    'https://fcm.googleapis.com.evil.example/x',
+    'https://user@fcm.googleapis.com/x',
+    'https://fcm.googleapis.com:8443/x',
+    'https://fcm.googleapis.com/' + 'x'.repeat(1000),
+  ])
+    assert.equal((await subscribe(bad)).status, 400, bad);
+  assert.equal((await subscribe('https://fcm.googleapis.com/fcm/send/abc')).status, 200);
+  assert.equal((await subscribe('https://wns2-par02p.notify.windows.com/w/?token=x')).status, 200);
+  const push = await f.ctx.storage.get('push');
+  assert.equal(push.origin, 'https://arno.example');
+  assert.equal(push.subscriptions.length, 2);
+});
+test('a push service 410 deletes the subscription; no subscriptions, no push', async () => {
+  const { notifyOwner } = await import('./push.mjs');
+  const env = { VAPID_KEY: await vapidKey() },
+    f = pushIndex(env),
+    sent = [];
+  const upstream = async (url, init) => {
+    sent.push({ url, init });
+    return new Response(null, { status: url.includes('gone') ? 410 : 201 });
+  };
+  const notice = { title: 'T', body: 'B', url: '/?session=x', at: 1 };
+  assert.equal(await notifyOwner(env, 7, notice, upstream), 0);
+  assert.equal(sent.length, 0);
+  assert.equal(await f.ctx.storage.get('notice'), undefined);
+  await f.ctx.storage.put('push', {
+    origin: 'https://arno.example',
+    subscriptions: [
+      { endpoint: 'https://fcm.googleapis.com/fcm/send/live', at: 1 },
+      { endpoint: 'https://fcm.googleapis.com/fcm/send/gone', at: 2 },
+    ],
+  });
+  assert.equal(await notifyOwner(env, 7, notice, upstream), 1);
+  assert.equal(sent.length, 2);
+  assert.match(sent[0].init.headers.Authorization, /^vapid t=[\w-]+\.[\w-]+\.[\w-]+, k=[\w-]+$/);
+  assert.equal(sent[0].init.body, undefined);
+  assert.deepEqual(
+    (await f.ctx.storage.get('push')).subscriptions.map(s => s.endpoint),
+    ['https://fcm.googleapis.com/fcm/send/live'],
+  );
+  assert.deepEqual(await f.ctx.storage.get('notice'), notice);
+});
+test('turn notice: plain title and body, and a link that reopens the session', async () => {
+  const { turnNotice } = await import('./push.mjs');
+  const n = turnNotice({ title: 'Fix the **build**' }, 'abc', {
+    summary: '## Done\n\nSee [the log](https://x.example) and `make`.',
+  });
+  assert.equal(n.title, 'Fix the build');
+  assert.equal(n.body, 'Done See the log and make.');
+  assert.equal(n.url, '/?session=abc');
+  assert.equal(turnNotice({}, 'abc', { error: 'boom' }).body, 'boom');
+});
+test('attachments: chunked round trip, kind and size checks, model input per provider', async () => {
+  const { saveAttachment, readAttachment, attachmentsFor, modelInput } =
+    await import('./attachments.mjs');
+  const map = new Map();
+  const storage = {
+    get: async k => (Array.isArray(k) ? new Map(k.map(x => [x, map.get(x)])) : map.get(k)),
+    put: async records => Object.entries(records).forEach(([k, v]) => map.set(k, v)),
+    list: async ({ prefix }) => new Map([...map].filter(([k]) => k.startsWith(prefix))),
+  };
+  const big = new Uint8Array(1024 * 1024 + 5).map((_, i) => i % 251);
+  const image = await saveAttachment(storage, 'pic.png', 'image/png', big);
+  assert.equal(image.chunks, 2);
+  assert.deepEqual((await readAttachment(storage, image.id)).bytes, big);
+  const text = await saveAttachment(storage, '../notes.md', '', new TextEncoder().encode('# hi'));
+  assert.equal(text.kind, 'text');
+  assert.equal(text.name, '.._notes.md');
+  await assert.rejects(
+    saveAttachment(storage, 'a.exe', 'application/x-msdownload', new Uint8Array(3)),
+  );
+  await assert.rejects(
+    saveAttachment(storage, 'bad.txt', 'text/plain', new Uint8Array([0xff, 0xfe])),
+  );
+  await assert.rejects(attachmentsFor(storage, ['00000000-0000-0000-0000-000000000000']));
+  const input = await modelInput(
+    storage,
+    'Look',
+    await attachmentsFor(storage, [image.id, text.id]),
+  );
+  assert.match(input.text, /Attached file \.\._notes\.md:\n```\n# hi\n```/);
+  assert.equal(input.images.length, 1);
+  assert.equal(atob(input.images[0].data).length, big.length);
+  // Each provider gets the image in its own format.
+  for (const provider of ['anthropic', 'openai']) {
+    let sent;
+    await plainChat({
+      model: 'm',
+      provider,
+      key: 'k',
+      history: [],
+      prompt: 'Look',
+      images: [{ type: 'image/png', data: 'AAAA' }],
+      upstream: async (url, init) => {
+        sent = JSON.parse(init.body).messages.at(-1).content;
+        return new Response(
+          'data: ' +
+            JSON.stringify({
+              choices: [{ delta: { content: 'ok' } }],
+              delta: { type: 'text_delta', text: 'ok' },
+            }) +
+            '\n\n',
+        );
+      },
+    });
+    if (provider === 'anthropic')
+      assert.deepEqual(sent[0], {
+        type: 'image',
+        source: { type: 'base64', media_type: 'image/png', data: 'AAAA' },
+      });
+    else
+      assert.deepEqual(sent[1], {
+        type: 'image_url',
+        image_url: { url: 'data:image/png;base64,AAAA' },
+      });
+  }
+});
+test('artifacts: create, update keeps earlier versions, bad input refused', async () => {
+  const { artifactTool, listArtifacts } = await import('./artifacts.mjs');
+  const map = new Map();
+  const storage = {
+    get: async k => map.get(k),
+    put: async (k, v) => map.set(k, v),
+    list: async ({ prefix }) => new Map([...map].filter(([k]) => k.startsWith(prefix))),
+  };
+  const touched = [];
+  const made = await artifactTool(
+    storage,
+    'create_artifact',
+    { title: 'List', content: '- a' },
+    touched,
+  );
+  await artifactTool(storage, 'update_artifact', { id: made.id, content: '- a\n- b' }, touched);
+  const stored = map.get('artifact:' + made.id);
+  assert.equal(stored.version, 2);
+  assert.equal(stored.title, 'List');
+  assert.deepEqual(
+    stored.previous.map(p => p.content),
+    ['- a'],
+  );
+  assert.deepEqual(touched, [{ id: made.id, title: 'List', version: 2 }]);
+  assert.deepEqual(
+    (await listArtifacts(storage)).map(a => a.title),
+    ['List'],
+  );
+  await assert.rejects(artifactTool(storage, 'create_artifact', { title: '', content: 'x' }, []));
+  await assert.rejects(artifactTool(storage, 'update_artifact', { id: 'nope', content: 'x' }, []));
+});

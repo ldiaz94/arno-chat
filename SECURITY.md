@@ -16,6 +16,10 @@ The Markdown renderer escapes raw HTML and supports only HTTP(S) links. Code and
 
 The authenticated event stream uses the same owner-scoped session routing as polling. Only provider-designated answer and thinking text is displayed; tool arguments, opaque/redacted thinking and reasoning signatures are excluded. Thinking is escaped, stored with its private conversation, and never added to subsequent model context. Provider and token values never appear in API errors. Streams are bounded to eight concurrent viewers per session, disconnect slow readers, and do not control the job lifetime.
 
+## Push notifications
+
+Pushes are empty: no conversation text passes through Google, Mozilla, Apple or Microsoft. The service worker fetches the notice from the same origin with the user's cookie. A subscription endpoint must be an HTTPS URL of at most 1000 characters on a known push service (fcm.googleapis.com, push.services.mozilla.com, push.apple.com, notify.windows.com, or their subdomains), without credentials or port, so the Worker cannot be made to POST elsewhere; redirects are not followed. The VAPID private key is an encrypted Worker secret; only its public half is served.
+
 ## Execution boundary
 
 The container has no general Internet access and no GitHub or Ollama token. Repository code can read and modify all files inside that disposable container, including Arno configuration and other workspace files. The host must not trust results from programs inside it.

@@ -25,6 +25,7 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 | mcp.mjs | Account-approved HTTPS MCP proxy and initialization test |
 | files.mjs | Read-only directory and UTF-8 code navigation |
 | publish.mjs | Worktree export, host-side validation, cumulative diff including new files |
+| push.mjs | Payload-less Web Push: VAPID signing, push-service allowlist, subscriptions and latest notice, its /api/ and index routes |
 | web/index.html | The page's static markup; DOM IDs form the contract with the web/*.js modules |
 | web/app.js | Entry: event wiring, icon setup and boot |
 | web/core.js | DOM references, `state`, formatting helpers, API client, toast |
@@ -34,8 +35,12 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 | web/sessions.js | Open, create, search, export, rename and delete sessions; home |
 | web/info.js | Conversation details panel (title or usage button): context, usage, sources, links, images, repository |
 | web/code.js | Code dialog: file browser, diff, review and publish |
+| web/attach.js | Composer attachments: upload on pick/paste/drop, chips, attachment rendering for messages and details |
 | web/turns.js | Sending, editing, job polling and live output |
 | web/settings.js | Account settings dialog |
+| web/push.js | Turn notifications on or off: permission, service worker, push subscription |
+| web/sw.js | Service worker (registered only while notifications are on): shows the latest notice on a push, opens its conversation on a click |
+| web/manifest.webmanifest | Installable web app manifest (needed for push on iPhone and iPad) |
 | web/style.css | Responsive dark/light design tokens, layout, typography, reduced-motion rules |
 | web/render.mjs | Escaping Markdown renderer, table sizing, CLI-banner cleanup, safe diff rendering (shared by browser and tests) |
 | web/_headers | Security headers for the static files, including the page's CSP |
@@ -106,6 +111,10 @@ All API routes require the GitHub-authenticated session cookie except GET /api/m
 | POST | /api/sessions/:id/cancel | Stop an active task and preserve the last completed checkpoint |
 | GET | /api/sessions/:id/changes | Export exact changed text files and a review digest |
 | POST | /api/sessions/:id/publish | Validate digest, create a new arno/ branch and commit, open a PR |
+| GET | /api/push/key | VAPID public key for the browser; 404 when VAPID_KEY is not set |
+| POST | /api/push/subscribe | Save `endpoint` (a known push service only) for the user, at most 10 |
+| POST | /api/push/unsubscribe | Forget `endpoint` |
+| GET | /api/notifications/latest | The latest notice {title, body, url, at}, fetched by the service worker |
 
 Payloads worth knowing:
 
@@ -204,6 +213,12 @@ Regular and coding conversations both have search and page-reading tools. The ho
 The review action exports changed regular text files from the worktree, new files included. The export script and the host both validate paths, file count, modes, encoding and size; container output is untrusted even from a fixed script.
 
 The review includes a SHA-256 digest of the files and the source revision. Publishing exports again and rejects a changed digest. The Worker creates a Git tree and a commit whose parent is the pinned source commit on a new `arno/` branch, then opens a pull request against the selected base. Existing branches are never overwritten. If PR creation fails after the branch exists, the UI links the branch and reports the partial result. Sessions without a recorded source revision must be reopened as new ones before publishing.
+
+## Notifications
+
+When a turn ends completed or failed (not stopped), `alarm()` calls `notify()`, which hands the owner a notice: the conversation title, the first 120 characters of the answer or the error as plain text, and `/?session=<id>`. push.mjs stores it as the user's latest notice in `index:<user>` and sends each saved subscription an empty push signed with VAPID (RFC 8292; `TTL: 3600`). A push service answering 404 or 410 deletes that subscription. Without VAPID_KEY or subscriptions nothing is sent; errors are logged and never fail the turn; each push is bounded to 5 s.
+
+The push carries no payload, so there is no RFC 8291 encryption. web/sw.js wakes on it, fetches `GET /api/notifications/latest` with the user's cookie and shows it, unless an app window is visible. A click focuses an app window and navigates it to the link, or opens one; app.js opens the `?session=` conversation and removes the query. The settings Connections tab turns notifications on (permission, register sw.js, subscribe) or off (unsubscribe both sides, unregister sw.js). On iPhone and iPad push works only from the Home Screen app, so the page has a manifest and the toggle says so.
 
 ## Interface
 

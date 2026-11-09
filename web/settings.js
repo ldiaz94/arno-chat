@@ -1,9 +1,10 @@
-/** Account settings dialog: instructions, skills, MCP connections, custom models and
- * provider keys. Depends on core, layout and models.
+/** Account settings dialog: instructions, skills, MCP connections, custom models,
+ * provider keys and notifications. Depends on core, layout, models and push.
  */
 import { $, state, esc, api, toast } from './core.js';
 import { fit } from './layout.js';
 import { loadModels } from './models.js';
+import { pushState, enablePush, disablePush } from './push.js';
 let account = null;
 function settingsTabs(tab) {
   document
@@ -124,7 +125,7 @@ async function openAccount() {
       '<section data-account-panel="mcp" hidden><p class="caption">Connect trusted public HTTPS Streamable HTTP MCP servers. Enabled tools are available to Arno coding sessions. Regular chats have built-in web research; custom MCP tools are currently for coding sessions. MCP servers can perform remote actions; enable only servers you trust.</p><div id="mcp-cards"></div><button id="add-mcp" type="button" class="ghost">＋ Add MCP connection</button></section>' +
       '<section data-account-panel="connections" hidden><section class="setting-card"><div class="setting-row"><strong>GitHub</strong><span class="tag">Signed in as ' +
       esc(state.user.login) +
-      '</span></div><p class="caption">Signing in does not require repository access. Coding sessions request repo scope separately.</p><a href="/auth/github?repos=1">Connect or refresh repository access ↗</a><p><a href="https://github.com/settings/applications" target="_blank" rel="noopener noreferrer">Review GitHub app and organization authorization ↗</a></p><p class="caption">If only 17 repositories are visible, reconnect with repo scope and approve organization SSO/access. The app can only list repositories GitHub authorizes for this token.</p></section><section class="setting-card"><strong>Storage & privacy</strong><p class="caption">Chats and account preferences use persistent Cloudflare Durable Objects SQLite storage. API keys and MCP tokens use per-account AES-GCM encryption. This is a private deployment using the owner’s configured providers.</p></section></section>' +
+      '</span></div><p class="caption">Signing in does not require repository access. Coding sessions request repo scope separately.</p><a href="/auth/github?repos=1">Connect or refresh repository access ↗</a><p><a href="https://github.com/settings/applications" target="_blank" rel="noopener noreferrer">Review GitHub app and organization authorization ↗</a></p><p class="caption">If only 17 repositories are visible, reconnect with repo scope and approve organization SSO/access. The app can only list repositories GitHub authorizes for this token.</p></section><section class="setting-card"><div class="setting-row"><strong>Notifications</strong><span class="tag" id="push-state"></span></div><label class="check-label"><input id="push-toggle" type="checkbox"> Notify me when a reply is ready</label><p class="caption" id="push-hint"></p></section><section class="setting-card"><strong>Storage & privacy</strong><p class="caption">Chats and account preferences use persistent Cloudflare Durable Objects SQLite storage. API keys and MCP tokens use per-account AES-GCM encryption. This is a private deployment using the owner’s configured providers.</p></section></section>' +
       '<div class="account-save"><span class="caption" id="account-save-status">Provider keys save separately. Save instructions, skills, MCP, and custom models below.</span><button id="save-account" class="primary" type="button">Save preferences</button></div>';
     for (const s of account.skills) $('#skill-cards').append(skillCard(s));
     for (const m of account.mcp) $('#mcp-cards').append(mcpCard(m));
@@ -145,9 +146,43 @@ async function openAccount() {
     $('#account-body')
       .querySelectorAll('[data-provider-test]')
       .forEach(b => (b.onclick = () => testProvider(b.dataset.providerTest)));
+    $('#push-toggle').onchange = togglePush;
+    showPush();
     settingsTabs('providers');
   } catch (e) {
     $('#account-body').innerHTML = '<p class="banner">' + esc(e.message) + '</p>';
+  }
+}
+const PUSH_STATES = {
+  on: ['On', 'This browser is notified when a reply is ready or a turn fails.'],
+  off: ['Off', 'Get a notification when a reply finishes while Arno is not on screen.'],
+  blocked: [
+    'Blocked',
+    'Notifications are blocked for this site; allow them in the browser settings.',
+  ],
+  unsupported: ['Unsupported', 'This browser does not support web push notifications.'],
+  ios: [
+    'Home Screen only',
+    'On iPhone and iPad, add Arno to the Home Screen (Share › Add to Home Screen) and open it from there.',
+  ],
+};
+async function showPush() {
+  const current = await pushState(),
+    [tag, hint] = PUSH_STATES[current];
+  $('#push-state').textContent = tag;
+  $('#push-hint').textContent = hint;
+  $('#push-toggle').checked = current === 'on';
+  $('#push-toggle').disabled = !['on', 'off'].includes(current);
+}
+async function togglePush(e) {
+  e.target.disabled = true;
+  $('#push-hint').textContent = e.target.checked ? 'Turning on…' : 'Turning off…';
+  try {
+    await (e.target.checked ? enablePush() : disablePush());
+    await showPush();
+  } catch (error) {
+    await showPush();
+    $('#push-hint').textContent = error.message;
   }
 }
 async function providerKey(provider, remove = false) {

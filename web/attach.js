@@ -1,0 +1,200 @@
+/** Composer attachments: files and images are uploaded to the open session as soon as they
+ * are picked, pasted or dropped, shown as chips above the prompt, and sent by id with the
+ * message. Also renders attachments of saved messages. Depends on core only.
+ */
+import { $, state, esc, icon, toast, showError } from './core.js';
+
+const MaxFiles = 8;
+// Chips of the composer: { key, sid, name, size, kind, type, id?, preview?, status }.
+// status is 'uploading' or 'ready'; preview is an object URL for a picked image.
+let chips = [];
+
+export function bytes(n) {
+  return n < 1024
+    ? n + ' B'
+    : n < 1048576
+      ? (n / 1024).toFixed(1) + ' KB'
+      : (n / 1048576).toFixed(1) + ' MB';
+}
+const url = (sid, id) => '/api/sessions/' + sid + '/attachments/' + id;
+
+/** HTML for the attachments of a saved message: image thumbnails that open full size,
+ * and file chips that download. */
+export function attachmentsHtml(sid, list) {
+  return (list || [])
+    .map(a =>
+      a.kind === 'image'
+        ? '<a class="attach-thumb" href="' +
+          url(sid, a.id) +
+          '" target="_blank" rel="noopener"><img src="' +
+          url(sid, a.id) +
+          '" alt="' +
+          esc(a.name) +
+          '" loading="lazy" decoding="async"></a>'
+        : '<a class="attach-chip" href="' +
+          url(sid, a.id) +
+          '" download="' +
+          esc(a.name) +
+          '"><span class="attach-name">' +
+          esc(a.name) +
+          '</span><small>' +
+          bytes(a.size) +
+          '</small></a>',
+    )
+    .join('');
+}
+
+function render() {
+  const box = $('#attach-chips');
+  box.hidden = !chips.length;
+  box.innerHTML = chips
+    .map(c => {
+      const src = c.preview || (c.kind === 'image' && c.id ? url(c.sid, c.id) : '');
+      return (
+        '<span class="attach-chip' +
+        (c.status === 'uploading' ? ' uploading' : '') +
+        '">' +
+        (c.status === 'uploading'
+          ? '<span class="spinner"></span>'
+          : src
+            ? '<img src="' + src + '" alt="">'
+            : '') +
+        '<span class="attach-name">' +
+        esc(c.name) +
+        '</span><small>' +
+        bytes(c.size) +
+        '</small><button type="button" class="attach-remove" data-key="' +
+        c.key +
+        '" aria-label="Remove ' +
+        esc(c.name) +
+        '">×</button></span>'
+      );
+    })
+    .join('');
+}
+
+function drop(c) {
+  if (c.preview) URL.revokeObjectURL(c.preview);
+  chips = chips.filter(x => x !== c);
+}
+
+async function upload(file) {
+  const sid = state.session.id,
+    chip = {
+      key: crypto.randomUUID(),
+      sid,
+      name: file.name,
+      size: file.size,
+      kind: file.type.startsWith('image/') ? 'image' : 'text',
+      status: 'uploading',
+      preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : '',
+    };
+  chips.push(chip);
+  render();
+  try {
+    const r = await fetch('/api/sessions/' + sid + '/attachments', {
+      method: 'POST',
+      body: file,
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+        'X-Filename': encodeURIComponent(file.name),
+      },
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw Error(d.error || 'Upload failed');
+    Object.assign(chip, { id: d.id, name: d.name, size: d.size, kind: d.kind, status: 'ready' });
+  } catch (e) {
+    drop(chip);
+    showError(e);
+  }
+  if (!chips.includes(chip)) return render(); // removed or the session changed meanwhile
+  if (chip.sid !== state.session?.id) drop(chip);
+  render();
+}
+
+/** Upload the given files to the open conversation. */
+export function addFiles(files) {
+  if (!state.session) return;
+  for (const file of files) {
+    if (chips.length >= MaxFiles) return toast('At most ' + MaxFiles + ' attachments per message');
+    upload(file);
+  }
+}
+
+export const uploading = () => chips.some(c => c.status === 'uploading');
+
+/** Take the ready attachments for sending: returns their metadata and empties the chips. */
+export function takeReady() {
+  const ready = chips
+    .filter(c => c.status === 'ready')
+    .map(({ id, name, type, size, kind }) => ({ id, name, type, size, kind }));
+  clearAttachments();
+  return ready;
+}
+
+/** Put attachments back in the composer (a rejected send). */
+export function restore(list) {
+  if (chips.length || !state.session) return;
+  chips = list.map(a => ({
+    ...a,
+    key: crypto.randomUUID(),
+    sid: state.session.id,
+    status: 'ready',
+  }));
+  render();
+}
+
+export function clearAttachments() {
+  for (const c of chips) if (c.preview) URL.revokeObjectURL(c.preview);
+  chips = [];
+  render();
+}
+
+// Files carried by a paste or drop event, if any.
+const filesOf = data => [...(data?.files || [])];
+
+const attachButton = $('#attach'),
+  input = $('#attach-input');
+attachButton.innerHTML = icon('clip');
+attachButton.onclick = () => input.click();
+input.onchange = () => {
+  addFiles([...input.files]);
+  input.value = '';
+};
+$('#attach-chips').onclick = e => {
+  const key = e.target.closest('.attach-remove')?.dataset.key,
+    chip = chips.find(c => c.key === key);
+  if (chip) {
+    drop(chip);
+    render();
+  }
+};
+$('#prompt').addEventListener('paste', e => {
+  const files = filesOf(e.clipboardData);
+  if (!files.length) return;
+  e.preventDefault();
+  addFiles(files);
+});
+// Drag and drop onto the page; the depth counter copes with enter/leave of children.
+let depth = 0;
+const hasFiles = e => e.dataTransfer?.types?.includes('Files');
+document.addEventListener('dragenter', e => {
+  if (!hasFiles(e) || !state.session) return;
+  depth++;
+  document.body.classList.add('drop-active');
+});
+document.addEventListener('dragleave', e => {
+  if (!hasFiles(e)) return;
+  depth = Math.max(0, depth - 1);
+  if (!depth) document.body.classList.remove('drop-active');
+});
+document.addEventListener('dragover', e => {
+  if (hasFiles(e)) e.preventDefault();
+});
+document.addEventListener('drop', e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  depth = 0;
+  document.body.classList.remove('drop-active');
+  addFiles(filesOf(e.dataTransfer));
+});

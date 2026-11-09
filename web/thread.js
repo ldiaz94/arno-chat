@@ -4,6 +4,7 @@
 import { markdown, cleanOutput, diffHtml } from './render.mjs';
 import { $, state, esc, icon, num, duration, modelName, money, copy, main } from './core.js';
 import { editMessage, retry } from './turns.js';
+import { attachmentsHtml } from './attach.js';
 function diffCounts(diff) {
   const lines = (diff || '').split('\n');
   return {
@@ -32,6 +33,12 @@ export function message(role, text, result = {}) {
     '</small></div>';
   if (role === 'You') {
     node.innerHTML += '<div class="user-content">' + esc(text) + '</div>';
+    node._attachments = result.attachments || [];
+    if (node._attachments.length)
+      node.innerHTML +=
+        '<div class="message-attachments">' +
+        attachmentsHtml(state.session.id, node._attachments) +
+        '</div>';
     if (result.at) node.dataset.at = result.at;
     if (state.session?.kind === 'chat') {
       node
@@ -129,8 +136,8 @@ main.addEventListener(
 );
 /** A failed or stopped turn, shown after its message, with Retry. at is the
  * saved failure's time (known once the session is refreshed), which the retry
- * names so the server replaces the failed record. */
-export function failure(text, error, at) {
+ * names so the server replaces the failed record. attachments are resent with it. */
+export function failure(text, error, at, attachments = []) {
   const node = document.createElement('div');
   node.className = 'failure';
   node.setAttribute('role', 'alert');
@@ -139,6 +146,7 @@ export function failure(text, error, at) {
     esc(error || 'This turn failed.') +
     '</p><div class="failure-actions"><button type="button" class="primary">Retry</button></div>';
   if (at) node.dataset.at = at;
+  node._attachments = attachments;
   node.querySelector('button').onclick = () => retry(node, text);
   $('#thread').append(node);
   scrollDown();

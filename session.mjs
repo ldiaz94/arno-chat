@@ -5,14 +5,17 @@
 import { DurableObject } from 'cloudflare:workers';
 import { SECURITY, json } from './http.mjs';
 import { plainChat } from './chat.mjs';
+import { modelInput } from './attachments.mjs';
 import { profile, credential, instructions, providerModel } from './account.mjs';
-import { WEB_INSTRUCTIONS, research, citedSources } from './web.mjs';
+import { WEB_INSTRUCTIONS, WEB_TOOLS, research, citedSources } from './web.mjs';
+import { ARTIFACT_INSTRUCTIONS, ARTIFACT_TOOLS, artifactTool } from './artifacts.mjs';
 import { prices, priceOf, cost } from './prices.mjs';
 import { storeRoutes } from './store-routes.mjs';
 import { gatewayRoutes } from './gateway-routes.mjs';
 import { sessionRoutes } from './session-routes.mjs';
+import { pushRoutes, notifyOwner, turnNotice } from './push.mjs';
 
-const ROUTES = { ...storeRoutes, ...gatewayRoutes, ...sessionRoutes };
+const ROUTES = { ...storeRoutes, ...pushRoutes, ...gatewayRoutes, ...sessionRoutes };
 
 export class ArnoProbe extends DurableObject {
   /** Full bounded snapshots make SSE reconnects idempotent. This is a view of
@@ -162,6 +165,7 @@ export class ArnoProbe extends DurableObject {
     const at = Date.now();
     await this.ctx.storage.put('turn:' + String(at).padStart(16, '0') + ':' + crypto.randomUUID(), {
       prompt: job.prompt,
+      attachments: job.attachments || [],
       failed: true,
       error,
       at,
@@ -196,18 +200,27 @@ export class ArnoProbe extends DurableObject {
         counts = { searches: 0, reads: 0 },
         webKey = await credential(this.env, session.ownerId, p, 'ollama');
       const previous = (await this.history()).filter(t => !editAt || t.at < editAt);
-      const jobId = (await this.ctx.storage.get('job'))?.id;
+      const job = await this.ctx.storage.get('job'),
+        jobId = job?.id,
+        attached = job?.attachments || [],
+        input = await modelInput(this.ctx.storage, prompt, attached),
+        artifacts = [];
       const result = await plainChat({
         model: selected.id,
         provider: selected.provider,
         history: previous,
-        prompt,
+        prompt: input.text,
+        images: input.images,
+        toolSpecs: [...WEB_TOOLS, ...ARTIFACT_TOOLS],
         key: await credential(this.env, session.ownerId, p, selected.provider),
-        instructions: [instructions(p), WEB_INSTRUCTIONS].filter(Boolean).join('\n\n'),
+        instructions: [instructions(p), WEB_INSTRUCTIONS, ARTIFACT_INSTRUCTIONS]
+          .filter(Boolean)
+          .join('\n\n'),
         signal: this.chatAbort.signal,
         onRound: () => this.phase('thinking', { workspace: 'chat', startupMs: 0 }),
         onProgress: preview => this.progress({ ...preview, jobId }),
         runTool: async (name, args) => {
+          if (/_artifact$/.test(name)) return artifactTool(this.ctx.storage, name, args, artifacts);
           await this.phase(name === 'web_search' ? 'searching' : 'reading', { workspace: 'chat' });
           const data = await research(name, args, { key: webKey, sources, counts });
           await this.phase('thinking', {
@@ -219,6 +232,8 @@ export class ArnoProbe extends DurableObject {
         },
       });
       result.model = session.model;
+      result.attachments = attached;
+      result.artifacts = artifacts;
       result.sources = citedSources(result.summary, sources, previous);
       result.webUsage = counts;
       if ((await this.ctx.storage.get('job'))?.status === 'cancelled')
@@ -346,6 +361,22 @@ export class ArnoProbe extends DurableObject {
     await this.ctx.storage.setAlarm(Date.now() + 35 * 60 * 1000);
     return mode;
   }
+  /** Tell the owner's devices that a turn has ended. Never fails the turn;
+   * each push request is bounded to 5 s. */
+  async notify(result) {
+    try {
+      const session = await this.ctx.storage.get('session');
+      if (!this.env.VAPID_KEY || !session?.ownerId) return;
+      // Someone is watching this session's live stream: no push needed. Decided
+      // here, not in the service worker, because a push that shows nothing can
+      // get the subscription revoked (Safari) or a generic notice (Chrome).
+      if (this.viewers?.size) return;
+      const id = session.id || this.ctx.id.name?.split(':')[2];
+      await notifyOwner(this.env, session.ownerId, turnNotice(session, id, result));
+    } catch (e) {
+      console.error(JSON.stringify({ event: 'push_failed', error: String(e) }));
+    }
+  }
   async fetch(request) {
     const url = new URL(request.url);
     const route = ROUTES[request.method + ' ' + url.pathname] ?? ROUTES['* ' + url.pathname];
@@ -378,6 +409,7 @@ export class ArnoProbe extends DurableObject {
             result,
             finishedAt: Date.now(),
           });
+        if (current?.status !== 'cancelled') await this.notify(result);
       } catch (e) {
         console.error(JSON.stringify({ event: 'turn_failed', error: String(e) }));
         const current = await this.ctx.storage.get('job');
@@ -387,6 +419,7 @@ export class ArnoProbe extends DurableObject {
           const error = 'The coding task failed. Your last checkpoint is preserved.';
           await this.recordFailure(job, error);
           await this.ctx.storage.put('job', { ...job, status: 'failed', result: { error } });
+          await this.notify({ error });
         }
       }
       await this.ctx.storage.setAlarm(Date.now() + 35 * 60 * 1000);
@@ -396,6 +429,7 @@ export class ArnoProbe extends DurableObject {
       const error = 'The task was interrupted. Retry from the last saved checkpoint.';
       await this.recordFailure(job, error);
       await this.ctx.storage.put('job', { ...job, status: 'failed', result: { error } });
+      await this.notify({ error });
     }
     await this.ctx.storage.delete('modelQuota');
     if (this.ctx.container?.running) await this.ctx.container.destroy();

@@ -5,6 +5,8 @@ import { markdown } from './render.mjs';
 import { $, state, esc, duration, api, toast, showError, prompt } from './core.js';
 import { busy, title, sidebar } from './layout.js';
 import { message, failure, scrollDown } from './thread.js';
+import { resume } from './sessions.js';
+import { uploading, takeReady, restore } from './attach.js';
 function activity(job) {
   let node = $('#activity');
   if (!node) {
@@ -141,7 +143,8 @@ export async function watchJob(id, gen, expected) {
         return;
       }
       if (expected && job.id !== expected.id) return;
-      if (!active && !expected && job.prompt) message('You', job.prompt);
+      if (!active && !expected && job.prompt)
+        message('You', job.prompt, { attachments: job.attachments || [] });
       active = true;
       state.job = job;
       if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
@@ -174,6 +177,8 @@ export async function watchJob(id, gen, expected) {
             job.status === 'cancelled'
               ? 'Stopped before it finished.'
               : job.result?.error || 'Task failed. Your previous checkpoint is preserved.',
+            undefined,
+            [...document.querySelectorAll('#thread .turn.user')].at(-1)?._attachments,
           );
           // The saved failure's time lets Retry and Edit replace it.
           const updated = await api('/api/sessions/' + id).catch(() => null),
@@ -213,11 +218,12 @@ export async function watchJob(id, gen, expected) {
 export async function submit(e) {
   e.preventDefault();
   if (!state.session || state.busy || !prompt.value.trim()) return;
+  if (uploading()) return toast('Wait for the uploads to finish');
   const text = prompt.value.trim();
   prompt.value = '';
   resizePrompt();
   sessionStorage.removeItem('draft:' + state.session.id);
-  await send(text);
+  await send(text, undefined, undefined, takeReady());
 }
 /** Edit a saved chat message in place; sending replaces it and every later turn. */
 export function editMessage(node, text) {
@@ -239,7 +245,7 @@ export function editMessage(node, text) {
     if (!v || state.busy) return;
     while (node.nextSibling) node.nextSibling.remove();
     node.remove();
-    send(v, at);
+    send(v, at, undefined, node._attachments);
   };
 }
 /** Send a failed turn's message again in its place. */
@@ -248,28 +254,49 @@ export function retry(card, text) {
   const replaces = Number(card.dataset.at) || undefined;
   card.previousElementSibling?.classList.contains('user') && card.previousElementSibling.remove();
   card.remove();
-  send(text, undefined, replaces);
+  send(text, undefined, replaces, card._attachments);
 }
-async function send(text, editAt, replaces) {
+// attachments are the metadata of uploaded files sent with the message.
+async function send(text, editAt, replaces, attachments = []) {
   const id = state.session.id,
     gen = state.generation,
     body = {
       id: crypto.randomUUID(),
       prompt: text,
+      ...(attachments.length ? { attachments: attachments.map(a => a.id) } : {}),
       ...(editAt ? { editAt } : {}),
       ...(replaces ? { replaces } : {}),
     };
   $('#thread .starter')?.remove();
-  message('You', body.prompt);
+  const asked = message('You', body.prompt, { attachments });
   busy(true);
   activity({ stage: 'queued', createdAt: Date.now() });
   scrollDown(true);
   try {
     await api('/api/sessions/' + id + '/messages', { method: 'POST', body: JSON.stringify(body) });
-  } catch {
+  } catch (e) {
+    if (e.status === 400) {
+      // An edit already cleared the turns after it: show the saved thread again
+      // first (resume clears pending chips), then give back the draft and files.
+      if (editAt && gen === state.generation) await resume(id);
+      rejected(e, asked, text, attachments, editAt ? state.generation : gen);
+      return;
+    }
     toast('Checking whether your message was saved…');
   }
   await watchJob(id, gen, body);
+}
+// The server refused the message: show why and give the draft and files back.
+function rejected(e, asked, text, attachments, gen) {
+  if (gen !== state.generation) return;
+  asked.remove();
+  $('#activity')?.remove();
+  busy(false);
+  state.job = null;
+  if (!prompt.value) prompt.value = text;
+  resizePrompt();
+  restore(attachments);
+  showError(e);
 }
 export function resizePrompt() {
   prompt.style.height = 'auto';

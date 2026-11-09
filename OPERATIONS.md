@@ -22,6 +22,7 @@ Encrypted Worker secrets:
 - GITHUB_CLIENT_ID
 - GITHUB_CLIENT_SECRET
 - ACCOUNT_ENCRYPTION_KEY: 32 random bytes as base64; keep it, existing encrypted records need it
+- VAPID_KEY (optional; turns on push notifications): a P-256 private key as JWK JSON. Generate and store it without printing or saving it: `node -e "crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign']).then(k=>crypto.subtle.exportKey('jwk',k.privateKey)).then(j=>process.stdout.write(JSON.stringify(j)))" | npx wrangler secret put VAPID_KEY`. Never commit it. Replacing it invalidates every subscription; users turn notifications off and on again.
 
 ALLOWED_GITHUB_LOGINS is a non-secret, comma-separated allowlist, currently `ldiaz94`. Do not remove it for a public launch without entitlements and budgets. Never retrieve, print or commit a secret value.
 

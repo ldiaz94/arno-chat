@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
     <meta name="theme-color" content="#0d1117" />
     <link rel="icon" href="/brand/logo.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/brand/apple-touch-icon.png" />
     <title>Arno · Chat & coding</title>
     <link rel="stylesheet" href="/style.css" />
     <script type="module" src="/app.js"></script>
@@ -107,6 +109,7 @@
         </main>
         <div id="composer-wrap" class="composer-wrap" hidden>
           <form id="composer" class="composer">
+            <div id="attach-chips" class="attach-chips" hidden></div>
             <textarea
               id="prompt"
               rows="1"
@@ -115,6 +118,19 @@
               aria-label="Message"
             ></textarea>
             <div class="composer-actions">
+              <button
+                id="attach"
+                class="ghost attach-button"
+                type="button"
+                aria-label="Attach files"
+              ></button>
+              <input
+                id="attach-input"
+                type="file"
+                multiple
+                hidden
+                accept="image/png,image/jpeg,image/webp,image/gif,text/*,.md,.json,.csv,.yaml,.yml,.toml,.js,.mjs,.ts,.py,.go,.rs,.java,.c,.h,.cpp,.sh,.sql,.html,.css,.diff,.patch,.log"
+              />
               <button
                 id="model-button"
                 class="ghost model-button"

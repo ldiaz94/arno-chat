@@ -36,26 +36,44 @@ export async function modelAllowed(model) {
   );
 }
 
-const windows = new Map();
-/** A model's context window in tokens, or null when unknown: Ollama's public
- * /api/show for Ollama models (remembered per isolate), OpenRouter's model
- * list (via the daily price tables) for the others. */
-export async function contextWindow(model, upstream = fetch) {
-  const { provider, id } = providerModel(model);
-  if (provider !== 'ollama') return (await prices(upstream)).get(priceKey(model))?.window ?? null;
-  if (windows.has(id)) return windows.get(id);
+const shown = new Map();
+/** Ollama's public /api/show for a model, {window, vision}, remembered per
+ * isolate; null when it can't be read. */
+async function ollamaShow(id, upstream) {
+  if (shown.has(id)) return shown.get(id);
   try {
     const r = await upstream('https://ollama.com/api/show', {
       method: 'POST',
       body: JSON.stringify({ model: id }),
       signal: AbortSignal.timeout(5000),
     });
-    const info = r.ok ? (await r.json()).model_info || {} : {};
-    const key = Object.keys(info).find(k => k.endsWith('.context_length'));
-    const window = key ? Number(info[key]) : null;
-    if (r.ok) windows.set(id, window);
-    return window;
+    if (!r.ok) return null;
+    const data = await r.json(),
+      info = data.model_info || {},
+      key = Object.keys(info).find(k => k.endsWith('.context_length'));
+    const show = {
+      window: key ? Number(info[key]) : null,
+      vision: !!data.capabilities?.includes('vision'),
+    };
+    shown.set(id, show);
+    return show;
   } catch {
     return null;
   }
+}
+
+/** A model's context window in tokens, or null when unknown: Ollama's
+ * /api/show for Ollama models, OpenRouter's model list (via the daily price
+ * tables) for the others. */
+export async function contextWindow(model, upstream = fetch) {
+  const { provider, id } = providerModel(model);
+  if (provider !== 'ollama') return (await prices(upstream)).get(priceKey(model))?.window ?? null;
+  return (await ollamaShow(id, upstream))?.window ?? null;
+}
+
+/** Whether a model accepts images: OpenAI, Anthropic and Gemini chat models
+ * do; an Ollama model does when /api/show lists "vision". */
+export async function acceptsImages(model, upstream = fetch) {
+  const { provider, id } = providerModel(model);
+  return provider !== 'ollama' || !!(await ollamaShow(id, upstream))?.vision;
 }

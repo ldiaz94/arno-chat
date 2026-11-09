@@ -1,8 +1,10 @@
 /** Durable Object routes for a conversation session ('code:<user>:<id>'): its
  * lifecycle, turns, live events, file preview and publishable changes.
  * Called with this = the ArnoProbe instance. */
-import { json } from './http.mjs';
-import { modelAllowed, contextWindow } from './models.mjs';
+import { SECURITY, json } from './http.mjs';
+import { modelAllowed, contextWindow, acceptsImages } from './models.mjs';
+import { attachmentsFor, saveAttachment, readAttachment } from './attachments.mjs';
+import { listArtifacts } from './artifacts.mjs';
 import { EXPORT_FILES, validateFiles, WORKTREE_DIFF } from './publish.mjs';
 import { buildPrompt } from './context.mjs';
 import { READ_FILE, validPath } from './files.mjs';
@@ -29,10 +31,10 @@ export const sessionRoutes = {
     return json({ deleted: true });
   },
   async 'POST /session/owner'(request) {
-    const { ownerId } = await request.json(),
+    const { ownerId, id } = await request.json(),
       session = await this.ctx.storage.get('session');
     if (!session) return json({ error: 'Session not found' }, 404);
-    await this.ctx.storage.put('session', { ...session, ownerId });
+    await this.ctx.storage.put('session', { ...session, ownerId, id: session.id || id });
     return new Response(null, { status: 204 });
   },
   async 'GET /session/files'(request, url) {
@@ -148,6 +150,43 @@ export const sessionRoutes = {
   async 'GET /session/events'() {
     return this.events();
   },
+  async 'POST /attachments'(request) {
+    try {
+      const meta = await saveAttachment(
+        this.ctx.storage,
+        decodeURIComponent(request.headers.get('X-Filename') || 'file'),
+        (request.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase(),
+        new Uint8Array(await request.arrayBuffer()),
+      );
+      return json(meta, 201);
+    } catch (e) {
+      return json({ error: e.message }, 400);
+    }
+  },
+  /** An attachment's bytes, as an inert download for text and inline for images. */
+  async 'GET /attachments/get'(request, url) {
+    const file = await readAttachment(this.ctx.storage, url.searchParams.get('id') || '');
+    if (!file) return json({ error: 'Attachment not found' }, 404);
+    return new Response(file.bytes, {
+      headers: {
+        ...SECURITY,
+        'Content-Type': file.meta.kind === 'image' ? file.meta.type : 'text/plain; charset=utf-8',
+        'Content-Disposition':
+          (file.meta.kind === 'image' ? 'inline' : 'attachment') +
+          "; filename*=UTF-8''" +
+          encodeURIComponent(file.meta.name),
+        'Content-Security-Policy': "default-src 'none'; sandbox",
+        'Cache-Control': 'private, max-age=86400',
+      },
+    });
+  },
+  async 'GET /artifacts'() {
+    return json({ artifacts: await listArtifacts(this.ctx.storage) });
+  },
+  async 'GET /artifacts/get'(request, url) {
+    const artifact = await this.ctx.storage.get('artifact:' + (url.searchParams.get('id') || ''));
+    return artifact ? json(artifact) : json({ error: 'Artifact not found' }, 404);
+  },
   async 'POST /session/enqueue'(request) {
     const body = await request.json();
     if (
@@ -159,6 +198,22 @@ export const sessionRoutes = {
       (body.replaces != null && !Number.isSafeInteger(body.replaces))
     )
       return json({ error: 'Invalid message' }, 400);
+    let attachments;
+    try {
+      attachments = await attachmentsFor(this.ctx.storage, body.attachments);
+    } catch (e) {
+      return json({ error: e.message }, 400);
+    }
+    if (attachments.some(a => a.kind === 'image')) {
+      const meta = await this.ctx.storage.get('session');
+      if (meta?.kind !== 'chat')
+        return json(
+          { error: 'Images work in regular chats; coding sessions take text files' },
+          400,
+        );
+      if (!(await acceptsImages(meta.model)))
+        return json({ error: 'This model does not accept images. Choose a vision model.' }, 400);
+    }
     return this.ctx.storage.transaction(async txn => {
       const current = await txn.get('job');
       if (current?.id === body.id) return json(current, 202);
@@ -173,6 +228,7 @@ export const sessionRoutes = {
         prompt: body.prompt,
         editAt: body.editAt || null,
         replaces: body.replaces || null,
+        attachments,
         status: 'queued',
         createdAt: Date.now(),
       };
@@ -296,7 +352,26 @@ export const sessionRoutes = {
       const startupMs = Date.now() - began;
       await this.phase('thinking', { workspace, startupMs });
       const previous = await this.history();
-      const taskPrompt = buildPrompt(session, previous, prompt);
+      // Attached files go into the workspace, outside the repository, and the
+      // prompt names them: the prompt is a command-line argument, too small for
+      // inlining.
+      const attached = (await this.ctx.storage.get('job'))?.attachments || [];
+      const paths = [];
+      for (const meta of attached) {
+        const file = await readAttachment(this.ctx.storage, meta.id),
+          path = '/workspace/attachments/' + meta.id.slice(0, 8) + '-' + meta.name;
+        if (!file) continue;
+        await this.exec(['sh', '-c', 'mkdir -p /workspace/attachments && cat > "$1"', 'sh', path], {
+          stdin: new Response(file.bytes).body,
+        });
+        paths.push(path);
+      }
+      const taskPrompt = buildPrompt(
+        session,
+        previous,
+        prompt +
+          (paths.length ? '\n\nAttached files (read them as needed):\n' + paths.join('\n') : ''),
+      );
       await this.ctx.storage.put('modelQuota', {
         used: 0,
         turnId,
@@ -354,6 +429,7 @@ export const sessionRoutes = {
         lastInputTokens: q?.lastInputTokens ?? null,
       };
       result.sources = citedSources(result.summary, q?.sources || [], previous);
+      result.attachments = attached;
       result.webUsage = q?.webCounts || { searches: 0, reads: 0 };
       const checkpointBegan = Date.now();
       const snapshot = await this.ctx.container.snapshotContainer({});

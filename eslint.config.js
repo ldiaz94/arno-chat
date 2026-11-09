@@ -9,6 +9,7 @@ export default [
   // An empty catch is how this code says "ignore a malformed line or frame".
   { rules: { 'no-empty': ['error', { allowEmptyCatch: true }] } },
   { files: ['web/**'], languageOptions: { globals: globals.browser } },
+  { files: ['web/sw.js'], languageOptions: { globals: globals.serviceworker } },
   {
     files: ['*.js', '*.mjs'],
     languageOptions: { globals: { ...globals.serviceworker, ...globals.node } },

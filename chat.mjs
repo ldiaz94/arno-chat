@@ -2,6 +2,7 @@ import { WEB_TOOLS } from './web.mjs';
 import { displayDelta } from './gateway.mjs';
 import { tokens } from './prices.mjs';
 import { PROVIDERS } from './account.mjs';
+import { attachedNote } from './attachments.mjs';
 
 /** Gemini streams its thoughts as a leading <thought>…</thought> in the text;
  * move them to the reasoning, as other providers report it. */
@@ -92,6 +93,8 @@ export async function plainChat({
   model,
   history,
   prompt,
+  images = [],
+  toolSpecs = WEB_TOOLS,
   key,
   provider = 'ollama',
   instructions = '',
@@ -109,7 +112,7 @@ export async function plainChat({
         t.sources.map(s => '[' + s.id + '] ' + s.title + ' ' + s.url).join('; ')
       : '';
     const pair = [
-      { role: 'user', content: t.prompt },
+      { role: 'user', content: t.prompt + attachedNote(t.attachments) },
       { role: 'assistant', content: t.summary + sourceContext },
     ];
     const length = pair.reduce((n, m) => n + m.content.length, 0);
@@ -117,7 +120,27 @@ export async function plainChat({
     messages.unshift(...pair);
     size += length;
   }
-  messages.push({ role: 'user', content: prompt });
+  // Images ride with this message only, in each provider's own format.
+  messages.push({
+    role: 'user',
+    content: !images.length
+      ? prompt
+      : provider === 'anthropic'
+        ? [
+            ...images.map(i => ({
+              type: 'image',
+              source: { type: 'base64', media_type: i.type, data: i.data },
+            })),
+            { type: 'text', text: prompt },
+          ]
+        : [
+            { type: 'text', text: prompt },
+            ...images.map(i => ({
+              type: 'image_url',
+              image_url: { url: 'data:' + i.type + ';base64,' + i.data },
+            })),
+          ],
+  });
   if (instructions && provider !== 'anthropic')
     messages.unshift({ role: 'system', content: instructions });
   if (!key) throw Error('Save an API key for ' + provider + ' in Account settings');
@@ -135,12 +158,12 @@ export async function plainChat({
     const tools =
       runTool && round < 7
         ? provider === 'anthropic'
-          ? WEB_TOOLS.map(t => ({
+          ? toolSpecs.map(t => ({
               name: t.name,
               description: t.description,
               input_schema: t.inputSchema,
             }))
-          : WEB_TOOLS.map(t => ({
+          : toolSpecs.map(t => ({
               type: 'function',
               function: { name: t.name, description: t.description, parameters: t.inputSchema },
             }))

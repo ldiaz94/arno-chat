@@ -19,6 +19,7 @@ import { drawer, busy, title, sidebar } from './layout.js';
 import { modelButton, openModels } from './models.js';
 import { message, failure, scrollDown, suggestions } from './thread.js';
 import { watchJob, resizePrompt } from './turns.js';
+import { clearAttachments } from './attach.js';
 export async function resume(id) {
   $('#code-dialog').close();
   const gen = ++state.generation;
@@ -33,6 +34,7 @@ export async function resume(id) {
     state.session = { id, ...s };
     state.job = null;
     state.busy = false;
+    clearAttachments();
     sessionStorage.setItem('session', id);
     sidebar();
     $('.composer-hint').textContent =
@@ -56,8 +58,8 @@ export async function resume(id) {
     if (!s.history?.length) $('#thread').innerHTML = suggestions();
     else
       for (const t of s.history) {
-        message('You', t.prompt, { at: t.at });
-        if (t.failed) failure(t.prompt, t.error, t.at);
+        message('You', t.prompt, { at: t.at, attachments: t.attachments });
+        if (t.failed) failure(t.prompt, t.error, t.at, t.attachments);
         else message('Arno', t.summary, t);
       }
     composer.hidden = false;

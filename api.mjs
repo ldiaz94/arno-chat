@@ -8,6 +8,8 @@ import { validateFiles } from './publish.mjs';
 import { profile, credential, providerModels, accountRoute, unseal } from './account.mjs';
 import { testMcp } from './mcp.mjs';
 import { publicWebUrl } from './web.mjs';
+import { pushApiRoutes } from './push.mjs';
+import { LIMITS } from './attachments.mjs';
 
 const IMAGE_TYPE = /^image\/(png|jpeg|gif|webp|avif)$/;
 const IMAGE_LIMIT = 8 * 1024 * 1024;
@@ -78,6 +80,7 @@ async function account(request, env, url, auth) {
 }
 
 export const apiRoutes = {
+  ...pushApiRoutes,
   async 'GET /api/image'(request, env, url) {
     return proxyImage(url.searchParams.get('url') || '');
   },
@@ -418,6 +421,38 @@ export async function sessionPaths(request, env, url, auth) {
       'https://internal/session/get',
     );
   }
+  // Attachments: upload (the body streams through to the session object, which
+  // checks type and size again) and download.
+  const uploadMatch = url.pathname.match(/^\/api\/sessions\/([0-9a-f-]{36})\/attachments$/);
+  if (uploadMatch && request.method === 'POST') {
+    if (Number(request.headers.get('Content-Length') || Infinity) > LIMITS.image)
+      return json({ error: 'Attachments are limited to ' + LIMITS.image / 1048576 + ' MB' }, 413);
+    return env.PROBE.getByName('code:' + auth.user.id + ':' + uploadMatch[1]).fetch(
+      'https://internal/attachments',
+      {
+        method: 'POST',
+        body: request.body,
+        headers: {
+          'Content-Type': request.headers.get('Content-Type') || '',
+          'X-Filename': request.headers.get('X-Filename') || 'file',
+        },
+      },
+    );
+  }
+  const attachmentMatch = url.pathname.match(
+    /^\/api\/sessions\/([0-9a-f-]{36})\/attachments\/([0-9a-f-]{36})$/,
+  );
+  if (attachmentMatch && request.method === 'GET')
+    return env.PROBE.getByName('code:' + auth.user.id + ':' + attachmentMatch[1]).fetch(
+      'https://internal/attachments/get?id=' + attachmentMatch[2],
+    );
+  const artifactMatch = url.pathname.match(
+    /^\/api\/sessions\/([0-9a-f-]{36})\/artifacts(?:\/([0-9a-f-]{36}))?$/,
+  );
+  if (artifactMatch && request.method === 'GET')
+    return env.PROBE.getByName('code:' + auth.user.id + ':' + artifactMatch[1]).fetch(
+      'https://internal/artifacts' + (artifactMatch[2] ? '/get?id=' + artifactMatch[2] : ''),
+    );
   const match = url.pathname.match(/^\/api\/sessions\/([0-9a-f-]{36})\/messages$/);
   const jobMatch = url.pathname.match(/^\/api\/sessions\/([0-9a-f-]{36})\/job$/);
   if (jobMatch && request.method === 'GET')
@@ -434,7 +469,7 @@ export async function sessionPaths(request, env, url, auth) {
     const object = env.PROBE.getByName(`code:${auth.user.id}:${match[1]}`);
     await object.fetch('https://internal/session/owner', {
       method: 'POST',
-      body: JSON.stringify({ ownerId: auth.user.id }),
+      body: JSON.stringify({ ownerId: auth.user.id, id: match[1] }),
     });
     const response = await object.fetch('https://internal/session/enqueue', {
       method: 'POST',

@@ -1,9 +1,10 @@
 /** The "Conversation details" panel: context fill, usage, sources, shared links, images and
  * repository identity of the open conversation, in the `#usage-dialog`. Depends on core and
- * thread (source preview). Attachments and artifacts are reserved, not rendered yet.
+ * thread (source preview) and attach. Artifacts are reserved, not rendered yet.
  */
 import { $, state, esc, num, duration, money } from './core.js';
 import { openSources } from './thread.js';
+import { attachmentsHtml } from './attach.js';
 
 const MarkdownImage = /!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g;
 const BareLink = /https?:\/\/[^\s<>()[\]"'`]+/g;
@@ -186,9 +187,18 @@ function imagesSection(history) {
       : '',
   );
 }
-// Reserved: files the user attached to the conversation.
-function attachmentsSection() {
-  return '';
+// Every file the user attached to the conversation, once each.
+function attachmentsSection(history) {
+  const all = new Map(history.flatMap(t => t.attachments || []).map(a => [a.id, a])),
+    list = [...all.values()],
+    images = list.filter(a => a.kind === 'image'),
+    files = list.filter(a => a.kind !== 'image'),
+    html = id => attachmentsHtml(state.session.id, id);
+  return section(
+    'Attachments',
+    (images.length ? '<div class="attach-grid">' + html(images) + '</div>' : '') +
+      (files.length ? '<div class="attach-files">' + html(files) + '</div>' : ''),
+  );
 }
 // Reserved: files the assistant produced.
 function artifactsSection() {
@@ -219,7 +229,7 @@ export function openInfo() {
     sourcesSection(sources) +
     linksSection(history, sources) +
     imagesSection(history) +
-    attachmentsSection() +
+    attachmentsSection(history) +
     artifactsSection() +
     repositorySection(s);
   $('#usage-body').onclick = e => {

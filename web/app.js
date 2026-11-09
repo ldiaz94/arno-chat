@@ -20,6 +20,7 @@ import {
 } from './sessions.js';
 import { openCode, browse, reviewPublish } from './code.js';
 import { submit, resizePrompt } from './turns.js';
+import './attach.js'; // wires the paperclip, paste and drop
 import './settings.js'; // wires the account settings dialog
 tableResize(document);
 
@@ -142,7 +143,10 @@ async function boot() {
       api('/api/sessions').then(d => (state.sessions = d.sessions)),
     ]);
     sidebar();
-    const saved = sessionStorage.getItem('session');
+    // A notification links to /?session=<id>: open it, then tidy the address.
+    const linked = new URLSearchParams(location.search).get('session');
+    if (linked) history.replaceState(null, '', location.pathname);
+    const saved = /^[0-9a-f-]{36}$/.test(linked || '') ? linked : sessionStorage.getItem('session');
     if (saved) await resume(saved);
     else await home();
   } catch (e) {
