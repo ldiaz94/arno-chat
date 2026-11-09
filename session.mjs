@@ -6,7 +6,16 @@ import { DurableObject } from 'cloudflare:workers';
 import { SECURITY, json } from './http.mjs';
 import { plainChat } from './chat.mjs';
 import { modelInput } from './attachments.mjs';
-import { profile, credential, instructions, providerModel, searchConnection } from './account.mjs';
+import {
+  profile,
+  credential,
+  instructions,
+  providerModel,
+  searchConnection,
+  seal,
+} from './account.mjs';
+import { gitRemote } from './git.mjs';
+import { codeSettings } from './plan.mjs';
 import { WEB_INSTRUCTIONS, WEB_TOOLS, research, citedSources } from './web.mjs';
 import { turnPlan } from './plan.mjs';
 import { effortSupported } from './models.mjs';
@@ -38,6 +47,22 @@ export class ArnoProbe extends DurableObject {
       }
     }
   }
+  /** What a coding turn is doing now (a tool call, a worker's step), for the
+   * live view; kept with the live preview, not stored. */
+  async activity(text) {
+    const job = await this.ctx.storage.get('job');
+    if (!text || job?.status !== 'running') return;
+    const old =
+      this.live?.jobId === job.id
+        ? this.live
+        : { jobId: job.id, round: 0, text: '', reasoning: '' };
+    this.live = {
+      ...old,
+      activity: text,
+      updatedAt: Math.max(Date.now(), (old.updatedAt || 0) + 1),
+    };
+    this.broadcast(this.live);
+  }
   async progress(preview) {
     const job = await this.ctx.storage.get('job');
     if (job?.status !== 'running' || (preview.jobId && preview.jobId !== job.id)) return;
@@ -48,6 +73,7 @@ export class ArnoProbe extends DurableObject {
       round: preview.round,
       text: String(preview.text || '').slice(0, 16000),
       reasoning: String(preview.reasoning || '').slice(0, 12000),
+      activity: old?.activity || '',
       updatedAt: Math.max(Date.now(), (old?.updatedAt || 0) + 1),
     };
     if (new TextEncoder().encode(JSON.stringify(this.live)).byteLength > 100000) {
@@ -384,25 +410,50 @@ export class ArnoProbe extends DurableObject {
     const job = await this.ctx.storage.get('job');
     if (job?.status === 'running') await this.ctx.storage.put('job', { ...job, stage, ...extra });
   }
-  /** Repair archive-based legacy sessions without adding account credentials.
-   * Provenance comes from host session metadata, not from repository text. */
-  async repoContext(session) {
-    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(session.repo)) return;
-    const remote = 'https://github.com/' + session.repo + '.git';
-    const existing = await this.exec(
-      ['git', 'remote', 'get-url', 'origin'],
-      { cwd: '/workspace/repo' },
-      10,
-    );
-    if (existing.exitCode !== 0)
-      await this.exec(['git', 'remote', 'add', 'origin', remote], { cwd: '/workspace/repo' }, 10);
+  /** Keeps the owner's GitHub sign-in for the git gateway: the token sealed,
+   * and the name and address commits are made under. */
+  async keepGithub(ownerId, { token, login, email }) {
+    await this.ctx.storage.put('github', {
+      login: String(login || ''),
+      email: String(email || ''),
+      token: await seal(this.env, String(ownerId), 'github', String(token)),
+    });
+  }
+  /** Points the clone's origin at the git gateway and commits at the owner's
+   * name. A session made before clones holds an archive with a synthetic
+   * history: its HEAD moves to the commit it came from, keeping the work tree,
+   * so its work so far shows as changes on GitHub's history and can be pushed. */
+  async gitSetup(session) {
+    const github = (await this.ctx.storage.get('github')) || {};
+    this.gitOpen = { repo: session.repo, ownerId: session.ownerId };
+    try {
+      const r = await this.exec(
+        ['sh', '-c', GIT_SETUP],
+        {
+          cwd: '/workspace/repo',
+          env: {
+            REMOTE: gitRemote(session.repo),
+            REF: session.ref || '',
+            SHA: session.sourceSha || '',
+            NAME: github.login || 'Arno',
+            EMAIL: github.email || 'arno@localhost',
+          },
+        },
+        120,
+      );
+      if (r.exitCode !== 0)
+        console.error(JSON.stringify({ event: 'git_setup_failed', error: r.stderr.slice(-500) }));
+    } finally {
+      this.gitOpen = null;
+    }
   }
   /** Arno's config for this turn; with search off (plan.mjs) the built-in web
    * research MCP server is left out. */
-  async writeConfig(model, plan) {
+  async writeConfig(model, plan, options = {}) {
     const selected = providerModel(model),
       session = await this.ctx.storage.get('session'),
-      preferences = await profile(this.env, session?.ownerId);
+      preferences = await profile(this.env, session?.ownerId),
+      price = priceOf(await prices(), model);
     let config =
       'provider = ' +
       // Arno speaks OpenAI's protocol to every other provider; the gateway
@@ -411,7 +462,12 @@ export class ArnoProbe extends DurableObject {
         'openai') +
       '\nmodel = ' +
       selected.id +
-      '\nurl = http://model.internal/v1\nkey =\nexecution_boundary = outer-sandbox\nsafety = auto\ncontext_files = no\nproject_map = no\nmax_tokens = 4096\n';
+      '\nurl = http://model.internal/v1\nkey =\ntimeout = 180\nmax_retries = 2\n' +
+      // Staged in a copy, every change applied at the turn's end; the jail
+      // keeps the network, which reaches only the gateways (git push).
+      'safety = auto\ncontext_files = yes\njail_net = yes\njail_rw = ~/.npm ~/.cache/pip\n' +
+      (price ? 'price = ' + price.inp + ' ' + price.out + ' ' + price.cached + '\n' : '') +
+      codeSettings(selected.id, options);
     if (plan.search)
       config += 'mcp = web http://mcp.internal/web\ntrust = web_web_search web_web_read\n';
     for (const c of preferences.mcp || [])
@@ -457,6 +513,10 @@ export class ArnoProbe extends DurableObject {
     await container.interceptOutboundHttp(
       'model.internal',
       this.ctx.exports.ModelGateway({ props: { task: this.ctx.id.toString(), model } }),
+    );
+    await container.interceptOutboundHttp(
+      'git.internal',
+      this.ctx.exports.GitGateway({ props: { task: this.ctx.id.toString() } }),
     );
     await container.interceptOutboundHttp(
       'mcp.internal',
@@ -559,3 +619,22 @@ export class ArnoProbe extends DurableObject {
     if (this.ctx.container?.running) await this.ctx.container.destroy();
   }
 }
+
+/** gitSetup's script, run in the clone with REMOTE, REF, SHA, NAME, EMAIL. */
+const GIT_SETUP = String.raw`set -e
+git config user.name "$NAME"
+git config user.email "$EMAIL"
+git remote remove origin 2>/dev/null || true
+git remote add origin "$REMOTE"
+if [ "$(git config arno.cloned || true)" != true ] && [ -n "$SHA" ]; then
+  git fetch -q --depth=1 origin "$SHA"
+  git reset -q --soft FETCH_HEAD
+  git config arno.sourceCommit "$SHA"
+  git config arno.cloned true
+fi
+if [ -n "$REF" ]; then
+  depth=; [ "$(git rev-parse --is-shallow-repository)" = true ] && depth=--depth=1
+  git fetch -q $depth origin "+refs/heads/$REF:refs/remotes/origin/$REF" &&
+    git branch -q --set-upstream-to="origin/$REF" 2>/dev/null || true
+fi
+`;

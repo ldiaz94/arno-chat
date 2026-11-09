@@ -4,7 +4,8 @@
  */
 export const EXPORT_FILES = String.raw`
 const fs=require('fs'),cp=require('child_process'),path=require('path'),root='/workspace/repo';
-const base=cp.execFileSync('git',['rev-list','--max-parents=0','HEAD'],{cwd:root,encoding:'utf8'}).trim().split('\n')[0];
+const git=args=>{try{return cp.execFileSync('git',args,{cwd:root,encoding:'utf8'}).trim()}catch{return ''}};
+const base=git(['config','arno.sourceCommit'])||git(['rev-list','--max-parents=0','HEAD']).split('\n')[0];
 const tracked=cp.execFileSync('git',['diff','--name-only','-z',base],{cwd:root}).toString().split('\0');
 const others=cp.execFileSync('git',['ls-files','--others','--exclude-standard','-z'],{cwd:root}).toString().split('\0');
 const names=[...new Set([...tracked,...others].filter(Boolean))];if(names.length>50)throw Error('Review at most 50 files per publish');
@@ -51,7 +52,8 @@ export function validateFiles(files) {
 export const WORKTREE_DIFF = String.raw`
 const cp=require('child_process');let out='';
 const run=args=>{try{return cp.execFileSync('git',args,{encoding:'utf8',maxBuffer:2000000})}catch(e){if(e.status===1)return e.stdout||'';throw e}};
-const base=run(['rev-list','--max-parents=0','HEAD']).trim().split('\n')[0];
+// The session started from arno.sourceCommit; a session made before clones has a synthetic root.
+const base=run(['config','arno.sourceCommit']).trim()||run(['rev-list','--max-parents=0','HEAD']).trim().split('\n')[0];
 out+=run(['diff',base,'--','.']);
 for(const file of run(['ls-files','--others','--exclude-standard','-z']).split('\0').filter(Boolean).slice(0,50)){if(out.length>60000)break;out+=run(['diff','--no-index','--','/dev/null',file])}
 process.stdout.write(out.slice(0,60000));

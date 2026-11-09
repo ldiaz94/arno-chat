@@ -7,9 +7,10 @@
  *   page fetch ──> sw.js ──network ok──> reply, copy kept in 'arno-data'
  *                        └─network down─> kept copy + X-Arno-Offline: 1
  *
- * Depends on core and outbox.
+ * Depends on core, outbox and update.
  */
 import { $, state } from './core.js';
+import { watchUpdates } from './update.js';
 import { outboxStatus, flush, clearOutbox } from './outbox.js';
 
 const DATA_CACHE = 'arno-data'; // the service worker's cache of API replies
@@ -30,7 +31,10 @@ const MODEL_BUTTONS = ['model-button', 'home-model'];
 
 /** Registers the service worker for the whole site; push.js uses the same one. */
 export function register() {
-  navigator.serviceWorker?.register('/sw.js', { scope: '/' }).catch(() => {});
+  navigator.serviceWorker
+    ?.register('/sw.js', { scope: '/' })
+    .then(watchUpdates)
+    .catch(() => {});
 }
 
 /** Enables or disables the controls that need the network: changing the model,

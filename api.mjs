@@ -1,15 +1,7 @@
 /** The signed-in /api/* routes. apiRoutes maps "METHOD /path" (or "* /path")
  * to a handler (request, env, url, auth); sessionPaths tries, in order, the
  * routes under /api/sessions/<id>/ and returns null when none matches. */
-import {
-  COOKIE,
-  SECURITY,
-  MAX_ARCHIVE,
-  json,
-  boundedJson,
-  cookie,
-  sessionCookie,
-} from './http.mjs';
+import { COOKIE, SECURITY, json, boundedJson, cookie, sessionCookie } from './http.mjs';
 import { github, authObject } from './auth.mjs';
 import { catalog, modelAllowed } from './models.mjs';
 import { validateFiles } from './publish.mjs';
@@ -384,27 +376,6 @@ export const apiRoutes = {
     if (!revision.ok) return json({ error: 'Could not resolve repository revision' }, 502);
     const { sha } = await revision.json();
     if (!/^[a-f0-9]{40}$/.test(sha)) return json({ error: 'Invalid repository revision' }, 502);
-    const archive = await github(
-      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/tarball/${sha}`,
-      auth.token,
-    );
-    if (!archive.ok || !archive.body)
-      return json({ error: 'Could not download repository from GitHub' }, 502);
-    const length = Number(archive.headers.get('Content-Length') || 0);
-    if (length > MAX_ARCHIVE) {
-      await archive.body.cancel();
-      return json({ error: 'Repository archive is larger than 50 MB' }, 413);
-    }
-    let received = 0;
-    const limitedBody = archive.body.pipeThrough(
-      new TransformStream({
-        transform(chunk, controller) {
-          received += chunk.byteLength;
-          if (received > MAX_ARCHIVE) throw new Error('Repository archive is larger than 50 MB');
-          controller.enqueue(chunk);
-        },
-      }),
-    );
     const id = crypto.randomUUID();
     const object = env.PROBE.getByName(`code:${auth.user.id}:${id}`);
     const initialized = await object.fetch('https://internal/session/init', {
@@ -415,8 +386,8 @@ export const apiRoutes = {
         'X-Arno-Model': body.model,
         'X-Arno-Sha': sha,
         'X-Arno-Owner': String(auth.user.id),
+        'X-Arno-GitHub': JSON.stringify(githubOf(auth)),
       },
-      body: limitedBody,
     });
     const result = await initialized.json();
     if (!initialized.ok)
@@ -429,6 +400,12 @@ export const apiRoutes = {
   },
 };
 
+/** The sign-in a coding session fetches and pushes with: the token, and the
+ * name and noreply address its commits are made under. */
+function githubOf(auth) {
+  const { id, login } = auth.user;
+  return { token: auth.token, login, email: id + '+' + login + '@users.noreply.github.com' };
+}
 export async function sessionPaths(request, env, url, auth) {
   const fileMatch = url.pathname.match(/^\/api\/sessions\/([0-9a-f-]{36})\/files$/);
   if (fileMatch && request.method === 'GET')
@@ -628,7 +605,7 @@ export async function sessionPaths(request, env, url, auth) {
     const object = env.PROBE.getByName(`code:${auth.user.id}:${match[1]}`);
     await object.fetch('https://internal/session/owner', {
       method: 'POST',
-      body: JSON.stringify({ ownerId: auth.user.id, id: match[1] }),
+      body: JSON.stringify({ ownerId: auth.user.id, id: match[1], github: githubOf(auth) }),
     });
     const response = await object.fetch('https://internal/session/enqueue', {
       method: 'POST',

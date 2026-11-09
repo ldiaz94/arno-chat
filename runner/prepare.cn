@@ -1,0 +1,6 @@
+# Builds arno at its newest and copies the binary next to the Dockerfile,
+# for `npx wrangler deploy` to build the runner image from.
+errexit := true
+make -C ~/r/arno build/arno
+cp ~/r/arno/build/arno runner/arno
+~/r/arno/build/arno --version

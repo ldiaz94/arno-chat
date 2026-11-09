@@ -12,7 +12,9 @@ import { buildPrompt } from './context.mjs';
 import { validateFiles } from './publish.mjs';
 import { usageStream, modelRequest, displayDelta } from './gateway.mjs';
 import { checkOptions, optionTags, DEFAULTS } from './web/options.mjs';
-import { turnPlan } from './plan.mjs';
+import { turnPlan, codeSettings, codeLimits } from './plan.mjs';
+import { gitProxy, refUpdates } from './git.mjs';
+import { encode, decoderOf } from './serve.mjs';
 import { plainChat } from './chat.mjs';
 import { validPath } from './files.mjs';
 import {
@@ -68,7 +70,7 @@ function fixture(values = {}) {
       interceptOutboundHttp: async () => {},
       setInactivityTimeout: async () => {},
     },
-    exports: { ModelGateway: () => ({}), McpGateway: () => ({}) },
+    exports: { ModelGateway: () => ({}), McpGateway: () => ({}), GitGateway: () => ({}) },
     id: { toString: () => 'id' },
   };
   ctx.storage.transaction = async fn => fn(ctx.storage);
@@ -568,7 +570,7 @@ test('cancel stops an active container and preserves the saved checkpoint', asyn
   assert.equal((await f.ctx.storage.get('job')).status, 'cancelled');
   assert.deepEqual(await f.ctx.storage.get('snapshot'), { id: 'last-good' });
 });
-test('new session import pins the branch revision before requesting its archive', async () => {
+test('new session import pins the branch revision and hands over the sign-in', async () => {
   const id = '11111111-1111-1111-1111-111111111111',
     sha = 'b'.repeat(40),
     seen = [];
@@ -580,6 +582,7 @@ test('new session import pins the branch revision before requesting its archive'
             return Response.json({ user: { id: 42 }, token: 'test-only' });
           if (url.endsWith('/session/init')) {
             assert.equal(opt.headers['X-Arno-Sha'], sha);
+            assert.equal(JSON.parse(opt.headers['X-Arno-GitHub']).token, 'test-only');
             return Response.json({ repo: 'test/repo', sourceSha: sha });
           }
           return new Response(null, { status: 204 });
@@ -601,7 +604,7 @@ test('new session import pins the branch revision before requesting its archive'
     const result = await worker.fetch(req, env);
     // Catalog discovery is allowed to fail into its known-good model fallback.
     assert.equal(result.status, 201);
-    assert.ok(seen.some(url => url.endsWith('/tarball/' + sha)));
+    assert.ok(!seen.some(url => url.includes('/tarball/')), 'the container clones; no archive');
   } finally {
     globalThis.fetch = oldFetch;
   }
@@ -2462,4 +2465,61 @@ test('repository access: GitHub App installations decide what is reachable', asy
   } finally {
     globalThis.fetch = realFetch;
   }
+});
+
+// A pkt-line: four hex digits of length, then the payload.
+const pkt = s => (s.length + 4).toString(16).padStart(4, '0') + s;
+test('git gateway reaches only the session repository and refuses deleting a branch', async () => {
+  const seen = [];
+  const upstream = async (url, init) => {
+    seen.push({ url, auth: init.headers.get('Authorization') });
+    if (init.body) await new Response(init.body).arrayBuffer();
+    return new Response('ok', {
+      headers: { 'Content-Type': 'application/x-git-receive-pack-result' },
+    });
+  };
+  const opts = { repo: 'o/r', token: 'ghu_x', upstream };
+  const get = path => gitProxy(new Request('http://git.internal' + path), opts);
+  assert.equal((await get('/o/r.git/info/refs?service=git-upload-pack')).status, 200);
+  assert.equal(seen[0].url, 'https://github.com/o/r.git/info/refs?service=git-upload-pack');
+  assert.equal(seen[0].auth, 'Basic ' + btoa('x-access-token:ghu_x'));
+  assert.equal((await get('/other/r.git/info/refs?service=git-upload-pack')).status, 403);
+  assert.equal((await get('/o/r.git/HEAD')).status, 403);
+  const push = cmd =>
+    gitProxy(
+      new Request('http://git.internal/o/r.git/git-receive-pack', {
+        method: 'POST',
+        body: pkt(cmd + '\0report-status') + '0000PACK...',
+      }),
+      opts,
+    );
+  const a = 'a'.repeat(40),
+    b = 'b'.repeat(40),
+    zero = '0'.repeat(40);
+  assert.equal((await push(a + ' ' + b + ' refs/heads/main')).status, 200);
+  assert.equal((await push(a + ' ' + zero + ' refs/heads/main')).status, 403);
+  assert.equal(seen.length, 2, 'the deletion never reached GitHub');
+  assert.equal(refUpdates(new TextEncoder().encode(pkt(a + ' ' + b + ' refs/heads/x'))), null);
+});
+test('code options reach arno only in coding sessions', () => {
+  const o = checkOptions({ approach: 'build', workers: false, budget: '3' }, 'code');
+  assert.equal(codeSettings('m', o), 'mode = build\nturn_budget = 3\nbuild_budget = 3\n');
+  assert.equal(codeSettings('m', DEFAULTS), 'workers = m\n');
+  assert.equal(codeLimits(o).rounds, 400);
+  // A chat sent with a coding session's choices keeps the defaults.
+  assert.equal(checkOptions({ approach: 'build' }, 'chat').approach, 'auto');
+  assert.equal(checkOptions({ budget: '7' }, 'code'), null);
+  assert.deepEqual(optionTags(o), ['Build', 'No workers', '$3 budget']);
+});
+test('serve messages are netstrings of netstrings, read across chunk boundaries', () => {
+  const bytes = encode('line', 'hi');
+  assert.equal(new TextDecoder().decode(bytes), '12:4:line,2:hi,,');
+  const d = decoderOf(),
+    two = new Uint8Array([...bytes, ...encode('busy', '1')]);
+  assert.deepEqual(d.push(two.subarray(0, 5)), []);
+  assert.deepEqual(d.push(two.subarray(5)), [
+    ['line', 'hi'],
+    ['busy', '1'],
+  ]);
+  assert.throws(() => decoderOf().push(new TextEncoder().encode('x:')), /malformed/);
 });

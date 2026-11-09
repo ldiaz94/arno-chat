@@ -1,4 +1,5 @@
-/** The composer's options (web search, mode, thinking, style): the sliders
+/** The composer's options (web search, mode, thinking, style; in coding
+ * sessions also approach, workers and budget): the sliders
  * button, its popover, and the chips for choices that differ from the
  * defaults. Each conversation keeps its own options in localStorage
  * (`options:<id>`); a conversation without any starts from the last ones
@@ -88,6 +89,13 @@ export function render() {
     o.style !== 'normal' && ['style', o.style === 'concise' ? 'Concise' : 'Caveman'],
     o.effort !== 'auto' && ['effort', 'Thinking: ' + o.effort],
     !o.search && ['search', 'No search'],
+    ...(chat
+      ? []
+      : [
+          o.approach !== 'auto' && ['approach', o.approach[0].toUpperCase() + o.approach.slice(1)],
+          !o.workers && ['workers', 'No workers'],
+          o.budget !== 'auto' && ['budget', '$' + o.budget + ' budget'],
+        ]),
   ].filter(Boolean);
   const box = $('#option-chips');
   box.hidden = !chips.length;
@@ -106,10 +114,18 @@ export function render() {
   button.classList.toggle('active', chips.length > 0);
   button.title = chips.length ? 'Options: ' + optionTags(o).join(', ') : 'Message options';
   $('#opt-search').checked = o.search;
-  for (const name of ['mode', 'effort', 'style'])
+  $('#opt-workers').checked = o.workers;
+  for (const name of ['mode', 'effort', 'style', 'approach', 'budget'])
     for (const input of panel.querySelectorAll('input[name="' + name + '"]'))
       input.checked = input.value === o[name];
   panel.querySelector('[data-chat-only]').hidden = !chat;
+  for (const el of panel.querySelectorAll('[data-code-only]')) el.hidden = chat;
+  $('#opt-approach-note').textContent = {
+    auto: '',
+    pair: 'Pair: plans with you, then edits in small steps',
+    build: 'Build: plans, then leads workers through a larger job (up to 13 minutes)',
+    review: 'Review: reports problems by severity, changes nothing',
+  }[o.approach];
   for (const input of panel.querySelectorAll('input[name="effort"]')) input.disabled = !effort;
   $('#opt-effort').classList.toggle('disabled', !effort);
   $('#opt-effort-note').textContent = !effort
@@ -137,6 +153,7 @@ button.onclick = () => open(panel.hidden);
 panel.onchange = e => {
   const t = e.target;
   if (t.id === 'opt-search') choose('search', t.checked);
+  else if (t.id === 'opt-workers') choose('workers', t.checked);
   else if (t.name) choose(t.name, t.value);
 };
 $('#option-chips').onclick = e => {

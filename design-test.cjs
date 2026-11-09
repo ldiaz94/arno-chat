@@ -674,6 +674,9 @@ const { chromium } = require('playwright'),
       effort: 'auto',
       mode: 'deep',
       style: 'caveman',
+      approach: 'auto',
+      workers: true,
+      budget: 'auto',
     });
     assert.equal(await page.locator('#attach-chips .attach-chip').count(), 0);
     await page.locator('.chat-activity').waitFor();

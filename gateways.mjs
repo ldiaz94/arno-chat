@@ -1,6 +1,7 @@
 /** Outbound gateways for the untrusted container: model and MCP traffic is
  * intercepted and mediated here, with the account's credentials. Reached
- * through ctx.exports, so worker.js re-exports both classes. */
+ * through ctx.exports, so worker.js re-exports the classes. Git goes through
+ * GitGateway (git.mjs). */
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { modelRequest } from './gateway.mjs';
 import {
@@ -15,6 +16,7 @@ import { proxyMcp } from './mcp.mjs';
 import { WEB_INSTRUCTIONS, webMcp } from './web.mjs';
 import { turnPlan } from './plan.mjs';
 import { effortSupported } from './models.mjs';
+import { gitProxy } from './git.mjs';
 
 export class ModelGateway extends WorkerEntrypoint {
   async fetch(request) {
@@ -91,5 +93,19 @@ export class McpGateway extends WorkerEntrypoint {
     if (!connection) return new Response('MCP connection not enabled', { status: 403 });
     const token = await unseal(this.env, ownerId, 'mcp:' + id, connection.token);
     return proxyMcp(request, connection, token);
+  }
+}
+/** The container's git fetches and pushes (git.mjs), with the GitHub token
+ * the owner's last request left with the session. */
+export class GitGateway extends WorkerEntrypoint {
+  async fetch(request) {
+    const task = this.env.PROBE.get(this.env.PROBE.idFromString(this.ctx.props.task)),
+      r = await task.fetch('https://internal/git-account');
+    if (!r.ok) return new Response('No repository for this session\n', { status: 403 });
+    const { repo, ownerId, token } = await r.json();
+    return gitProxy(request, {
+      repo,
+      token: token ? await unseal(this.env, ownerId, 'github', token) : '',
+    });
   }
 }

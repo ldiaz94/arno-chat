@@ -6,7 +6,7 @@ import { currentAuth, handleOAuth, repoAccess } from './auth.mjs';
 import { apiRoutes, sessionPaths } from './api.mjs';
 
 export { ArnoProbe } from './session.mjs';
-export { ModelGateway, McpGateway } from './gateways.mjs';
+export { ModelGateway, McpGateway, GitGateway } from './gateways.mjs';
 
 export default {
   async fetch(request, env) {

@@ -12,9 +12,10 @@
  *   user's cookie and shows it; a click opens its conversation.
  *
  * Deploying: bump VERSION whenever a file in SHELL changes, so installed apps
- * fetch the new shell at once (test.mjs checks SHELL lists every web/ file).
+ * fetch the new shell. A new worker waits until the page's Update button
+ * (update.js) sends SKIP_WAITING (test.mjs checks SHELL lists every web/ file).
  */
-const VERSION = 'v20';
+const VERSION = 'v21';
 const SHELL_CACHE = 'arno-shell-' + VERSION;
 const DATA_CACHE = 'arno-data'; // cleared by offline.js on sign-out
 const SHELL = [
@@ -45,6 +46,7 @@ const SHELL = [
   '/thread.js',
   '/today.mjs',
   '/turns.js',
+  '/update.js',
   '/usage.js',
   '/style.css',
   '/manifest.webmanifest',
@@ -69,9 +71,14 @@ self.addEventListener('install', e =>
     caches
       .open(SHELL_CACHE)
       .then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' }))))
-      .then(() => self.skipWaiting()),
+      // A first install activates at once; an update waits for the page's OK.
+      .then(() => self.registration.active || self.skipWaiting()),
   ),
 );
+
+self.addEventListener('message', e => {
+  if (e.data?.type === 'SKIP_WAITING') self.skipWaiting();
+});
 
 self.addEventListener('activate', e =>
   e.waitUntil(

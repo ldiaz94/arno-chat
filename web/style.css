@@ -2959,3 +2959,31 @@ details.setting-card.collapsible[open] > summary {
   border-top-color: var(--accent);
   animation: spin 0.9s linear infinite;
 }
+/* "Update available" bar (update.js): floats at the bottom, clear of the notch. */
+.update-bar {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  margin: 0 auto;
+  max-width: 420px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 16px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  z-index: 110;
+}
+.update-bar span {
+  flex: 1;
+}
+.option-switch span small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}

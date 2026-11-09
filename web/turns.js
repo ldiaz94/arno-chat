@@ -70,6 +70,11 @@ function activity(job) {
  * preserve keyboard accessibility and keep model thinking optional/collapsed.
  * Only the answer is rendered as Markdown; thinking is escaped plain text. */
 function livePreview(preview) {
+  // A coding turn's current step (a tool call, a worker's) labels the activity line.
+  if (preview?.activity && preview.jobId === state.job?.id) {
+    const label = $('#activity > span');
+    if (label) label.textContent = preview.activity;
+  }
   if (
     !preview ||
     preview.jobId !== state.job?.id ||

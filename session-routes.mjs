@@ -6,11 +6,13 @@ import { modelAllowed, contextWindow, acceptsImages } from './models.mjs';
 import { attachmentsFor, saveAttachment, readAttachment } from './attachments.mjs';
 import { listArtifacts } from './artifacts.mjs';
 import { EXPORT_FILES, validateFiles, WORKTREE_DIFF } from './publish.mjs';
-import { buildPrompt } from './context.mjs';
+import { buildPrompt, sessionPrompt } from './context.mjs';
+import { serveTurn, replyOf, transcriptOf, activityOf } from './serve.mjs';
 import { READ_FILE, validPath } from './files.mjs';
 import { citedSources } from './web.mjs';
 import { checkOptions } from './web/options.mjs';
-import { turnPlan } from './plan.mjs';
+import { turnPlan, codeLimits } from './plan.mjs';
+import { gitRemote } from './git.mjs';
 
 export const sessionRoutes = {
   async 'POST /session/rename'(request) {
@@ -42,11 +44,15 @@ export const sessionRoutes = {
     await this.ctx.storage.deleteAll();
     return json({ deleted: true });
   },
+  /** Each message's request names the owner and brings their GitHub sign-in:
+   * the token is kept sealed for the git gateway, so the session can fetch and
+   * push for as long as the sign-in lasts. */
   async 'POST /session/owner'(request) {
-    const { ownerId, id } = await request.json(),
+    const { ownerId, id, github } = await request.json(),
       session = await this.ctx.storage.get('session');
     if (!session) return json({ error: 'Session not found' }, 404);
     await this.ctx.storage.put('session', { ...session, ownerId, id: session.id || id });
+    if (github?.token && session.kind !== 'chat') await this.keepGithub(ownerId, github);
     return new Response(null, { status: 204 });
   },
   async 'GET /session/files'(request, url) {
@@ -284,66 +290,82 @@ export const sessionRoutes = {
       contextWindow: await contextWindow(meta.model),
     });
   },
+  /** A new coding session: the workspace's container starts, the repository
+   * is cloned into it through the git gateway (git.mjs), and the first
+   * checkpoint is taken. */
   async 'POST /session/init'(request) {
     const model = request.headers.get('X-Arno-Model');
     const repo = request.headers.get('X-Arno-Repo');
     const ref = request.headers.get('X-Arno-Ref');
-    if (!(await modelAllowed(model)) || !repo || !ref || !request.body)
+    if (
+      !(await modelAllowed(model)) ||
+      !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo || '') ||
+      !ref
+    )
       return json({ error: 'Invalid session' }, 400);
+    let github;
+    try {
+      github = JSON.parse(request.headers.get('X-Arno-GitHub') || 'null');
+    } catch {
+      github = null;
+    }
+    const ownerId = request.headers.get('X-Arno-Owner') || null;
     await this.start(model);
     await this.exec(
       [
         'sh',
         '-c',
-        'rm -rf /workspace/repo /workspace/config /workspace/data; mkdir -p /workspace/repo /workspace/config/arno /workspace/data',
+        'rm -rf /workspace/repo /workspace/config /workspace/data; mkdir -p /workspace/config/arno /workspace/data',
       ],
       {},
       30,
     );
-    const unpack = await this.exec(
-      ['tar', '-xz', '--strip-components=1', '-C', '/workspace/repo'],
-      { stdin: request.body },
-      120,
-    );
-    if (unpack.exitCode !== 0)
-      return json({ error: 'Could not unpack repository', detail: unpack.stderr }, 400);
-    const config = `provider = ollama-cloud\nmodel = ${model}\nurl = http://model.internal/v1\nkey =\nexecution_boundary = outer-sandbox\nsafety = auto\ncontext_files = no\nproject_map = no\nmax_tokens = 4096\n`;
-    const write = await this.ctx.container.exec(['tee', '/workspace/config/arno/config'], {
-      stdin: 'pipe',
-      stdout: 'ignore',
-    });
-    const writer = write.stdin.getWriter();
-    await writer.write(new TextEncoder().encode(config));
-    await writer.close();
-    await write.exitCode;
-    const baseline = await this.exec(
-      [
-        'sh',
-        '-c',
-        "git init -q && git add -A && git -c user.name='Arno Remote' -c user.email='arno@localhost' commit -qm baseline",
-      ],
-      { cwd: '/workspace/repo' },
-      120,
-    );
-    if (baseline.exitCode !== 0)
-      return json({ error: 'Could not prepare git workspace', detail: baseline.stderr }, 500);
-    await this.exec(['git', 'branch', '-M', ref], { cwd: '/workspace/repo' }, 10);
+    if (github?.token) await this.keepGithub(ownerId, github);
+    // The gateway serves this repository while the clone runs (gitOpen).
+    this.gitOpen = { repo, ownerId };
+    let clone;
+    try {
+      clone = await this.exec(
+        [
+          'git',
+          'clone',
+          '-q',
+          '--filter=blob:none',
+          '--branch',
+          ref,
+          gitRemote(repo),
+          '/workspace/repo',
+        ],
+        {},
+        170,
+      );
+    } finally {
+      this.gitOpen = null;
+    }
+    if (clone.exitCode !== 0)
+      return json({ error: 'Could not clone the repository', detail: clone.stderr }, 502);
+    const head = await this.exec(['git', 'rev-parse', 'HEAD'], { cwd: '/workspace/repo' }, 10);
     const meta = {
       repo,
       ref,
       model,
-      ownerId: request.headers.get('X-Arno-Owner') || null,
+      ownerId,
       remoteUrl: 'https://github.com/' + repo,
-      sourceSha: request.headers.get('X-Arno-Sha') || null,
+      sourceSha: head.stdout.trim() || request.headers.get('X-Arno-Sha') || null,
       createdAt: Date.now(),
     };
-    if (meta.sourceSha)
-      await this.exec(
-        ['git', 'config', 'arno.sourceCommit', meta.sourceSha],
-        { cwd: '/workspace/repo' },
-        10,
-      );
-    await this.repoContext(meta);
+    await this.exec(
+      [
+        'sh',
+        '-c',
+        'git config arno.sourceCommit "$1" && git config arno.cloned true',
+        'sh',
+        meta.sourceSha,
+      ],
+      { cwd: '/workspace/repo' },
+      10,
+    );
+    await this.gitSetup(meta);
     const snapshot = await this.ctx.container.snapshotContainer({});
     await this.ctx.storage.put({ session: meta, snapshot });
     return json(meta);
@@ -366,9 +388,10 @@ export const sessionRoutes = {
       if ((await this.ctx.storage.get('job'))?.status === 'cancelled')
         throw Error('Task cancelled');
       const options = (await this.ctx.storage.get('job'))?.options,
-        plan = turnPlan(options);
-      await this.writeConfig(session.model, plan);
-      await this.repoContext(session);
+        plan = turnPlan(options),
+        limits = codeLimits(options);
+      await this.writeConfig(session.model, plan, options);
+      await this.gitSetup(session);
       const startupMs = Date.now() - began;
       await this.phase('thinking', { workspace, startupMs });
       const previous = await this.history();
@@ -386,24 +409,28 @@ export const sessionRoutes = {
         });
         paths.push(path);
       }
-      const taskPrompt = buildPrompt(
-        session,
-        previous,
-        prompt +
-          (paths.length ? '\n\nAttached files (read them as needed):\n' + paths.join('\n') : ''),
-      );
+      const note = paths.length
+        ? '\n\nAttached files (read them as needed):\n' + paths.join('\n')
+        : '';
       // The model gateway reads the turn's options from here (/model-account).
       await this.ctx.storage.put('modelQuota', {
         used: 0,
+        rounds: limits.rounds,
         turnId,
         options,
         sources: session.sources || [],
         webCounts: { searches: 0, reads: 0 },
-        deadline: Date.now() + 4 * 60 * 1000,
+        deadline: Date.now() + limits.timeLimit + 60000,
       });
       const modelBegan = Date.now();
       const process = await this.ctx.container.exec(
-        ['timeout', '--kill-after=5', '240', '/usr/local/bin/arno', taskPrompt],
+        [
+          'timeout',
+          '--kill-after=10',
+          String(limits.timeLimit / 1000 + 60),
+          '/usr/local/bin/arno',
+          '--serve',
+        ],
         {
           cwd: '/workspace/repo',
           env: {
@@ -414,26 +441,57 @@ export const sessionRoutes = {
           stdin: 'pipe',
         },
       );
-      const writer = process.stdin.getWriter();
-      await writer.write(new TextEncoder().encode('y\ny\ny\n'));
-      await writer.close();
-      const output = await process.output();
+      // arno's standard error (crashes, and what tools print) is kept short.
+      let stderr = '';
+      const drained = process.stderr
+        ?.pipeThrough(new TextDecoderStream())
+        .pipeTo(new WritableStream({ write: t => void (stderr = (stderr + t).slice(-10000)) }))
+        .catch(() => {});
+      const stop = new AbortController(),
+        timer = setTimeout(() => stop.abort(), limits.timeLimit);
+      let turn;
+      try {
+        turn = await serveTurn(process, {
+          hello: { prompt: sessionPrompt(session) },
+          conversation: session.arnoConversation,
+          // A conversation arno no longer has (or a session from before it kept
+          // them) starts again with the earlier turns as context.
+          line: loaded => (loaded ? prompt + note : buildPrompt(session, previous, prompt + note)),
+          onEvent: e => this.activity(activityOf(e)),
+          signal: stop.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+      const exitCode = await Promise.race([
+        process.exitCode,
+        new Promise(r => setTimeout(() => r(null), 15000)),
+      ]);
+      await drained;
+      if (turn.conversation && turn.conversation !== session.arnoConversation)
+        await this.ctx.storage.put('session', {
+          ...(await this.ctx.storage.get('session')),
+          arnoConversation: turn.conversation,
+        });
       const executionMs = Date.now() - modelBegan;
       await this.phase('checkpointing', { workspace, startupMs, executionMs });
-      const decode = bytes => new TextDecoder().decode(bytes);
-      const stdout = decode(output.stdout).slice(-40000);
-      const stderr = decode(output.stderr).slice(-10000);
+      const reply = replyOf(turn),
+        failed = !reply && !turn.entries.length;
       const diffResult = await this.exec(
         ['node', '-e', WORKTREE_DIFF],
         { cwd: '/workspace/repo' },
         30,
       );
       const result = {
-        exitCode: output.exitCode,
+        exitCode: failed ? exitCode || 1 : 0,
         model: session.model,
-        summary: (stdout || stderr || `Arno exited with code ${output.exitCode}`).slice(-12000),
+        summary: (
+          (turn.cancelled ? 'Stopped at the time limit. ' : '') +
+          (reply || stderr || 'Arno ended without a reply (exit ' + exitCode + ').')
+        ).slice(-12000),
         diff: diffResult.stdout.slice(-40000),
-        diagnostics: stderr,
+        diagnostics: (transcriptOf(turn) + (stderr ? '\n\n' + stderr : '')).slice(-40000),
+        arno: turn.stats,
         reasoning:
           this.live?.jobId === (await this.ctx.storage.get('job'))?.id
             ? this.live?.reasoning || ''

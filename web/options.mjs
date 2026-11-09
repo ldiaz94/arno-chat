@@ -6,17 +6,36 @@
  *   effort  auto | off | low | medium | high      thinking; auto sends nothing
  *   mode    standard | fast | deep                deep: regular chats only
  *   style   normal | concise | caveman            how the answer is written
+ *
+ * Coding sessions only (arno's settings; regular chats keep the defaults):
+ *   approach  auto | pair | build | review        arno's mode; auto is its chat
+ *   workers   true | false                        the lead may delegate steps
+ *   budget    auto | 1 | 3 | 10                   dollars a turn may spend
  */
 export const CHOICES = {
   search: [true, false],
   effort: ['auto', 'off', 'low', 'medium', 'high'],
   mode: ['standard', 'fast', 'deep'],
   style: ['normal', 'concise', 'caveman'],
+  approach: ['auto', 'pair', 'build', 'review'],
+  workers: [true, false],
+  budget: ['auto', '1', '3', '10'],
 };
-export const DEFAULTS = { search: true, effort: 'auto', mode: 'standard', style: 'normal' };
+export const DEFAULTS = {
+  search: true,
+  effort: 'auto',
+  mode: 'standard',
+  style: 'normal',
+  approach: 'auto',
+  workers: true,
+  budget: 'auto',
+};
+/** The options only a coding session has. */
+export const CODE_ONLY = ['approach', 'workers', 'budget'];
 
 /** The options as sent, with missing ones at their defaults; null when any is
- * unknown or out of range, or deep research is asked of a coding session. */
+ * unknown or out of range, or deep research is asked of a coding session. A
+ * regular chat's coding options are put back to their defaults. */
 export function checkOptions(value, kind) {
   if (value == null) return { ...DEFAULTS };
   if (typeof value !== 'object' || Array.isArray(value)) return null;
@@ -24,6 +43,7 @@ export function checkOptions(value, kind) {
   const o = { ...DEFAULTS, ...value };
   if (Object.entries(CHOICES).some(([k, list]) => !list.includes(o[k]))) return null;
   if (o.mode === 'deep' && kind !== 'chat') return null;
+  if (kind === 'chat') for (const k of CODE_ONLY) o[k] = DEFAULTS[k];
   return o;
 }
 
@@ -37,5 +57,8 @@ export function optionTags(o) {
     o.style === 'normal' ? '' : o.style[0].toUpperCase() + o.style.slice(1),
     o.effort === 'auto' || (fast && o.effort === 'off') ? '' : 'Thinking: ' + o.effort,
     o.search || fast || o.mode === 'deep' ? '' : 'No search',
+    !o.approach || o.approach === 'auto' ? '' : o.approach[0].toUpperCase() + o.approach.slice(1),
+    o.workers === false ? 'No workers' : '',
+    !o.budget || o.budget === 'auto' ? '' : '$' + o.budget + ' budget',
   ].filter(Boolean);
 }

@@ -228,6 +228,29 @@
                   <label><input type="radio" name="style" value="caveman" />Caveman</label>
                 </div>
               </fieldset>
+              <fieldset data-code-only>
+                <legend>Approach</legend>
+                <div class="option-pills">
+                  <label><input type="radio" name="approach" value="auto" />Auto</label>
+                  <label><input type="radio" name="approach" value="pair" />Pair</label>
+                  <label><input type="radio" name="approach" value="build" />Build</label>
+                  <label><input type="radio" name="approach" value="review" />Review</label>
+                </div>
+                <small id="opt-approach-note" class="option-note"></small>
+              </fieldset>
+              <label class="option-switch" data-code-only>
+                <span>Workers <small>the lead hands steps to parallel agents</small></span>
+                <input id="opt-workers" type="checkbox" role="switch" />
+              </label>
+              <fieldset data-code-only>
+                <legend>Budget per message</legend>
+                <div class="option-pills">
+                  <label><input type="radio" name="budget" value="auto" />Auto</label>
+                  <label><input type="radio" name="budget" value="1" />$1</label>
+                  <label><input type="radio" name="budget" value="3" />$3</label>
+                  <label><input type="radio" name="budget" value="10" />$10</label>
+                </div>
+              </fieldset>
             </div>
           </form>
           <div class="composer-hint"></div>

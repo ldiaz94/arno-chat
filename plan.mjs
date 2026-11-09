@@ -22,6 +22,30 @@ export const DEEP_RESEARCH =
   'Deep research: plan the sub-questions first, then search broadly (several queries), read primary sources, and compare them. Write a structured report (summary, findings by sub-question, disagreements and open questions, numbered citations [1], [2] to the sources you read) and save it with create_artifact, titled "Research: <topic>". Then reply in chat with a short summary and the artifact link.';
 const RANK = ['off', 'low', 'medium', 'high'];
 
+/** Arno's settings for a coding turn's options, as config lines: its mode,
+ * the workers the lead may delegate to (the same model, so they run side by
+ * side on the same provider), and the turn's budget at list price. */
+export function codeSettings(model, options = DEFAULTS) {
+  const o = { ...DEFAULTS, ...options };
+  return [
+    o.approach !== 'auto' && 'mode = ' + o.approach,
+    o.workers && 'workers = ' + model,
+    o.budget !== 'auto' && 'turn_budget = ' + o.budget,
+    o.budget !== 'auto' && 'build_budget = ' + o.budget,
+  ]
+    .filter(Boolean)
+    .map(line => line + '\n')
+    .join('');
+}
+/** How long a coding turn may run and how many model requests it may make,
+ * workers' included: build leads a longer job; fast stays short. A Durable
+ * Object alarm may run for 15 minutes, which build keeps 2 of. */
+export function codeLimits(options = DEFAULTS) {
+  const o = { ...DEFAULTS, ...options };
+  if (o.approach === 'build') return { rounds: 400, timeLimit: 13 * 60000 };
+  if (o.mode === 'fast') return { rounds: 40, timeLimit: 4 * 60000 };
+  return { rounds: 150, timeLimit: 10 * 60000 };
+}
 /** The plan for one turn's options (defaults when none were saved). */
 export function turnPlan(options = DEFAULTS) {
   const o = { ...DEFAULTS, ...options },

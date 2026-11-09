@@ -71,6 +71,7 @@ const sessions = {
   },
 };
 
+let swTag = ''; // appended to sw.js: set to simulate a deploy
 const TURN_MS = 1500; // how long a mocked turn runs
 // What the app sent, in order: { what: 'chat' | 'message' | 'rename', sid, body }.
 const received = [];
@@ -168,11 +169,13 @@ async function handle(req, res) {
     res.writeHead(404);
     return res.end();
   }
+  let body = fs.readFileSync(file);
+  if (p === '/sw.js') body += swTag; // a changed byte makes it a new worker
   res.writeHead(200, {
     'Content-Type': types[path.extname(file)] || 'application/octet-stream',
     'Cache-Control': 'no-cache',
   });
-  res.end(fs.readFileSync(file));
+  res.end(body);
 }
 
 /** Starts the server on port (0: any free one); stop() also drops open sockets. */
@@ -360,9 +363,18 @@ function serve(port) {
     await page.click('[data-session="' + two + '"]');
     await page.waitForSelector('#thread .turn');
     assert.equal(await page.isDisabled('#send'), false);
+    // A deploy: the new worker waits, the bar offers it, Update reloads under it.
+    assert.equal(await page.locator('.update-bar').count(), 0);
+    swTag = '\n// deploy 2\n';
+    await page.evaluate(async () => (await navigator.serviceWorker.getRegistration('/')).update());
+    await page.waitForSelector('.update-bar button.primary');
+    assert.equal(await page.evaluate(() => !!navigator.serviceWorker.controller), true);
+    await Promise.all([page.waitForEvent('load'), page.click('.update-bar button.primary')]);
+    await page.waitForSelector('[data-session="' + two + '"]');
+    assert.equal(await page.locator('.update-bar').count(), 0);
     assert.deepEqual(errors, []);
     console.log(
-      'PASS: precache, warming, offline reload, saved conversation, image, artifact, usage, banner, model disabled, outbox (queued messages, rename, new chat, reload, flush in order, refused chat retried), back online.',
+      'PASS: update bar, precache, warming, offline reload, saved conversation, image, artifact, usage, banner, model disabled, outbox (queued messages, rename, new chat, reload, flush in order, refused chat retried), back online.',
     );
   } catch (e) {
     await page.screenshot({ path: '/tmp/arno-offline-failure.png' }).catch(() => {});

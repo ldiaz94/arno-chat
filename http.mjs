@@ -1,7 +1,6 @@
 /** HTTP helpers shared by the Worker, its Durable Object and the API routes:
  * security headers, JSON responses, cookies and bounded request bodies. */
 export const COOKIE = 'arno_session';
-export const MAX_ARCHIVE = 50 * 1024 * 1024;
 export const SECURITY = {
   'Content-Security-Policy':
     "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://github.com",

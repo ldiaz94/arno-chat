@@ -44,6 +44,17 @@ export const gatewayRoutes = {
       options: (await this.ctx.storage.get('modelQuota'))?.options || null,
     });
   },
+  /** The session's repository and its owner's sealed GitHub token, for the
+   * git gateway (git.mjs); only while a turn runs or the workspace is made. */
+  async '* /git-account'() {
+    const session = this.gitOpen || (await this.ctx.storage.get('session')),
+      github = await this.ctx.storage.get('github'),
+      q = await this.ctx.storage.get('modelQuota');
+    if (!session?.repo || session.kind === 'chat') return json({ error: 'No repository' }, 404);
+    if (!this.gitOpen && !(q && q.deadline >= Date.now()))
+      return json({ error: 'No running turn' }, 403);
+    return json({ repo: session.repo, ownerId: session.ownerId, token: github?.token || null });
+  },
   async 'POST /mcp-permit'() {
     const allowed = await this.ctx.storage.transaction(async txn => {
       const q = await txn.get('modelQuota');
@@ -61,7 +72,7 @@ export const gatewayRoutes = {
       round = 0;
     const allowed = await this.ctx.storage.transaction(async txn => {
       const quota = await txn.get('modelQuota');
-      if (!quota || quota.deadline < Date.now() || quota.used >= 16) return false;
+      if (!quota || quota.deadline < Date.now() || quota.used >= (quota.rounds || 16)) return false;
       quota.used += 1;
       round = quota.used;
       turnId = quota.turnId || '';
@@ -104,7 +115,7 @@ export const gatewayRoutes = {
           write: safe(usage.cache_write_tokens),
           output: safe(usage.completion_tokens),
         },
-      ].slice(-50);
+      ].slice(-200);
       q.cacheWriteTokens = (q.cacheWriteTokens || 0) + safe(usage.cache_write_tokens);
       q.measuredCalls = (q.measuredCalls || 0) + 1;
       await txn.put('modelQuota', q);
