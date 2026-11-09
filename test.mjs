@@ -791,3 +791,47 @@ test('Gemini: index-less tool calls keep their thought signature; thoughts leave
   assert.equal(r.reasoning, 'weighing it');
   assert.equal(r.usage.outputTokens, 30 + 10); // thinking counted from total_tokens
 });
+test('Gemini prices: first tier, dated changes resolved at the turn time', async () => {
+  const { parseGemini, priceOf } = await import('./prices.mjs');
+  const page = `## Gemini 9 Flash  {% id="gemini-9-flash" %}
+{% tabs %}
+  {% tab title="Standard" %}
+  {% table %}
+  * Feature
+  * Free Tier
+  * Paid Tier, per 1M tokens in USD
+
+  ---
+
+  * Input price
+  * Free of charge
+  * $0.75 through December 31, 2026.
+  $1.50 starting January 1, 2027.
+
+  ---
+
+  * Output price (including thinking tokens)
+  * Free of charge
+  * $3.00, prompts <= 200k tokens
+  $6.00, prompts > 200k
+
+  ---
+
+  * Context caching price
+  * Free of charge
+  * $0.075
+  $0.50 / 1,000,000 tokens per hour (storage price)
+  {% /table %}
+  {% /tab %}
+  {% tab title="Batch" %}
+  * Input price
+  * $0.01
+  {% /tab %}`;
+  const rows = parseGemini(page);
+  assert.deepEqual(priceOf(rows, 'gemini/gemini-9-flash', Date.UTC(2026, 11, 31, 23)), {
+    inp: 0.75,
+    cached: 0.075,
+    out: 3,
+  });
+  assert.equal(priceOf(rows, 'gemini/gemini-9-flash', Date.UTC(2027, 0, 1, 1)).inp, 1.5);
+});

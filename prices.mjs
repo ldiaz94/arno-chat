@@ -1,7 +1,8 @@
 /** List prices in dollars per million tokens, fetched from the providers'
- * public tables and cached for a day: Ollama Cloud from its pricing page,
- * Anthropic and OpenAI from OpenRouter's model list, which republishes their
- * list prices as JSON (neither provider offers a price API). A turn's cost is
+ * public tables and cached for a day: Ollama Cloud and Google Gemini from their
+ * pricing pages, Anthropic and OpenAI from OpenRouter's model list, which
+ * republishes their list prices as JSON (neither provider offers a price API).
+ * OpenRouter's Gemini prices only fill in models Google's page lacks. A turn's cost is
  * computed when it is saved, so later price changes never rewrite history.
  * Ollama bills some models less off-peak, outside a weekday window the page
  * names; a turn is priced at the rate of the hour it was saved.
@@ -66,6 +67,52 @@ export function isOffPeak(at, [from, to]) {
   return day === 0 || day === 6 || hour < from || hour >= to;
 }
 
+/** Rows of Google's Gemini pricing page, served as Markdoc at pricing.md: a
+ * "## Name {% id="model" %}" section per model, whose first tab (Standard)
+ * holds a table of "* label / * free tier / * paid tier" rows split by "---".
+ * A paid cell may list prices for prompt-size tiers (the first, smaller tier
+ * is taken) or for dates ("$0.75 through December 31, 2026. $1.50 starting
+ * January 1, 2027"); dated prices become a schedule that priceOf resolves. */
+export function parseGemini(text) {
+  const day = d => Date.parse(d + ' UTC');
+  const schedule = cell =>
+    cell
+      .split('\n')
+      .filter(line => /\$[\d.]/.test(line) && !/per hour|storage/i.test(line))
+      .map(line => {
+        const through = line.match(/through (\w+ \d+, \d{4})/),
+          starting = line.match(/starting (\w+ \d+, \d{4})/);
+        return {
+          dollars: Number(line.match(/\$([\d.]+)/)[1]),
+          from: starting ? day(starting[1]) : -Infinity,
+          to: through ? day(through[1]) + 86400000 : Infinity,
+        };
+      });
+  const rows = new Map();
+  for (const section of String(text)
+    .split(/^## .*\{% id="/m)
+    .slice(1)) {
+    const id = section.slice(0, section.indexOf('"')),
+      standard = section.split('{% /tab %}')[0],
+      found = {};
+    for (const row of standard.split(/^\s*---\s*$/m)) {
+      const cells = row.split(/^\s*\* /m).slice(1);
+      if (cells.length < 3) continue;
+      const field = /^Input price/.test(cells[0])
+        ? 'inp'
+        : /^Output price/.test(cells[0])
+          ? 'out'
+          : /^Context caching price/.test(cells[0])
+            ? 'cached'
+            : null;
+      if (field) found[field] = schedule(cells[2]);
+    }
+    if (found.inp?.length && found.out?.length)
+      rows.set(priceKey(id), { schedule: { cached: found.inp, ...found } });
+  }
+  return rows;
+}
+
 /** OpenRouter quotes dollars per token as strings. */
 export function parseOpenRouter(data) {
   const rows = new Map(),
@@ -103,20 +150,29 @@ export async function prices(upstream = fetch) {
       return new Map();
     }
   };
-  const [ollama, router] = await Promise.all([
+  const [ollama, router, gemini] = await Promise.all([
     get('https://ollama.com/pricing', parseOllama, 'text'),
     get('https://openrouter.ai/api/v1/models', parseOpenRouter, 'json'),
+    get('https://aistudio.google.com/docs/pricing.md', parseGemini, 'text'),
   ]);
-  const rows = new Map([...ollama, ...router]);
+  const rows = new Map([...ollama, ...router, ...gemini]);
   if (rows.size) memo = { at: Date.now(), rows };
   return rows;
 }
 
 /** A model's price at time at, falling back to its family ("gemma4:31b" to
- * "gemma4"), at off-peak rates when they apply. */
+ * "gemma4"), at off-peak rates when they apply, and at the dated rates in
+ * force when the price has a schedule. */
 export function priceOf(rows, model, at = Date.now()) {
   const k = priceKey(model),
     price = rows.get(k) ?? rows.get(k.split(':')[0]) ?? null;
+  if (price?.schedule) {
+    const pick = list => list.find(p => p.from <= at && at < p.to)?.dollars;
+    const { inp, cached, out } = price.schedule;
+    return pick(inp) == null || pick(out) == null
+      ? null
+      : { inp: pick(inp), cached: pick(cached) ?? pick(inp), out: pick(out) };
+  }
   return price?.offPeak && isOffPeak(at, price.peak) ? price.offPeak : price;
 }
 

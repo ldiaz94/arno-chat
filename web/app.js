@@ -616,7 +616,7 @@ function openUsage() {
           '<div class="metric"><b>' + value + '</b><span>' + name + '</span></div>',
       )
       .join('') +
-    '</div><p class="caption">Tokens are reported by the selected provider. A dash means usage was not recorded. Historical turns may have incomplete usage. Cost uses each model’s list price on the day of the turn (Ollama’s pricing page; Anthropic and OpenAI via OpenRouter); unpriced turns used a model missing from those tables. Ollama’s off-peak rates apply to turns saved off-peak. Web searches are not included.</p>' +
+    '</div><p class="caption">Tokens are reported by the selected provider. A dash means usage was not recorded. Historical turns may have incomplete usage. Cost uses each model’s list price on the day of the turn (Ollama’s and Google’s pricing pages; Anthropic and OpenAI via OpenRouter); unpriced turns used a model missing from those tables. Ollama’s off-peak rates apply to turns saved off-peak. Web searches are not included.</p>' +
     (last?.timing
       ? '<div class="eyebrow">Last turn</div>' +
         [
