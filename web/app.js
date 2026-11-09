@@ -38,6 +38,7 @@ import {
 import { openCode, browse, reviewPublish } from './code.js';
 import { submit, resizePrompt } from './turns.js';
 import './attach.js'; // wires the paperclip, paste and drop
+import './options.js'; // wires the options button, its popover and chips
 import './settings.js'; // wires the account settings dialog
 import { register, warm, clearData } from './offline.js';
 import { startOutbox, flush } from './outbox.js';

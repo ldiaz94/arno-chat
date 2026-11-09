@@ -22,6 +22,7 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 | account.mjs | Masked account settings, AES-GCM key envelopes, provider discovery |
 | chat.mjs | Container-free conversation and research loop for every provider |
 | web.mjs | Multi-result search, page reading, host-assigned citations, built-in research MCP |
+| plan.mjs | What a turn's composer options change: web tools, effort, instructions, output, rounds, research budgets, time limit |
 | mcp.mjs | Account-approved HTTPS MCP proxy and initialization test |
 | files.mjs | Read-only directory and UTF-8 code navigation |
 | publish.mjs | Worktree export, host-side validation, cumulative diff including new files |
@@ -42,6 +43,8 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 | web/code.js | Code dialog: file browser, diff, review and publish |
 | web/attach.js | Composer attachments: upload on pick/paste/drop, chips, attachment rendering for messages and details |
 | web/turns.js | Sending, editing, job polling and live output |
+| web/options.js | Composer options: the sliders button, its popover, chips, per-conversation storage |
+| web/options.mjs | The options' choices and defaults, the strict check (also used by the server) and footer tags |
 | web/settings.js | Account settings dialog |
 | web/profile.js | The dialog's You tab: about text, profile picture (resize and upload), privacy notice, account deletion |
 | web/marks.js | `providerMark(provider, size)`: original inline-SVG badges for the eight providers, shown in the model picker, composer, home button and provider cards |
@@ -132,7 +135,7 @@ All API routes require the GitHub-authenticated session cookie except GET /api/m
 Payloads worth knowing:
 
 - Create session: `repo` is owner/name, `ref` the selected branch, `model` an approved model ID. The host resolves `ref` to a 40-character source commit and downloads that exact archive. The response has id, repo, ref, model, sourceSha, remoteUrl, createdAt.
-- Submit task: `id` is a client-generated UUID, `prompt` is 1-8,000 characters. Reusing an ID deduplicates an uncertain submission; a different ID gets 409 while a turn is queued or running. Never retry an uncertain request with a new UUID. In a regular chat, optional `editAt` (a saved turn's `at`) replaces that turn: it and every later turn are left out of the context and deleted once the new answer is saved.
+- Submit task: `id` is a client-generated UUID, `prompt` is 1-8,000 characters. Reusing an ID deduplicates an uncertain submission; a different ID gets 409 while a turn is queued or running. Never retry an uncertain request with a new UUID. In a regular chat, optional `editAt` (a saved turn's `at`) replaces that turn: it and every later turn are left out of the context and deleted once the new answer is saved. Optional `options` are the composer options (see Composer options); anything unknown, out of range, or deep research in a coding session gets 400.
 - Publish: `digest` must match the reviewed files and source revision. `branch` is `arno/` plus an alphanumeric, underscore or hyphen name. `title` is the commit/PR title, at most 200 characters. The result has branch, commit, url, and a `warning` if the branch exists but the PR could not be opened.
 
 ### Task state
@@ -214,6 +217,36 @@ The gateway rebuilds allowed inference requests, fixes the upstream to the selec
 
 Statistics are cumulative from when measurement was added. Missing provider usage shows as unavailable. Requests, tokens and wall time are separate measurements. Cost is each turn's tokens at the model's list price, computed when the turn is saved (prices.mjs); a model absent from the price tables is counted as unpriced, never guessed. Web searches and page reads are priced at the per-request rates Ollama billed the account, read daily from ollama.com/api/usage?group_by=model (undocumented; fallback $0.011 and $0.001). Each turn stores its cost by part (input, cached input, cache writes, output, searches, reads) and the session sums them for the breakdown in the details panel.
 
+## Composer options
+
+Every message carries `options` = `{search, effort, mode, style}` (web/options.mjs; defaults `true`, `'auto'`, `'standard'`, `'normal'`; missing ones take their defaults). enqueue checks them strictly and keeps them on the job; the saved turn keeps them as `options`, and its footer tags the non-default ones ("Deep research", "Caveman", "Thinking: high", "No search"). Outbox entries keep the body, so queued sends, retries and edits carry them too. The browser keeps them per conversation in localStorage (`options:<id>`, moved with an offline chat's id), and a conversation without any starts from `options:last`.
+
+plan.mjs turns them into a plan both kinds of turn follow:
+
+| Option | Regular chat | Coding |
+| --- | --- | --- |
+| search off | no web tools, no WEB_INSTRUCTIONS | writeConfig leaves the `web` MCP server out of Arno's config; the gateway leaves out WEB_INSTRUCTIONS |
+| effort | `requestFields` adds the provider's fields | the model gateway adds them when it rebuilds the payload |
+| fast | effort `off` unless chosen, "Answer briefly and directly.", 4,096 output tokens; the browser also turns search off (it can be turned back on) | the same, through the gateway |
+| deep (chats only) | 10 searches, 20 reads, 60 kept sources (instead of 3, 6, 30), 16 model rounds, effort at least medium, a 12-minute limit (an alarm may run 15), and instructions to plan sub-questions, read primary sources, compare and save a cited report with create_artifact ("Research: …") before a short reply | refused |
+| style | concise: be brief; caveman: few words, no articles or filler, facts, numbers and code exact | added to the gateway's instructions for every request of the turn |
+
+The gateway reads the running turn's options from `modelQuota` (via /model-account). Effort `auto` sends nothing (the provider's default). Each provider declares in `PROVIDERS` (account.mjs) which models take an effort and its fields; `/api/models` marks each model `effort: true|false` (Ollama's from /api/tags capabilities), and the popover disables Thinking with "Not available for this model" when false.
+
+| Provider | Field | off / low / medium / high | Models |
+| --- | --- | --- | --- |
+| OpenAI | `reasoning_effort` | minimal / low / medium / high | o-series and gpt-5 ids (others refuse the field) |
+| Anthropic, before 4.6 | `thinking: {type: 'enabled', budget_tokens}` | none / 2,048 / 8,192 / 24,000; `max_tokens` raised to budget + 8,000 | claude-3-7, 4 to 4.5 |
+| Anthropic, 4.6 and later | `thinking: {type: 'adaptive'}` + `output_config.effort` | none / low / medium / high; Claude 5 also asks `display: 'summarized'` | 4.6+, 5.x (`enabled` is refused from 4.7) |
+| Gemini | `extra_body.google.thinking_config` (`reasoning_effort` is refused beside `include_thoughts`) | 2.5: budget 0 (Pro 128) / 1,024 / 8,192 / 24,576; 3.x+: level minimal (Pro low) / low / medium / high | gemini-2.5, 3+ |
+| Mistral | `reasoning_effort` | Large 4: low / low / medium / high; Small 2603, Medium 3.5: none / none / high / high | those three |
+| Ollama Cloud | `reasoning_effort` on /v1 | none / low / medium / high (gpt-oss can't stop and ignores none) | /api/show lists `thinking` |
+| DeepSeek | `thinking: {type: 'disabled'}` or `reasoning_effort` | disabled / low / high / high | deepseek-v4, deepseek-flash |
+| Kimi | `reasoning_effort` | low / low / high / high | kimi-k3 (can't stop thinking) |
+| Meta | — | not offered (no documented values) | — |
+
+Claude's thinking blocks (with their signatures, and redacted ones) must come back unchanged before the tool_use blocks of the next request. chat.mjs `readReply` keeps them from `content_block_start`, `thinking_delta` and `signature_delta` and replays them; only the thinking text reaches the Thinking panel. In coding the runner drops them, so the gateway keeps the latest reply's blocks (`thinking` key, by tool_use id) and puts them back; when it has none for the call, that request goes without thinking.
+
 ## Web research and citations
 
 Regular and coding conversations both have search and page-reading tools. The host calls Ollama's POST /api/web_search and /api/web_fetch at fixed URLs, so source sites never see the Ollama key. A personal Ollama key is used when configured, otherwise the deployment fallback.
@@ -221,7 +254,7 @@ Regular and coding conversations both have search and page-reading tools. The ho
 Bring-your-own search: an account can save its own SearXNG (Settings › Providers › Web search) as `{url, auth: none|access|bearer, clientId, secret}`. The URL must be public HTTPS (at most 500 characters, no credentials, query or fragment); the Cloudflare Access client secret or bearer token is sealed like provider keys (field `search:secret`), and reads return only url, auth, clientId and `hasSecret`. `POST /api/account/search` saves (`{remove: true}` removes); `POST /api/account/search-test` runs one query and reports the result count and latency. With a connection saved, web_search sends `GET <url>/search?q=…&format=json&language=auto&safesearch=0` with `CF-Access-Client-Id`/`CF-Access-Client-Secret` or `Authorization: Bearer`, no redirects, 10 s timeout and the bounded JSON reader, and maps the top six `results[]` into the same source records. On an error, timeout, non-JSON answer (403 usually means `format=json` is disabled) or no results, it falls back to Ollama search. Per turn `webUsage.searxng` counts SearXNG searches (free) and `webUsage.searches` only Ollama's (billed); the three-search limit counts both. web_read always uses Ollama.
 
 - Search returns up to six results. The model is told to compare them, prefer primary documentation, read original pages, and read at least two credible pages for a comparison.
-- Per turn: up to three searches and six page reads. Regular chat allows up to eight model rounds, the last one without tools. Coding uses Arno's MCP tool loop with its usual call and process limits.
+- Per turn: up to three searches and six page reads (deep research: 10 and 20, passed to `research()` as `limits`). Regular chat allows up to eight model rounds (deep research 16), the last one without tools. Coding uses Arno's MCP tool loop with its usual call and process limits.
 - Web content is evidence, not instructions. Tool failures are reported as failures.
 - Regular chat uses OpenAI/Ollama function calls or Anthropic tool-use blocks, answering in the provider's own protocol. Coding gets the same read-only tools (web_web_search, web_web_read) from an internal MCP server, trusted in Arno's configuration so reading several sources does not use up its interactive approval input.
 - The host numbers actual results. A source record holds URL, title, excerpt and retrieval time; the recent registry holds 30 records, and retained turns keep their own. The model cites as [1], [2]; the renderer makes a button only for IDs in the answer's saved records, so invented numbers stay plain text. A button or source card opens a preview with domain, title, excerpt, retrieval time and original link. This makes citations inspectable, not correct.
@@ -275,7 +308,7 @@ Client state: drafts and each mode's last open session ID live in sessionStorage
 
 - Cloudflare checkpoints are kept 30 days, refreshed by restoration.
 - Up to 20 turns are retained; very large diffs and logs are truncated for display.
-- Each task allows up to 16 model calls, a four-minute CLI deadline and 16,384 output tokens per inference request (regular chat too; Gemini keeps its own default, since thinking counts against it). Gateway bodies are capped at 1 MB; repository archives at 50 MB.
+- Each task allows up to 16 model calls, a four-minute CLI deadline and 16,384 output tokens per inference request (regular chat too; 4,096 in fast mode; Gemini keeps its own default, since thinking counts against it). A regular chat turn has four minutes, twelve for deep research. Gateway bodies are capped at 1 MB; repository archives at 50 MB.
 - Container Internet access is off. Model inference, built-in research and enabled remote MCP are host-mediated exceptions. Arbitrary dependency downloads are unavailable.
 - Publishing takes up to 50 regular UTF-8 changed files totaling 1 MB; binary files and symlinks are rejected.
 - Answer text and provider-exposed thinking stream live over SSE; coding previews show the current model pass. Tool arguments and raw tool events are not streamed; the final coding result appears after its checkpoint.

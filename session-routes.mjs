@@ -9,6 +9,8 @@ import { EXPORT_FILES, validateFiles, WORKTREE_DIFF } from './publish.mjs';
 import { buildPrompt } from './context.mjs';
 import { READ_FILE, validPath } from './files.mjs';
 import { citedSources } from './web.mjs';
+import { checkOptions } from './web/options.mjs';
+import { turnPlan } from './plan.mjs';
 
 export const sessionRoutes = {
   async 'POST /session/rename'(request) {
@@ -236,9 +238,12 @@ export const sessionRoutes = {
       if (!session) return json({ error: 'Session not found' }, 404);
       if (body.editAt && session.kind !== 'chat')
         return json({ error: 'Only chat messages can be edited' }, 400);
+      const options = checkOptions(body.options, session.kind);
+      if (!options) return json({ error: 'Invalid message options' }, 400);
       const job = {
         id: body.id,
         prompt: body.prompt,
+        options,
         editAt: body.editAt || null,
         replaces: body.replaces || null,
         attachments,
@@ -360,7 +365,9 @@ export const sessionRoutes = {
       const workspace = await this.start(session.model);
       if ((await this.ctx.storage.get('job'))?.status === 'cancelled')
         throw Error('Task cancelled');
-      await this.writeConfig(session.model);
+      const options = (await this.ctx.storage.get('job'))?.options,
+        plan = turnPlan(options);
+      await this.writeConfig(session.model, plan);
       await this.repoContext(session);
       const startupMs = Date.now() - began;
       await this.phase('thinking', { workspace, startupMs });
@@ -385,9 +392,11 @@ export const sessionRoutes = {
         prompt +
           (paths.length ? '\n\nAttached files (read them as needed):\n' + paths.join('\n') : ''),
       );
+      // The model gateway reads the turn's options from here (/model-account).
       await this.ctx.storage.put('modelQuota', {
         used: 0,
         turnId,
+        options,
         sources: session.sources || [],
         webCounts: { searches: 0, reads: 0 },
         deadline: Date.now() + 4 * 60 * 1000,
@@ -445,6 +454,7 @@ export const sessionRoutes = {
       result.sources = citedSources(result.summary, q?.sources || [], previous);
       result.attachments = attached;
       result.webUsage = q?.webCounts || { searches: 0, reads: 0 };
+      result.options = options;
       const checkpointBegan = Date.now();
       const snapshot = await this.ctx.container.snapshotContainer({});
       result.timing.checkpointMs = Date.now() - checkpointBegan;
@@ -453,7 +463,7 @@ export const sessionRoutes = {
       return json(result);
     } finally {
       this.inFlight = false;
-      await this.ctx.storage.delete('modelQuota');
+      await this.ctx.storage.delete(['modelQuota', 'thinking']);
       await this.ctx.storage.setAlarm(Date.now() + 35 * 60 * 1000);
     }
   },

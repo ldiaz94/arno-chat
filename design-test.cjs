@@ -291,7 +291,11 @@ const { chromium } = require('playwright'),
               id: submitted.id,
               prompt: submitted.prompt,
               status: 'completed',
-              result: { ...turn, summary: 'Recovered after lost response' },
+              result: {
+                ...turn,
+                summary: 'Recovered after lost response',
+                options: submitted.options,
+              },
               finishedAt: Date.now(),
             }
         : { status: 'idle' };
@@ -559,9 +563,29 @@ const { chromium } = require('playwright'),
   await page.locator('#attach-chips .attach-chip:not(.uploading) .attach-name').waitFor();
   assert.equal(await page.locator('#attach-chips .attach-name').innerText(), 'dot.png');
   assert.equal(uploadHeaders['x-filename'], 'dot.png');
+  // Options: the popover fits the phone, picks go to chips, Escape closes it.
+  const panel = page.locator('#options-panel'),
+    pick = text => panel.locator('label', { hasText: text }).click();
+  await page.getByRole('button', { name: 'Message options' }).click();
+  await panel.waitFor();
+  const box = await panel.boundingBox();
+  assert.ok(box.x >= 0 && box.x + box.width <= 390, 'Options popover fits at 390px');
+  await pick('Deep research');
+  await pick('Caveman');
+  await page.keyboard.press('Escape');
+  assert.equal(await panel.isHidden(), true);
+  const chips = () =>
+    page.locator('#option-chips .option-chip').evaluateAll(ns => ns.map(n => n.firstChild.data));
+  assert.deepEqual(await chips(), ['Deep research', 'Caveman']);
   await page.getByLabel('Message', { exact: true }).press('Control+Enter');
   await page.locator('#thread .turn.user .attach-thumb img').waitFor();
   assert.deepEqual(submitted.attachments, ['att-1']);
+  assert.deepEqual(submitted.options, {
+    search: true,
+    effort: 'auto',
+    mode: 'deep',
+    style: 'caveman',
+  });
   assert.equal(await page.locator('#attach-chips .attach-chip').count(), 0);
   await page.locator('.chat-activity').waitFor();
   await page.locator('#live-response .prose strong').waitFor();
@@ -583,6 +607,11 @@ const { chromium } = require('playwright'),
   await page.screenshot({ path: '/tmp/arno-plain-thinking.png', fullPage: true });
   await page.getByText('Recovered after lost response', { exact: true }).waitFor();
   assert.equal(await page.locator('#live-response').count(), 0);
+  if (submitted.options)
+    assert.deepEqual(await page.locator('.turn-footer .option-tag').allInnerTexts(), [
+      'Deep research',
+      'Caveman',
+    ]);
   // The finished turn moved the chat to the top.
   assert.deepEqual(await listed(), ['22222222-2222-2222-2222-222222222222', oldChat]);
   await page.getByRole('button', { name: 'Session actions' }).click();
@@ -720,9 +749,16 @@ const { chromium } = require('playwright'),
   await page.goto('https://arno.test/?session=' + id);
   await page.getByRole('heading', { name: 'What this repository does' }).waitFor();
   assert.equal(await page.locator('[data-mode="code"]').getAttribute('aria-pressed'), 'true');
+  // A coding session starts from the last options, without deep research.
+  await page.getByRole('button', { name: 'Message options' }).click();
+  assert.equal(
+    await page.locator('#options-panel label', { hasText: 'Deep research' }).isHidden(),
+    true,
+  );
+  assert.deepEqual(await chips(), ['Caveman']);
   await browser.close();
   console.log(
-    'PASS: Chat/Code modes and lists, home today card, Enter and default-model settings, sidebar order, page-three search, session drawer, Markdown/code/table rendering, model change, usage, reviewed publishing, dropped-response recovery, themes, mobile/keyboard/desktop overflow.',
+    'PASS: Chat/Code modes and lists, home today card, Enter and default-model settings, sidebar order, page-three search, session drawer, Markdown/code/table rendering, model change, usage, reviewed publishing, dropped-response recovery, themes, composer options, mobile/keyboard/desktop overflow.',
   );
 })().catch(e => {
   console.error(e);

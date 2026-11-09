@@ -18,6 +18,7 @@ import {
 import { editMessage, retry } from './turns.js';
 import { attachmentsHtml } from './attach.js';
 import { artifactCard } from './artifacts.js';
+import { optionTags } from './options.mjs';
 function diffCounts(diff) {
   const lines = (diff || '').split('\n');
   return {
@@ -112,6 +113,9 @@ export function message(role, text, result = {}) {
         ? '<span>' + num((u.inputTokens || 0) + (u.outputTokens || 0)) + ' tokens</span>'
         : '') +
       (u?.cost != null ? '<span>' + money(u.cost) + '</span>' : '') +
+      optionTags(result.options)
+        .map(t => '<span class="tag option-tag">' + esc(t) + '</span>')
+        .join('') +
       '<button type="button" class="copy-answer" aria-label="Copy answer">' +
       icon('copy') +
       ' Copy</button></div>';

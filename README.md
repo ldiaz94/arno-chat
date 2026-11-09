@@ -13,6 +13,8 @@ A responsive chat and remote coding workspace built around [Arno](https://github
 5. Browse **Code & changes** to navigate files or inspect highlighted diffs. Use **Session actions → Review & publish** to create a new branch/commit and pull request.
 6. Open your **avatar/name** for provider keys, system instructions, skills, MCP, and connection settings. Under **You**: whether Enter sends or adds a new line, the default model for new conversations, and the home page's Today card (quote and fact of the day, moon phase, and optional weather from Open-Meteo).
 
+The composer's **options** button (sliders) sets, per conversation, web search on or off, the mode (**Standard**, **Fast** for short answers without thinking or search, or **Deep research**, in chats only, which searches and reads more and saves a cited report as an artifact), the thinking effort (Auto, Off, Low, Medium, High, where the model's provider supports it) and the answer style (Normal, Concise, or Caveman). New conversations start from the last choice; each answer's footer tags the options it ran with.
+
 Answers stream as they arrive in both chat modes. Expand **Thinking** to view provider-exposed reasoning when available; it stays collapsed by default. Coding previews identify the current model pass and remain provisional until the workspace checkpoint is saved. Closing the page does not cancel a turn.
 
 It installs as an app and works offline: every conversation reads from the device, and messages (with attachments), new chats, renames and saved preferences wait in an outbox, sent in order once the network is back (on iPhone and iPad the app must be open for that).

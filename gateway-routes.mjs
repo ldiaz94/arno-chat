@@ -22,8 +22,27 @@ export const gatewayRoutes = {
     }
     return json({ sources: q.sources || [], counts: q.webCounts || { searches: 0, reads: 0 } });
   },
+  /** Claude's thinking blocks from the turn's latest reply that called tools,
+   * for the gateway to put back in the next request (gateway.mjs). Only the
+   * latest is kept, under a key of its own (a value may hold 128 KB). */
+  async '* /model-thinking'(request) {
+    const q = await this.ctx.storage.get('modelQuota');
+    if (request.method !== 'POST') {
+      const kept = await this.ctx.storage.get('thinking');
+      return json(kept && kept.turnId === q?.turnId ? kept : null);
+    }
+    const kept = await request.json();
+    if (!q || kept.turnId !== q.turnId || JSON.stringify(kept).length > 120000)
+      await this.ctx.storage.delete('thinking');
+    else await this.ctx.storage.put('thinking', kept);
+    return new Response(null, { status: 204 });
+  },
+  /** The owner, and the running turn's options for the model gateway. */
   async '* /model-account'() {
-    return json({ ownerId: (await this.ctx.storage.get('session'))?.ownerId || null });
+    return json({
+      ownerId: (await this.ctx.storage.get('session'))?.ownerId || null,
+      options: (await this.ctx.storage.get('modelQuota'))?.options || null,
+    });
   },
   async 'POST /mcp-permit'() {
     const allowed = await this.ctx.storage.transaction(async txn => {

@@ -141,6 +141,7 @@
             ↓
           </button>
           <form id="composer" class="composer">
+            <div id="option-chips" class="option-chips" hidden></div>
             <div id="attach-chips" class="attach-chips" hidden></div>
             <textarea
               id="prompt"
@@ -164,6 +165,15 @@
                 accept="image/png,image/jpeg,image/webp,image/gif,text/*,.md,.json,.csv,.yaml,.yml,.toml,.js,.mjs,.ts,.py,.go,.rs,.java,.c,.h,.cpp,.sh,.sql,.html,.css,.diff,.patch,.log"
               />
               <button
+                id="options-button"
+                class="ghost options-button"
+                type="button"
+                aria-label="Message options"
+                aria-haspopup="dialog"
+                aria-expanded="false"
+                aria-controls="options-panel"
+              ></button>
+              <button
                 id="model-button"
                 class="ghost model-button"
                 type="button"
@@ -171,6 +181,48 @@
               ></button>
               <button id="stop" class="ghost" type="button" hidden>Stop</button>
               <button id="send" class="primary" type="submit">↑ Send</button>
+            </div>
+            <div
+              id="options-panel"
+              class="options-panel"
+              role="dialog"
+              aria-label="Message options"
+              hidden
+            >
+              <label class="option-switch">
+                <span>Web search</span>
+                <input id="opt-search" type="checkbox" role="switch" />
+              </label>
+              <fieldset>
+                <legend>Mode</legend>
+                <div class="option-pills">
+                  <label><input type="radio" name="mode" value="standard" />Standard</label>
+                  <label><input type="radio" name="mode" value="fast" />Fast</label>
+                  <label data-chat-only
+                    ><input type="radio" name="mode" value="deep" />Deep research</label
+                  >
+                </div>
+                <small id="opt-mode-note" class="option-note"></small>
+              </fieldset>
+              <fieldset id="opt-effort">
+                <legend>Thinking</legend>
+                <div class="option-pills">
+                  <label><input type="radio" name="effort" value="auto" />Auto</label>
+                  <label><input type="radio" name="effort" value="off" />Off</label>
+                  <label><input type="radio" name="effort" value="low" />Low</label>
+                  <label><input type="radio" name="effort" value="medium" />Medium</label>
+                  <label><input type="radio" name="effort" value="high" />High</label>
+                </div>
+                <small id="opt-effort-note" class="option-note"></small>
+              </fieldset>
+              <fieldset>
+                <legend>Style</legend>
+                <div class="option-pills">
+                  <label><input type="radio" name="style" value="normal" />Normal</label>
+                  <label><input type="radio" name="style" value="concise" />Concise</label>
+                  <label><input type="radio" name="style" value="caveman" />Caveman</label>
+                </div>
+              </fieldset>
             </div>
           </form>
           <div class="composer-hint"></div>

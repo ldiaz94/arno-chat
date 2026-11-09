@@ -12,6 +12,7 @@ import { uploading, takeReady, restore } from './attach.js';
 import { warm } from './offline.js';
 import { queueMessage, waiting } from './outbox.js';
 import { isLocal } from './queue.mjs';
+import { messageOptions } from './options.js';
 function activity(job) {
   let node = $('#activity');
   if (!node) {
@@ -279,6 +280,7 @@ async function send(text, editAt, replaces, attachments = []) {
     body = {
       id: crypto.randomUUID(),
       prompt: text,
+      options: messageOptions(),
       ...(attachments.length ? { attachments: attachments.map(a => a.id) } : {}),
       ...(editAt ? { editAt } : {}),
       ...(replaces ? { replaces } : {}),

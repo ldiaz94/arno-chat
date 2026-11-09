@@ -13,19 +13,43 @@ import {
 } from './account.mjs';
 import { proxyMcp } from './mcp.mjs';
 import { WEB_INSTRUCTIONS, webMcp } from './web.mjs';
+import { turnPlan } from './plan.mjs';
+import { effortSupported } from './models.mjs';
 
 export class ModelGateway extends WorkerEntrypoint {
   async fetch(request) {
     const task = this.env.PROBE.get(this.env.PROBE.idFromString(this.ctx.props.task));
-    const { ownerId } = await (await task.fetch('https://internal/model-account')).json();
+    const { ownerId, options } = await (await task.fetch('https://internal/model-account')).json();
+    // The running turn's options: its style and effort reach every request,
+    // without the runner knowing (search off also leaves out the web MCP).
     const preferences = await profile(this.env, ownerId),
-      selection = providerModel(this.ctx.props.model);
+      selection = providerModel(this.ctx.props.model),
+      plan = turnPlan(options || undefined);
     let turnId, round;
     return modelRequest(request, {
       key: await credential(this.env, ownerId, preferences, selection.provider),
       model: selection.id,
       provider: selection.provider,
-      instructions: [instructions(preferences), WEB_INSTRUCTIONS].filter(Boolean).join('\n\n'),
+      effort: (await effortSupported(this.ctx.props.model)) ? plan.effort : 'auto',
+      maxOutput: plan.maxOutput,
+      instructions: [
+        instructions(preferences),
+        plan.search ? WEB_INSTRUCTIONS : '',
+        plan.instructions,
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+      recallThinking: async () => (await task.fetch('https://internal/model-thinking')).json(),
+      keepThinking: async kept => {
+        try {
+          await task.fetch('https://internal/model-thinking', {
+            method: 'POST',
+            body: JSON.stringify({ turnId, ...kept }),
+          });
+        } catch {
+          console.error('thinking_keep_failed');
+        }
+      },
       authorize: async () => {
         const r = await task.fetch('https://internal/model-permit', { method: 'POST' });
         turnId = r.headers.get('X-Turn-Id');

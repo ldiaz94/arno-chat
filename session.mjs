@@ -8,6 +8,8 @@ import { plainChat } from './chat.mjs';
 import { modelInput } from './attachments.mjs';
 import { profile, credential, instructions, providerModel, searchConnection } from './account.mjs';
 import { WEB_INSTRUCTIONS, WEB_TOOLS, research, citedSources } from './web.mjs';
+import { turnPlan } from './plan.mjs';
+import { effortSupported } from './models.mjs';
 import { ARTIFACT_INSTRUCTIONS, ARTIFACT_TOOLS, artifactTool } from './artifacts.mjs';
 import { prices, priceOf, cost, costParts, webRates, WEB_RATES } from './prices.mjs';
 import { storeRoutes } from './store-routes.mjs';
@@ -266,11 +268,14 @@ export class ArnoProbe extends DurableObject {
     if (all.size > 20) await this.ctx.storage.delete([...all.keys()].slice(0, all.size - 20));
   }
   /** editAt names the turn an edited message replaces: it and every later
-   * turn are left out of the context, and dropped once the new answer saves. */
+   * turn are left out of the context, and dropped once the new answer saves.
+   * The job's options (web/options.mjs) set its tools, effort and budgets. */
   async plainTurn(session, prompt, editAt) {
     this.inFlight = true;
     this.chatAbort = new AbortController();
-    const timer = setTimeout(() => this.chatAbort?.abort(), 240000),
+    const job = await this.ctx.storage.get('job'),
+      plan = turnPlan(job?.options),
+      timer = setTimeout(() => this.chatAbort?.abort(), plan.timeLimit),
       began = Date.now();
     try {
       await this.phase('thinking', { workspace: 'chat', startupMs: 0 });
@@ -281,8 +286,7 @@ export class ArnoProbe extends DurableObject {
         webKey = await credential(this.env, session.ownerId, p, 'ollama'),
         search = await searchConnection(this.env, session.ownerId, p);
       const previous = (await this.history()).filter(t => !editAt || t.at < editAt);
-      const job = await this.ctx.storage.get('job'),
-        jobId = job?.id,
+      const jobId = job?.id,
         attached = job?.attachments || [],
         input = await modelInput(this.ctx.storage, prompt, attached),
         artifacts = [];
@@ -292,9 +296,17 @@ export class ArnoProbe extends DurableObject {
         history: previous,
         prompt: input.text,
         images: input.images,
-        toolSpecs: [...WEB_TOOLS, ...ARTIFACT_TOOLS],
+        rounds: plan.rounds,
+        maxOutput: plan.maxOutput,
+        effort: (await effortSupported(session.model)) ? plan.effort : 'auto',
+        toolSpecs: [...(plan.search ? WEB_TOOLS : []), ...ARTIFACT_TOOLS],
         key: await credential(this.env, session.ownerId, p, selected.provider),
-        instructions: [instructions(p), WEB_INSTRUCTIONS, ARTIFACT_INSTRUCTIONS]
+        instructions: [
+          instructions(p),
+          plan.search ? WEB_INSTRUCTIONS : '',
+          ARTIFACT_INSTRUCTIONS,
+          plan.instructions,
+        ]
           .filter(Boolean)
           .join('\n\n'),
         signal: this.chatAbort.signal,
@@ -303,7 +315,13 @@ export class ArnoProbe extends DurableObject {
         runTool: async (name, args) => {
           if (/_artifact$/.test(name)) return artifactTool(this.ctx.storage, name, args, artifacts);
           await this.phase(name === 'web_search' ? 'searching' : 'reading', { workspace: 'chat' });
-          const data = await research(name, args, { key: webKey, search, sources, counts });
+          const data = await research(name, args, {
+            key: webKey,
+            search,
+            sources,
+            counts,
+            limits: plan.limits,
+          });
           await this.phase('thinking', {
             workspace: 'chat',
             webCounts: { ...counts },
@@ -317,6 +335,7 @@ export class ArnoProbe extends DurableObject {
       result.artifacts = artifacts;
       result.sources = citedSources(result.summary, sources, previous);
       result.webUsage = counts;
+      result.options = job?.options;
       if ((await this.ctx.storage.get('job'))?.status === 'cancelled')
         throw Error('Chat cancelled');
       result.timing = {
@@ -378,7 +397,9 @@ export class ArnoProbe extends DurableObject {
     if (existing.exitCode !== 0)
       await this.exec(['git', 'remote', 'add', 'origin', remote], { cwd: '/workspace/repo' }, 10);
   }
-  async writeConfig(model) {
+  /** Arno's config for this turn; with search off (plan.mjs) the built-in web
+   * research MCP server is left out. */
+  async writeConfig(model, plan) {
     const selected = providerModel(model),
       session = await this.ctx.storage.get('session'),
       preferences = await profile(this.env, session?.ownerId);
@@ -391,7 +412,8 @@ export class ArnoProbe extends DurableObject {
       '\nmodel = ' +
       selected.id +
       '\nurl = http://model.internal/v1\nkey =\nexecution_boundary = outer-sandbox\nsafety = auto\ncontext_files = no\nproject_map = no\nmax_tokens = 4096\n';
-    config += 'mcp = web http://mcp.internal/web\ntrust = web_web_search web_web_read\n';
+    if (plan.search)
+      config += 'mcp = web http://mcp.internal/web\ntrust = web_web_search web_web_read\n';
     for (const c of preferences.mcp || [])
       if (c.enabled && c.id !== 'web')
         config += 'mcp = ' + c.id + ' http://mcp.internal/' + c.id + '\n';

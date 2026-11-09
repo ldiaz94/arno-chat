@@ -15,11 +15,15 @@ function visible(text, reasoning) {
 }
 
 /** Decode text, native tool calls, and reported usage from either provider's
- * streaming dialect. Credential-bearing headers never enter these results. */
+ * streaming dialect. Credential-bearing headers never enter these results.
+ * Anthropic's thinking blocks (thinking with its signature, or redacted) are
+ * kept whole in `thinking`: with tools, the next request must send them back
+ * unchanged before the tool_use blocks. Only thinking text is ever shown. */
 async function readReply(body, onProgress) {
   const reader = body.getReader(),
     decoder = new TextDecoder(),
-    calls = new Map();
+    calls = new Map(),
+    thinking = new Map();
   let buffer = '',
     summary = '',
     reasoning = '',
@@ -61,6 +65,13 @@ async function readReply(body, onProgress) {
       const c = calls.get(v.index);
       if (c) c.arguments += v.delta.partial_json;
     }
+    if (v.type === 'content_block_start' && /thinking$/.test(v.content_block?.type))
+      thinking.set(v.index, { ...v.content_block });
+    const block = v.type === 'content_block_delta' && thinking.get(v.index);
+    if (block?.type === 'thinking' && v.delta.type === 'thinking_delta')
+      block.thinking = (block.thinking || '') + v.delta.thinking;
+    if (block?.type === 'thinking' && v.delta.type === 'signature_delta')
+      block.signature = (block.signature || '') + v.delta.signature;
     if (summary.length > 60000) throw Error('Chat response exceeded its display limit');
   };
   try {
@@ -84,13 +95,24 @@ async function readReply(body, onProgress) {
     reader.releaseLock();
   }
   const shown = visible(summary, reasoning);
-  return { summary: shown.text, reasoning: shown.reasoning, calls: [...calls.values()], usage };
+  return {
+    summary: shown.text,
+    reasoning: shown.reasoning,
+    calls: [...calls.values()],
+    thinking: [...thinking.values()],
+    usage,
+  };
 }
 
 /** Plain chat is a host-side bounded tool loop, never a coding VM. The same
- * provider adapter supports Ollama/OpenAI function calls and Anthropic tools. */
+ * provider adapter supports Ollama/OpenAI function calls and Anthropic tools.
+ * The last of its `rounds` model requests offers no tools; `effort` and
+ * `maxOutput` come from the turn's plan (plan.mjs). */
 export async function plainChat({
   model,
+  rounds = 8,
+  effort = 'auto',
+  maxOutput,
   history,
   prompt,
   images = [],
@@ -163,10 +185,17 @@ export async function plainChat({
   };
   // One entry per model request, for the account's request log.
   const requestLog = [];
-  for (let round = 0; round < 8; round++) {
+  const fields = requestFields(provider, { model, effort, maxOutput });
+  // Gemini's thoughts arrive in content as <thought>…</thought>, asked for
+  // beside the effort's own thinking_config.
+  if (provider === 'gemini') {
+    const config = fields.extra_body?.google?.thinking_config || {};
+    fields.extra_body = { google: { thinking_config: { ...config, include_thoughts: true } } };
+  }
+  for (let round = 0; round < rounds; round++) {
     await onRound();
     const tools =
-      runTool && round < 7
+      runTool && round < rounds - 1
         ? provider === 'anthropic'
           ? toolSpecs.map(t => ({
               name: t.name,
@@ -195,13 +224,9 @@ export async function plainChat({
         messages,
         stream: true,
         tools,
-        ...requestFields(provider),
+        ...fields,
         ...(provider === 'anthropic'
           ? { system: instructions || 'You are a helpful assistant.' }
-          : {}),
-        // Gemini's thoughts arrive in content as <thought>…</thought>.
-        ...(provider === 'gemini'
-          ? { extra_body: { google: { thinking_config: { include_thoughts: true } } } }
           : {}),
       }),
     });
@@ -252,6 +277,7 @@ export async function plainChat({
       messages.push({
         role: 'assistant',
         content: [
+          ...reply.thinking,
           ...(reply.summary ? [{ type: 'text', text: reply.summary }] : []),
           ...parsed.map(c => ({ type: 'tool_use', id: c.id, name: c.name, input: c.args || {} })),
         ],

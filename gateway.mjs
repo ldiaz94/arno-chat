@@ -86,8 +86,46 @@ export function mistralDeltas() {
     },
   });
 }
-export function usageStream(onUsage, onProgress = async () => {}) {
-  const decoder = new TextDecoder();
+/** Claude's thinking blocks in a streamed reply, whole (text and signature,
+ * or redacted data), and the ids of the tool calls they came before. */
+function thinkingBlocks() {
+  const blocks = new Map(),
+    toolIds = [];
+  return {
+    read(data) {
+      const start = data.type === 'content_block_start' && data.content_block;
+      if (/thinking$/.test(start?.type)) blocks.set(data.index, { ...start });
+      if (start?.type === 'tool_use') toolIds.push(start.id);
+      const block = data.type === 'content_block_delta' && blocks.get(data.index);
+      if (block?.type === 'thinking' && data.delta.type === 'thinking_delta')
+        block.thinking = (block.thinking || '') + data.delta.thinking;
+      if (block?.type === 'thinking' && data.delta.type === 'signature_delta')
+        block.signature = (block.signature || '') + data.delta.signature;
+    },
+    result: () => ({ toolIds, blocks: [...blocks.values()] }),
+  };
+}
+/** The runner drops Claude's thinking blocks, but with thinking on, the
+ * assistant message that called tools must start with them, unchanged. Put
+ * back the ones the gateway kept from that reply; without them, this request
+ * goes without thinking, which the API allows. */
+export function replayThinking(payload, saved) {
+  const last = payload.messages.findLast(m => m.role === 'assistant');
+  if (!Array.isArray(last?.content) || last.content.some(b => /thinking$/.test(b.type))) return;
+  const ids = last.content.filter(b => b.type === 'tool_use').map(b => b.id);
+  if (!ids.length) return;
+  if (saved?.blocks?.length && ids.every(id => saved.toolIds.includes(id))) {
+    payload.messages = payload.messages.map(m =>
+      m === last ? { ...m, content: [...saved.blocks, ...m.content] } : m,
+    );
+    return;
+  }
+  delete payload.thinking;
+  delete payload.output_config;
+}
+export function usageStream(onUsage, onProgress = async () => {}, onThinking) {
+  const decoder = new TextDecoder(),
+    thinking = thinkingBlocks();
   let buffer = '',
     usage = null,
     text = '',
@@ -100,6 +138,7 @@ export function usageStream(onUsage, onProgress = async () => {}) {
       const data = JSON.parse(line.slice(5).trim());
       const u = data.message?.usage || data.usage;
       if (u) usage = { ...(usage || {}), ...u };
+      if (onThinking) thinking.read(data);
       const d = displayDelta(data);
       text = (text + d.text).slice(0, 16000);
       reasoning = (reasoning + d.reasoning).slice(0, 12000);
@@ -131,6 +170,8 @@ export function usageStream(onUsage, onProgress = async () => {}) {
       buffer += decoder.decode();
       read(buffer);
       await publish(true);
+      const kept = thinking.result();
+      if (onThinking && kept.blocks.length && kept.toolIds.length) await onThinking(kept);
       if (usage) {
         const t = tokens(usage);
         await onUsage({
@@ -150,7 +191,11 @@ export async function modelRequest(
     model,
     provider = 'ollama',
     instructions = '',
+    effort = 'auto',
+    maxOutput,
     authorize,
+    recallThinking = async () => null,
+    keepThinking = async () => {},
     onUsage = async () => {},
     onProgress = async () => {},
     upstream = fetch,
@@ -185,7 +230,12 @@ export async function modelRequest(
   ) {
     return new Response('Unsupported model or request', { status: 400 });
   }
-  const payload = { model, messages: body.messages, stream: true, ...requestFields(provider) };
+  const payload = {
+    model,
+    messages: body.messages,
+    stream: true,
+    ...requestFields(provider, { model, effort, maxOutput }),
+  };
   // The runner sends back the thinking it read, which mistralDeltas made
   // reasoning_content; Mistral refuses unknown message fields.
   if (provider === 'mistral')
@@ -202,6 +252,7 @@ export async function modelRequest(
           ? body.system
           : [];
     payload.system = [...(instructions ? [{ type: 'text', text: instructions }] : []), ...original];
+    if (payload.thinking) replayThinking(payload, await recallThinking());
   } else {
     if (instructions)
       payload.messages = [{ role: 'system', content: instructions }, ...body.messages];
@@ -242,13 +293,17 @@ export async function modelRequest(
     provider === 'mistral' ? response.body?.pipeThrough(mistralDeltas()) : response.body;
   return new Response(
     stream?.pipeThrough(
-      usageStream(async usage => {
-        try {
-          await onUsage(usage);
-        } catch {
-          console.error('usage_record_failed');
-        }
-      }, onProgress),
+      usageStream(
+        async usage => {
+          try {
+            await onUsage(usage);
+          } catch {
+            console.error('usage_record_failed');
+          }
+        },
+        onProgress,
+        provider === 'anthropic' ? keepThinking : undefined,
+      ),
     ),
     {
       headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store' },

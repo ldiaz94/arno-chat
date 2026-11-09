@@ -4,6 +4,7 @@
 import { $, state, esc, icon, modelName, api, toast, showError } from './core.js';
 import { busy } from './layout.js';
 import { providerMark } from './marks.js';
+import { render as renderOptions } from './options.js';
 /** The provider that serves (and bills) a model id; ids without a prefix are Ollama's. */
 export function providerOf(id) {
   const prefix = String(id).split('/')[0];
@@ -84,6 +85,7 @@ export async function chooseModel(id) {
     if (state.session?.id === sid) {
       state.session.model = d.model;
       modelButton();
+      renderOptions();
       toast('Model updated for the next turn');
     }
   } catch (e) {

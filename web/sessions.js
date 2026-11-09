@@ -28,6 +28,7 @@ import { modelButton, modelLabel, openModels, startModel } from './models.js';
 import { message, failure, scrollDown, suggestions } from './thread.js';
 import { watchJob, resizePrompt } from './turns.js';
 import { clearAttachments } from './attach.js';
+import { render as renderOptions } from './options.js';
 import { greeting, todayCard, wireToday } from './home.js';
 import { controls } from './offline.js';
 import {
@@ -100,6 +101,7 @@ export async function resume(id) {
     }
     composer.hidden = false;
     modelButton();
+    renderOptions();
     busy(false);
     prompt.value = sessionStorage.getItem('draft:' + id) || '';
     resizePrompt();

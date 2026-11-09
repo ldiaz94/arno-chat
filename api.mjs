@@ -18,6 +18,8 @@ import {
   profile,
   credential,
   providerModels,
+  providerModel,
+  effortModel,
   accountRoute,
   unseal,
 } from './account.mjs';
@@ -281,7 +283,12 @@ export const apiRoutes = {
       ...extra.filter(r => r.status === 'fulfilled').flatMap(r => r.value),
       ...(p.models || []),
     ];
-    return json({ ...base, models: [...new Map(all.map(m => [m.id, m])).values()] });
+    // effort: whether the thinking choice can be honoured (absent: unknown).
+    const models = [...new Map(all.map(m => [m.id, m])).values()].map(m => {
+      const { provider, id } = providerModel(m.id);
+      return provider === 'ollama' ? m : { ...m, effort: effortModel(provider, id) };
+    });
+    return json({ ...base, models });
   },
   async 'GET /api/repos'(request, env, url, auth) {
     const page = Math.max(1, Math.min(10000, Number(url.searchParams.get('page')) || 1));

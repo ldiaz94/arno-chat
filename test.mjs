@@ -10,6 +10,8 @@ import { QUOTES, FACTS } from './web/home-content.js';
 import { buildPrompt } from './context.mjs';
 import { validateFiles } from './publish.mjs';
 import { usageStream, modelRequest, displayDelta } from './gateway.mjs';
+import { checkOptions, optionTags, DEFAULTS } from './web/options.mjs';
+import { turnPlan } from './plan.mjs';
 import { plainChat } from './chat.mjs';
 import { validPath } from './files.mjs';
 import {
@@ -19,6 +21,7 @@ import {
   instructions,
   validMcpUrl,
   accountRoute,
+  requestFields,
 } from './account.mjs';
 import { testMcp } from './mcp.mjs';
 import { research, citedSources } from './web.mjs';
@@ -2025,4 +2028,273 @@ test('your name reaches the model through the instructions', () => {
     /^The user's name is Luis\.\n\nAbout the user:\nBuilds things/,
   );
   assert.equal(instructions({}), '');
+});
+
+test('message options: defaults fill gaps; unknown, mistyped and deep-in-coding are refused', async () => {
+  assert.deepEqual(checkOptions(undefined, 'chat'), DEFAULTS);
+  assert.deepEqual(checkOptions({ style: 'caveman' }, 'chat'), { ...DEFAULTS, style: 'caveman' });
+  for (const bad of [
+    { search: 'yes' },
+    { effort: 'max' },
+    { mode: 'slow' },
+    { colour: 'red' },
+    [],
+    'fast',
+  ])
+    assert.equal(checkOptions(bad, 'chat'), null);
+  assert.equal(checkOptions({ mode: 'deep' }, 'code'), null);
+  assert.deepEqual(optionTags({ ...DEFAULTS, mode: 'deep', style: 'caveman', effort: 'high' }), [
+    'Deep research',
+    'Caveman',
+    'Thinking: high',
+  ]);
+  assert.deepEqual(optionTags({ ...DEFAULTS, search: false }), ['No search']);
+  assert.deepEqual(optionTags({ mode: 'fast', search: false, effort: 'off', style: 'normal' }), [
+    'Fast',
+  ]);
+  // enqueue keeps them on the job, and refuses what checkOptions refuses.
+  const enqueue = (f, options) =>
+    f.obj.fetch(
+      new Request('https://internal/session/enqueue', {
+        method: 'POST',
+        body: JSON.stringify({ id: crypto.randomUUID(), prompt: 'hi', options }),
+      }),
+    );
+  const chat = fixture({ session: { kind: 'chat', model: 'm' } });
+  assert.equal((await enqueue(chat, { effort: 'nope' })).status, 400);
+  assert.equal((await enqueue(chat, { mode: 'deep' })).status, 202);
+  assert.equal((await chat.ctx.storage.get('job')).options.mode, 'deep');
+  const code = fixture({ session: { repo: 'a/b', model: 'm' } });
+  assert.equal((await enqueue(code, { mode: 'deep' })).status, 400);
+});
+test('turn plans: fast trims, deep widens, style adds its instruction', () => {
+  const fast = turnPlan({ mode: 'fast' }),
+    deep = turnPlan({ mode: 'deep', search: false, effort: 'low' });
+  assert.equal(fast.effort, 'off');
+  assert.equal(fast.maxOutput, 4096);
+  assert.match(fast.instructions, /briefly and directly/);
+  assert.deepEqual([deep.search, deep.effort, deep.rounds], [true, 'medium', 16]);
+  assert.deepEqual(deep.limits, { searches: 10, reads: 20, sources: 60 });
+  assert.ok(deep.timeLimit <= 15 * 60000); // a Durable Object alarm's wall-clock limit
+  assert.match(deep.instructions, /create_artifact[\s\S]*Research: /);
+  assert.equal(turnPlan({ effort: 'high' }).effort, 'high');
+  assert.match(turnPlan({ style: 'caveman' }).instructions, /caveman[\s\S]*Me check/);
+  assert.match(turnPlan({ style: 'concise' }).instructions, /brief/);
+  assert.equal(turnPlan().instructions, '');
+});
+test('effort per provider: each model gets the nearest value it accepts, auto sends none', () => {
+  const effort = (provider, model, level) => {
+    const f = requestFields(provider, { model, effort: level });
+    delete f.stream_options;
+    return f;
+  };
+  assert.deepEqual(effort('openai', 'gpt-5.1', 'off'), {
+    max_completion_tokens: 16384,
+    reasoning_effort: 'minimal',
+  });
+  assert.equal(effort('openai', 'gpt-4o', 'high').reasoning_effort, undefined);
+  assert.deepEqual(effort('anthropic', 'claude-sonnet-4-5-20250929', 'high'), {
+    max_tokens: 32000,
+    thinking: { type: 'enabled', budget_tokens: 24000 },
+  });
+  assert.equal(effort('anthropic', 'claude-3-7-sonnet-20250219', 'low').max_tokens, 16384);
+  assert.deepEqual(effort('anthropic', 'claude-opus-4-6', 'medium'), {
+    max_tokens: 16384,
+    thinking: { type: 'adaptive' },
+    output_config: { effort: 'medium' },
+  });
+  assert.equal(effort('anthropic', 'claude-sonnet-5-5', 'low').thinking.display, 'summarized');
+  assert.deepEqual(effort('anthropic', 'claude-opus-4-6', 'off'), { max_tokens: 16384 });
+  const gemini = (model, level) => effort('gemini', model, level).extra_body.google.thinking_config;
+  assert.deepEqual(gemini('gemini-2.5-flash', 'off'), { thinking_budget: 0 });
+  assert.deepEqual(gemini('gemini-2.5-pro', 'off'), { thinking_budget: 128 });
+  assert.deepEqual(gemini('gemini-3.5-flash', 'off'), { thinking_level: 'minimal' });
+  assert.deepEqual(gemini('gemini-3.1-pro-preview', 'off'), { thinking_level: 'low' });
+  assert.equal(effort('gemini', 'gemini-3.5-flash', 'high').reasoning_effort, undefined);
+  assert.equal(effort('ollama', 'gpt-oss:120b', 'off').reasoning_effort, 'none');
+  assert.equal(effort('mistral', 'mistral-large-4-0', 'off').reasoning_effort, 'low');
+  assert.equal(effort('mistral', 'mistral-small-2603', 'low').reasoning_effort, 'none');
+  assert.deepEqual(effort('deepseek', 'deepseek-v4-pro', 'off').thinking, { type: 'disabled' });
+  assert.equal(effort('kimi', 'kimi-k3', 'medium').reasoning_effort, 'high');
+  assert.deepEqual(effort('meta', 'muse-spark', 'high'), { max_completion_tokens: 16384 });
+  assert.deepEqual(effort('openai', 'gpt-5.1', 'auto'), { max_completion_tokens: 16384 });
+  // Gemini chat asks for thoughts inside the same thinking_config.
+  const fields = requestFields('gemini', { model: 'gemini-3.5-flash', effort: 'low' });
+  assert.equal(fields.extra_body.google.thinking_config.thinking_level, 'low');
+});
+const claudeStream = events =>
+  new Response(events.map(e => 'data: ' + JSON.stringify(e) + '\n\n').join(''));
+const THINKING_REPLY = [
+  { type: 'message_start', message: { usage: { input_tokens: 10 } } },
+  { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } },
+  { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'Need ' } },
+  {
+    type: 'content_block_delta',
+    index: 0,
+    delta: { type: 'thinking_delta', thinking: 'a search.' },
+  },
+  { type: 'content_block_delta', index: 0, delta: { type: 'signature_delta', signature: 'SIG' } },
+  { type: 'content_block_stop', index: 0 },
+  {
+    type: 'content_block_start',
+    index: 1,
+    content_block: { type: 'redacted_thinking', data: 'X' },
+  },
+  { type: 'content_block_stop', index: 1 },
+  {
+    type: 'content_block_start',
+    index: 2,
+    content_block: { type: 'tool_use', id: 'tu1', name: 'web_search', input: {} },
+  },
+  {
+    type: 'content_block_delta',
+    index: 2,
+    delta: { type: 'input_json_delta', partial_json: '{"query":"q"}' },
+  },
+  { type: 'message_delta', usage: { output_tokens: 5 } },
+];
+test('Anthropic thinking: blocks with their signature go back before tool_use, text is shown', async () => {
+  const bodies = [],
+    previews = [];
+  const replies = [
+    claudeStream(THINKING_REPLY),
+    claudeStream([
+      { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Done.' } },
+    ]),
+  ];
+  const r = await plainChat({
+    model: 'claude-sonnet-4-5',
+    provider: 'anthropic',
+    effort: 'medium',
+    key: 'k',
+    history: [],
+    prompt: 'p',
+    runTool: async () => ({ sources: [] }),
+    onProgress: async p => previews.push(p.reasoning),
+    upstream: async (url, init) => {
+      bodies.push(JSON.parse(init.body));
+      return replies.shift();
+    },
+  });
+  assert.deepEqual(bodies[0].thinking, { type: 'enabled', budget_tokens: 8192 });
+  assert.ok(bodies[0].max_tokens > 8192);
+  assert.equal(bodies[0].temperature, undefined);
+  assert.deepEqual(bodies[1].messages.at(-2).content, [
+    { type: 'thinking', thinking: 'Need a search.', signature: 'SIG' },
+    { type: 'redacted_thinking', data: 'X' },
+    { type: 'tool_use', id: 'tu1', name: 'web_search', input: { query: 'q' } },
+  ]);
+  assert.equal(r.summary, 'Done.');
+  assert.ok(previews.includes('Need a search.'));
+  assert.doesNotMatch(JSON.stringify(previews), /SIG/);
+});
+test('coding gateway: Claude thinking is kept from a tool call and put back for the runner', async () => {
+  let kept, sent;
+  const request = messages =>
+    new Request('http://model.internal/v1/messages', {
+      method: 'POST',
+      body: JSON.stringify({ model: 'claude-sonnet-4-5', messages, stream: true }),
+    });
+  const options = {
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-5',
+    key: 'k',
+    effort: 'high',
+    authorize: async () => true,
+    keepThinking: async k => (kept = k),
+    recallThinking: async () => kept,
+    upstream: async (url, init) => {
+      sent = JSON.parse(init.body);
+      return claudeStream(THINKING_REPLY);
+    },
+  };
+  await (await modelRequest(request([{ role: 'user', content: 'go' }]), options)).text();
+  assert.deepEqual(kept.toolIds, ['tu1']);
+  // The runner sends back the call without its thinking.
+  const loop = [
+    { role: 'user', content: 'go' },
+    {
+      role: 'assistant',
+      content: [{ type: 'tool_use', id: 'tu1', name: 'web_search', input: {} }],
+    },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu1', content: 'ok' }] },
+  ];
+  await (await modelRequest(request(loop), options)).text();
+  assert.deepEqual(
+    sent.messages[1].content.map(b => b.type),
+    ['thinking', 'redacted_thinking', 'tool_use'],
+  );
+  assert.equal(sent.messages[1].content[0].signature, 'SIG');
+  // Nothing kept for that call: this request goes without thinking.
+  kept = null;
+  await (await modelRequest(request(loop), options)).text();
+  assert.equal(sent.thinking, undefined);
+});
+test('search off drops web tools and instructions; deep research budgets reach research()', async () => {
+  const bodies = [],
+    real = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    if (String(url).endsWith('/v1/chat/completions')) {
+      bodies.push(JSON.parse(init.body));
+      return new Response('data: {"choices":[{"delta":{"content":"Ugh. Done."}}]}\n\n');
+    }
+    if (String(url).endsWith('/api/show')) return Response.json({ capabilities: ['thinking'] });
+    return new Response('{}', { status: 404 });
+  };
+  try {
+    const f = fixture({
+      session: { kind: 'chat', model: 'thinker:cloud', title: 'General chat' },
+      job: {
+        id: 'j',
+        status: 'running',
+        prompt: 'hi',
+        options: { ...DEFAULTS, search: false, style: 'caveman', effort: 'low' },
+      },
+    });
+    f.obj.env = { OLLAMA_API_KEY: 'k' };
+    await f.obj.plainTurn(await f.ctx.storage.get('session'), 'hi');
+    const names = (bodies[0].tools || []).map(t => t.function.name);
+    assert.ok(!names.includes('web_search') && names.includes('create_artifact'));
+    assert.doesNotMatch(bodies[0].messages[0].content, /web_search/);
+    assert.match(bodies[0].messages[0].content, /caveman/);
+    assert.equal(bodies[0].reasoning_effort, 'low');
+    const turn = [...(await f.ctx.storage.list({ prefix: 'turn:' })).values()][0];
+    assert.equal(turn.options.style, 'caveman');
+  } finally {
+    globalThis.fetch = real;
+  }
+  // The deep plan's budget lets research go past the standard three searches.
+  const counts = { searches: 3 },
+    upstream = async () => Response.json({ results: [] });
+  await assert.rejects(
+    research('web_search', { query: 'q' }, { key: 'k', sources: [], counts, upstream }),
+    /limit of 3 searches/,
+  );
+  await research(
+    'web_search',
+    { query: 'q' },
+    { key: 'k', sources: [], counts, upstream, limits: turnPlan({ mode: 'deep' }).limits },
+  );
+  assert.equal(counts.searches, 4);
+});
+test('coding: search off leaves the web MCP server out of the runner config', async () => {
+  const configFor = async plan => {
+    let text = '';
+    const f = fixture({ session: { model: 'm' } });
+    f.obj.env = {};
+    f.ctx.container.exec = async () => ({
+      stdin: {
+        getWriter: () => ({
+          write: async b => (text += new TextDecoder().decode(b)),
+          close: async () => {},
+        }),
+      },
+      exitCode: Promise.resolve(0),
+    });
+    await f.obj.writeConfig('m', plan);
+    return text;
+  };
+  assert.match(await configFor(turnPlan()), /mcp = web /);
+  assert.doesNotMatch(await configFor(turnPlan({ search: false })), /mcp = web /);
 });

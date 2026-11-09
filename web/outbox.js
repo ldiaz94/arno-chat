@@ -22,6 +22,7 @@ import { sidebar, title, bump } from './layout.js';
 import { message, failure, scrollDown } from './thread.js';
 import { watchJob } from './turns.js';
 import { uploadFile, bytes } from './attach.js';
+import { moveOptions } from './options.js';
 import { loadModels } from './models.js';
 import { banner } from './offline.js';
 
@@ -383,6 +384,7 @@ async function createChat(e) {
     if (draft) sessionStorage.setItem('draft:' + s.id, draft);
   }
   sessionStorage.removeItem('draft:' + local);
+  moveOptions(local, s.id);
   showQueued();
   return s.id;
 }

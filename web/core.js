@@ -56,6 +56,7 @@ const paths = {
   logout: 'M9 4H3v16h6m6-5 4-3-4-3m-6 3h10',
   doc: 'M6 2h9l5 5v15H6zM14 2v6h6M9 13h7M9 17h7',
   clip: 'm21 11-9 9a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l8-8',
+  sliders: 'M4 6h9m4 0h3M15 4v4M4 12h3m4 0h9M9 10v4M4 18h11m4 0h1M17 16v4',
 };
 export function icon(name) {
   return (

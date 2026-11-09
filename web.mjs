@@ -97,10 +97,17 @@ export async function searxngSearch(search, query, upstream = fetch) {
   }
   return Array.isArray(data.results) ? data.results : [];
 }
+/** A turn's research budget: searches, page reads, and sources kept for citing.
+ * Deep research passes larger ones (plan.mjs). */
+export const LIMITS = { searches: 3, reads: 6, sources: 30 };
 /** Runs one research call. web_search tries the account's SearXNG first and
  * falls back to Ollama; counts.searxng counts SearXNG searches (free) and
  * counts.searches Ollama's (billed). */
-export async function research(name, args, { key, search, sources, counts, upstream = fetch }) {
+export async function research(
+  name,
+  args,
+  { key, search, sources, counts, limits = LIMITS, upstream = fetch },
+) {
   const register = s => {
     if (typeof s?.url !== 'string' || !publicWebUrl(s.url) || s.url.length > 1000) return null;
     let source = sources.find(v => v.url === s.url);
@@ -116,7 +123,7 @@ export async function research(name, args, { key, search, sources, counts, upstr
       .trim()
       .slice(0, 400);
     source.retrievedAt = Date.now();
-    while (sources.length > 30) sources.shift();
+    while (sources.length > limits.sources) sources.shift();
     return source;
   };
   const found = results => ({
@@ -127,8 +134,12 @@ export async function research(name, args, { key, search, sources, counts, upstr
   if (name === 'web_search') {
     if (typeof args.query !== 'string' || !args.query.trim() || args.query.length > 500)
       throw Error('Search query must be 1–500 characters');
-    if ((counts.searches || 0) + (counts.searxng || 0) >= 3)
-      throw Error('This turn has reached its three-search limit. Use existing results.');
+    if ((counts.searches || 0) + (counts.searxng || 0) >= limits.searches)
+      throw Error(
+        'This turn has reached its limit of ' +
+          limits.searches +
+          ' searches. Use existing results.',
+      );
     if (search)
       try {
         const results = await searxngSearch(search, args.query, upstream);
@@ -152,7 +163,8 @@ export async function research(name, args, { key, search, sources, counts, upstr
     if (!key)
       throw Error('Reading pages needs an Ollama API key in this deployment or your account');
     if (!publicWebUrl(args.url)) throw Error('Only public HTTP(S) source URLs can be read');
-    if ((counts.reads || 0) >= 6) throw Error('This turn has reached its six-page reading limit');
+    if ((counts.reads || 0) >= limits.reads)
+      throw Error('This turn has reached its limit of ' + limits.reads + ' page reads');
     counts.reads = (counts.reads || 0) + 1;
     path = '/api/web_fetch';
     body = { url: args.url };

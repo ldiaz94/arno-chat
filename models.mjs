@@ -1,4 +1,4 @@
-import { MODEL_ID, TRAINS_ON_DATA, providerModel } from './account.mjs';
+import { MODEL_ID, TRAINS_ON_DATA, providerModel, effortModel } from './account.mjs';
 import { prices, priceKey } from './prices.mjs';
 export const DEFAULT_MODEL = 'mistral-large-4:cloud';
 export const FALLBACK_MODELS = [
@@ -21,7 +21,7 @@ export async function catalog(upstream = fetch) {
           m.capabilities?.includes('tools') &&
           /^[a-z0-9][a-z0-9:._-]{0,120}$/.test(m.name),
       )
-      .map(m => ({ id: m.name, name: m.name }));
+      .map(m => ({ id: m.name, name: m.name, effort: m.capabilities.includes('thinking') }));
     if (!models.length) throw Error('Empty catalog');
     const unique = new Map([[DEFAULT_MODEL, FALLBACK_MODELS[0]], ...models.map(m => [m.id, m])]);
     return { models: [...unique.values()], source: 'ollama', fallback: false };
@@ -38,8 +38,8 @@ export async function modelAllowed(model) {
 }
 
 const shown = new Map();
-/** Ollama's public /api/show for a model, {window, vision}, remembered per
- * isolate; null when it can't be read. */
+/** Ollama's public /api/show for a model, {window, vision, thinking},
+ * remembered per isolate; null when it can't be read. */
 async function ollamaShow(id, upstream) {
   if (shown.has(id)) return shown.get(id);
   try {
@@ -55,6 +55,7 @@ async function ollamaShow(id, upstream) {
     const show = {
       window: key ? Number(info[key]) : null,
       vision: !!data.capabilities?.includes('vision'),
+      thinking: !!data.capabilities?.includes('thinking'),
     };
     shown.set(id, show);
     return show;
@@ -77,4 +78,13 @@ export async function contextWindow(model, upstream = fetch) {
 export async function acceptsImages(model, upstream = fetch) {
   const { provider, id } = providerModel(model);
   return provider !== 'ollama' || !!(await ollamaShow(id, upstream))?.vision;
+}
+
+/** Whether a model can honour a thinking effort: its provider declares which
+ * of its models do (PROVIDERS' effort); an Ollama model does when /api/show
+ * lists "thinking". */
+export async function effortSupported(model, upstream = fetch) {
+  const { provider, id } = providerModel(model);
+  if (provider !== 'ollama') return effortModel(provider, id);
+  return !!(await ollamaShow(id, upstream))?.thinking;
 }
