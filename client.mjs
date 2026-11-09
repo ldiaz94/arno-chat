@@ -67,7 +67,12 @@ function message(role,text,result={}){
  }
  $('#thread').append(node);scrollDown();return node;
 }
-function scrollDown(force=false){if(force||main.scrollHeight-main.scrollTop-main.clientHeight<600)main.scrollTop=main.scrollHeight}
+// Follow the stream only while the reader is at the bottom: scrolling up stops
+// following, scrolling back down (or sending) resumes it. Jumps are instant so
+// a smooth scroll in progress never reads as the reader leaving the bottom.
+let following=true;
+main.addEventListener('scroll',()=>{following=main.scrollHeight-main.scrollTop-main.clientHeight<80},{passive:true});
+function scrollDown(force=false){if(force)following=true;if(following)main.scrollTo({top:main.scrollHeight,behavior:'instant'})}
 function sourceDomain(url){try{return new URL(url).hostname.replace(/^www\./,'')}catch{return 'Source'}}
 function openSources(sources,id){
  const ordered=id?[...sources].sort((a,b)=>Number(b.id===id)-Number(a.id===id)):sources;
