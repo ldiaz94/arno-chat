@@ -15,7 +15,7 @@ Answers stream as they arrive in both chat modes. Expand **Thinking** to view pr
 5. Browse **Code & changes** to navigate files or inspect highlighted diffs. Use **Session actions → Review & publish** to create a new branch/commit and pull request.
 6. Open your **avatar/name** for provider keys, system instructions, skills, MCP, and connection settings.
 
-Conversation-row menus support rename/delete without opening a conversation. The interface includes dark/light themes, safe Markdown, copy/export, persistent drafts, usage/timings, source previews, and distinct chat/coding loading states. The code pane docks on ultrawide screens and becomes a dialog on smaller displays.
+Conversation-row menus support rename/delete without opening a conversation. The interface includes dark/light themes, safe Markdown, copy/export, persistent drafts, editable chat messages, usage/timings with per-turn and per-session cost at current list prices, resizable tables, source previews, and distinct chat/coding loading states. The code pane docks on ultrawide screens and becomes a dialog on smaller displays.
 
 ## Providers and research
 
@@ -52,6 +52,6 @@ Browser API fixtures test interaction contracts; they are not evidence of real O
 
 This is a private deployment restricted to ldiaz94 while it uses shared provider credentials. It is not a publicly enrolled commercial service.
 
-Coding workspaces use the pinned runner image in deployment.json. Completed turns checkpoint files and retain up to 20 recent turns, with bounded model context. Snapshot retention follows Cloudflare's 30-day window. Arbitrary dependency downloads, a live terminal, MCP OAuth/stdio installation, and unlimited context are not implemented.
+Coding workspaces use the pinned runner image in wrangler.jsonc. Completed turns checkpoint files and retain up to 20 recent turns, with bounded model context. Snapshot retention follows Cloudflare's 30-day window. Arbitrary dependency downloads, a live terminal, MCP OAuth/stdio installation, and unlimited context are not implemented.
 
 OpenAI/Anthropic adapters and key handling have protocol tests; real calls to those providers require the user's keys. No blanket claim of perfect security or complete Claude Code feature parity is made.

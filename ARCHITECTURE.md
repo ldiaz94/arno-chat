@@ -7,6 +7,7 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 | File | Responsibility |
 | --- | --- |
 | worker.js | Public authenticated routes, OAuth, session coordination, task alarms, repository import, GitHub publication |
+| prices.mjs | Daily-cached list prices (Ollama pricing page, OpenRouter for Anthropic/OpenAI) and turn cost |
 | gateway.mjs | Fixed-destination Ollama gateway, bounded payloads, streaming usage observation |
 | context.mjs | Repository provenance and bounded conversation context for every Arno invocation |
 | models.mjs | Live tool-capable cloud catalog and explicit fallback |
@@ -21,7 +22,7 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 | client.mjs | Browser state machine, responsive workspace, search, dialogs, task polling |
 | theme.mjs | Responsive dark/light design tokens, layout, typography, reduced-motion rules |
 | render.mjs | Escaping Markdown renderer, CLI-banner cleanup, safe diff rendering |
-| deployment.json | Worker modules, durable namespace, pinned container image, observability |
+| wrangler.jsonc | Worker config, durable namespace, pinned container image, observability; `npx wrangler deploy` |
 | test.mjs | Backend and rendering regression tests |
 | design-test.cjs | Browser workflow and viewport tests against current local HTML |
 

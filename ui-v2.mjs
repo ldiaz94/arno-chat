@@ -1,6 +1,6 @@
 import {CSS} from './theme.mjs';
 import {CLIENT} from './client.mjs';
-import {markdown,cleanOutput,diffHtml} from './render.mjs';
+import {markdown,cleanOutput,diffHtml,tableResize} from './render.mjs';
 import {SETTINGS_CLIENT} from './settings-client.mjs';
 
 /** Static application shell. DOM IDs form the browser/controller contract.
@@ -161,4 +161,4 @@ const BODY=String.raw`<div id="shell">
  * identical. Upstream logo/mascot resources are served from our own origin.
  */
 export const HTML='<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0d1117"><link rel="icon" href="/brand/logo.svg"><title>Arno · Chat & coding</title><style>'+CSS+'</style></head><body>'+BODY+
- '<script type="module">const markdown='+markdown.toString()+';const cleanOutput='+cleanOutput.toString()+';const diffHtml='+diffHtml.toString()+';'+CLIENT+SETTINGS_CLIENT+'</script></body></html>';
+ '<script type="module">const markdown='+markdown.toString()+';const cleanOutput='+cleanOutput.toString()+';const diffHtml='+diffHtml.toString()+';const tableResize='+tableResize.toString()+';tableResize(document);'+CLIENT+SETTINGS_CLIENT+'</script></body></html>';

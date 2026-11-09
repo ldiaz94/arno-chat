@@ -17,7 +17,7 @@ const source=readFileSync(new URL('./worker.js',import.meta.url),'utf8')
  .replace("import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers';","class DurableObject {constructor(ctx,env){this.ctx=ctx;this.env=env}}; class WorkerEntrypoint {}")
  .replace("import { modelRequest } from './gateway.mjs';",'')
  .replace("import { HTML } from './ui-v2.mjs';",'const HTML="";')
- .replace("import MASCOT from './mascot.webp';",'const MASCOT=new Uint8Array();')
+ .replace("import MASCOT from './brand/mascot.webp';",'const MASCOT=new Uint8Array();')
  .replace("from './models.mjs'", "from '"+new URL('./models.mjs',import.meta.url).href+"'")
  .replace("from './publish.mjs'", "from '"+new URL('./publish.mjs',import.meta.url).href+"'")
  .replace("from './context.mjs'", "from '"+new URL('./context.mjs',import.meta.url).href+"'")
@@ -26,7 +26,8 @@ const source=readFileSync(new URL('./worker.js',import.meta.url),'utf8')
  .replace("from './account.mjs'", "from '"+new URL('./account.mjs',import.meta.url).href+"'")
  .replace("from './mcp.mjs'", "from '"+new URL('./mcp.mjs',import.meta.url).href+"'")
  .replace("from './branding.mjs'", "from '"+new URL('./branding.mjs',import.meta.url).href+"'")
- .replace("from './web.mjs'", "from '"+new URL('./web.mjs',import.meta.url).href+"'");
+ .replace("from './web.mjs'", "from '"+new URL('./web.mjs',import.meta.url).href+"'")
+ .replace("from './prices.mjs'", "from '"+new URL('./prices.mjs',import.meta.url).href+"'");
 const {ArnoProbe,default:worker}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
 test('served browser script parses, including escaped message strings',()=>{
  const client=HTML.split('<script type="module">')[1].split('</script>')[0];
@@ -127,6 +128,12 @@ test('Markdown renders formatting while escaping HTML and refusing executable li
  assert.match(html,/<h3>Heading/);assert.match(html,/<strong>bold/);assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/href="javascript:/);assert.match(html,/<code>code/);
  assert.equal(cleanOutput('\nsafety: auto, working on a copy at /tmp\nAnswer'),'Answer');
 });
+test('Markdown tables honour alignment, escaped pipes and code-span pipes',()=>{
+ const html=markdown('| a | b | c |\n|:--|:-:|--:|\n| x\\|y | \x60p|q\x60 | $1.20 |\n| short |');
+ assert.match(html,/<th style="text-align:left">a/);assert.match(html,/<th style="text-align:center">b/);assert.match(html,/<th style="text-align:right">c/);
+ assert.match(html,/<td style="text-align:left">x\|y</);assert.match(html,/<code>p\|q<\/code>/);assert.equal((html.match(/<td/g)||[]).length,6);assert.equal((html.match(/col-resize/g)||[]).length,3);
+ assert.doesNotMatch(markdown('a | b\nnot a delimiter'),/<table/);
+});
 test('follow-up prompts retain conversation and original GitHub identity',()=>{
  const p=buildPrompt({repo:'owner/repo',ref:'feature',sourceSha:'abc'},[{prompt:'Remember lemon-42',summary:'Remembered'}],'What was the phrase?');
  assert.match(p,/lemon-42/);assert.match(p,/https:\/\/github.com\/owner\/repo/);assert.match(p,/"branch":"feature"/);
@@ -141,7 +148,7 @@ test('SSE usage capture handles split chunks without changing streamed bytes',as
  let usage;const text='data: {"choices":[]}\n\ndata: {"usage":{"prompt_tokens":42,"completion_tokens":9}}\n\ndata: [DONE]\n\n';
  const encoder=new TextEncoder(),stream=new ReadableStream({start(c){c.enqueue(encoder.encode(text.slice(0,35)));c.enqueue(encoder.encode(text.slice(35)));c.close()}});
  const result=await new Response(stream.pipeThrough(usageStream(async u=>usage=u))).text();
- assert.equal(result,text);assert.deepEqual(usage,{prompt_tokens:42,completion_tokens:9});
+ assert.equal(result,text);assert.deepEqual(usage,{prompt_tokens:42,completion_tokens:9,cached_tokens:0,cache_write_tokens:0});
 });
 test('publishing checks review digest and creates only a new branch from pinned source',async()=>{
  const authId='11111111-1111-1111-1111-111111111111',changes={repo:'test/repo',ref:'main',sourceSha:'a'.repeat(40),files:[{path:'demo.txt',content:'reviewed content',mode:'100644'}]};
@@ -239,7 +246,7 @@ test('Anthropic gateway uses native protocol and merges usage without exposing c
  });
  await r.text();assert.equal(seen.url,'https://api.anthropic.com/v1/messages');assert.equal(seen.opt.headers['x-api-key'],'test-only');
  assert.equal(seen.body.system[0].text,'User preference');assert.equal(seen.body.system[1].text,'Harness');
- assert.deepEqual(usage,{prompt_tokens:25,completion_tokens:7});
+ assert.deepEqual(usage,{prompt_tokens:25,completion_tokens:7,cached_tokens:0,cache_write_tokens:0});
 });
 test('account instructions include only enabled skills and MCP rejects private endpoints',()=>{
  assert.equal(instructions({systemPrompt:'Be concise',skills:[{name:'Tests',content:'Run checks',enabled:true},{name:'Hidden',content:'No',enabled:false}]}),'Be concise\n\nSkill: Tests\nRun checks');
@@ -275,4 +282,14 @@ test('conversation rename preserves repository identity and delete rejects activ
  assert.equal(r.status,200);assert.equal((await f.ctx.storage.get('session')).repo,'owner/repo');
  assert.equal((await f.ctx.storage.get('session')).title,'My research');
  assert.equal((await f.obj.fetch(new Request('https://internal/session/delete',{method:'POST'}))).status,409);
+});
+test('prices parse provider tables and count cached tokens once',async()=>{
+ const {parseOllama,parseOpenRouter,priceOf,tokens,cost}=await import('./prices.mjs');
+ const ollama=parseOllama('<table><tr><td>Model</td><td>Input</td><td>Cached input</td><td>Output</td></tr><tr><td><a href="/library/glm-5.3">glm-5.3</a></td><td>$1.40</td><td>$0.26</td><td>$4.40</td></tr><tr><td>glm-5.3 (Off-Peak)</td><td>$0.70</td><td>$0.13</td><td>$2.20</td></tr></table><p>Off-peak pricing apply outside 12:00 and 18:00 UTC on weekdays</p>');
+ assert.equal(priceOf(ollama,'glm-5.3',Date.UTC(2026,10,9,12)).inp,1.4);assert.equal(priceOf(ollama,'glm-5.3',Date.UTC(2026,10,9,18)).inp,0.7);assert.equal(priceOf(ollama,'glm-5.3',Date.UTC(2026,10,8,13)).inp,0.7);
+ const router=parseOpenRouter({data:[{id:'anthropic/claude-opus-5.5',pricing:{prompt:'0.000004',completion:'0.00002',input_cache_read:'0.0000002'}}]});
+ assert.equal(priceOf(ollama,'glm-5.3:cloud',Date.UTC(2026,10,9,15)).inp,1.4);assert.equal(priceOf(router,'anthropic/claude-opus-5-5').out,20);
+ assert.deepEqual(tokens({prompt_tokens:100,completion_tokens:5,prompt_tokens_details:{cached_tokens:40}}),{input:60,cached:40,write:0,output:5});
+ assert.deepEqual(tokens({input_tokens:60,cache_read_input_tokens:40,output_tokens:5}),{input:60,cached:40,write:0,output:5});
+ assert.equal(cost({inp:1,cached:0.1,out:10},{measuredCalls:1,inputTokens:1e6,cachedTokens:5e5,outputTokens:1e5}).toFixed(2),'1.55');
 });

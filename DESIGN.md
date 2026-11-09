@@ -17,7 +17,7 @@ Assistant prose supports safe Markdown. Raw CLI setup banners move into collapsi
 
 The composer uses an explicit send button and Cmd/Ctrl+Enter. Enter alone adds a newline, which is useful for coding prompts on mobile. Drafts persist per session in the tab. The model dialog supports name/identifier search and Cmd/Ctrl+K.
 
-Turn footers show completion, wall time, and measured tokens when available. The Usage & workspace dialog separates provider counters from phase timings and repository identity. Unknown statistics use a dash and explanatory text.
+Turn footers show completion, wall time, measured tokens, and list-price cost when available. Regular-chat messages have an Edit button; sending an edit replaces that message and the turns after it. Tables size to their content: short cells stay on one line, long ones wrap at about 40 characters, wide tables scroll inside their frame, and column edges can be dragged (double-click resets). The Usage & workspace dialog separates provider counters from phase timings and repository identity. Unknown statistics use a dash and explanatory text.
 
 ## Honest state
 

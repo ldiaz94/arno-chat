@@ -7,10 +7,11 @@ import { buildPrompt } from './context.mjs';
 import { plainChat } from './chat.mjs';
 import { READ_FILE,validPath } from './files.mjs';
 import { LOGO } from './branding.mjs';
-import MASCOT from './mascot.webp';
+import MASCOT from './brand/mascot.webp';
 import {profile,credential,instructions,providerModel,providerModels,accountRoute,unseal} from './account.mjs';
 import {proxyMcp,testMcp} from './mcp.mjs';
 import {WEB_INSTRUCTIONS,research,citedSources,webMcp} from './web.mjs';
+import {prices,priceOf,cost} from './prices.mjs';
 
 const COOKIE = 'arno_session';
 const MAX_ARCHIVE = 50 * 1024 * 1024;
@@ -132,7 +133,8 @@ export class ArnoProbe extends DurableObject {
     return new Response(stream,{headers:{...SECURITY,'Content-Type':'text/event-stream','X-Accel-Buffering':'no'}});
   }
   /** Shared persistent transcript/statistics path for plain and coding turns. */
-  async saveTurn(result,prompt,snapshot,sourceRegistry){
+  async saveTurn(result,prompt,snapshot,sourceRegistry,editAt){
+    if(editAt){const turns=await this.ctx.storage.list({prefix:'turn:'});await this.ctx.storage.delete([...turns].filter(([,t])=>t.at>=editAt).map(([k])=>k))}
     // Keep individual KV values bounded even with multi-byte code/log output.
     const clip=(s,n)=>new TextDecoder().decode(new TextEncoder().encode(s||'').slice(0,n));
     result.summary=clip(result.summary,16000);result.reasoning=clip(result.reasoning,12000);result.diff=clip(result.diff,40000);result.diagnostics=clip(result.diagnostics,8000);
@@ -141,6 +143,7 @@ export class ArnoProbe extends DurableObject {
       result.diff=clip(result.diff,24000);result.diagnostics=clip(result.diagnostics,4000);result.reasoning=clip(result.reasoning,4000);result.truncated=true;
     }
     const stats=(await this.ctx.storage.get('stats'))||{turns:0,calls:0,inputTokens:0,outputTokens:0,measuredCalls:0,totalMs:0};
+    result.model||=(await this.ctx.storage.get('session'))?.model;result.usage.cost=cost(priceOf(await prices(),result.model),result.usage);stats.cost=(stats.cost||0)+(result.usage.cost||0);stats.unpriced=(stats.unpriced||0)+Number(result.usage.cost==null&&!!result.usage.measuredCalls);
     stats.turns++;stats.calls+=result.usage.calls;stats.measuredCalls+=result.usage.measuredCalls;stats.inputTokens+=result.usage.inputTokens||0;stats.outputTokens+=result.usage.outputTokens||0;stats.totalMs+=result.timing.totalMs;
     const records={stats},legacy=await this.ctx.storage.get('history');
     stats.webSearches=(stats.webSearches||0)+(result.webUsage?.searches||0);stats.webReads=(stats.webReads||0)+(result.webUsage?.reads||0);
@@ -151,13 +154,15 @@ export class ArnoProbe extends DurableObject {
     await this.ctx.storage.put(records);if(legacy)await this.ctx.storage.delete('history');
     const all=await this.ctx.storage.list({prefix:'turn:'});if(all.size>20)await this.ctx.storage.delete([...all.keys()].slice(0,all.size-20));
   }
-  async plainTurn(session,prompt){
+  /** editAt names the turn an edited message replaces: it and every later
+   * turn are left out of the context, and dropped once the new answer saves. */
+  async plainTurn(session,prompt,editAt){
     this.inFlight=true;this.chatAbort=new AbortController();const timer=setTimeout(()=>this.chatAbort?.abort(),240000),began=Date.now();
     try{
       await this.phase('thinking',{workspace:'chat',startupMs:0});
       const p=await profile(this.env,session.ownerId),selected=providerModel(session.model);
       const sources=[...(session.sources||[])],counts={searches:0,reads:0},webKey=await credential(this.env,session.ownerId,p,'ollama');
-      const previous=await this.history();
+      const previous=(await this.history()).filter(t=>!editAt||t.at<editAt);
       const jobId=(await this.ctx.storage.get('job'))?.id;
       const result=await plainChat({model:selected.id,provider:selected.provider,history:previous,prompt,key:await credential(this.env,session.ownerId,p,selected.provider),instructions:[instructions(p),WEB_INSTRUCTIONS].filter(Boolean).join('\n\n'),signal:this.chatAbort.signal,
        onRound:()=>this.phase('thinking',{workspace:'chat',startupMs:0}),
@@ -170,7 +175,7 @@ export class ArnoProbe extends DurableObject {
       result.timing={workspace:'chat',startupMs:0,executionMs:Date.now()-began,checkpointMs:0,totalMs:Date.now()-began};
       await this.phase('saving',{workspace:'chat'});
       if((await this.ctx.storage.get('job'))?.status==='cancelled')throw Error('Chat cancelled');
-      await this.saveTurn(result,prompt,null,sources);
+      await this.saveTurn(result,prompt,null,sources,editAt);
       const current=await this.ctx.storage.get('session');
       if(current.title==='General chat'&&!current.customTitle&&session.ownerId&&session.id){
         const meta={...current,title:prompt.slice(0,70)};await this.ctx.storage.put('session',meta);
@@ -342,13 +347,15 @@ export class ArnoProbe extends DurableObject {
     if(url.pathname==='/session/events'&&request.method==='GET')return this.events();
     if(url.pathname==='/session/enqueue' && request.method==='POST'){
       const body=await request.json();
-      if(typeof body.prompt!=='string'||!body.prompt.trim()||body.prompt.length>8000||!/^[-a-f0-9]{36}$/.test(body.id||''))return json({error:'Invalid message'},400);
+      if(typeof body.prompt!=='string'||!body.prompt.trim()||body.prompt.length>8000||!/^[-a-f0-9]{36}$/.test(body.id||'')||(body.editAt!=null&&!Number.isSafeInteger(body.editAt)))return json({error:'Invalid message'},400);
       return this.ctx.storage.transaction(async txn=>{
         const current=await txn.get('job');
         if(current?.id===body.id)return json(current,202);
         if(current&&['queued','running'].includes(current.status))return json({error:'A turn is already running'},409);
-        if(!await txn.get('session'))return json({error:'Session not found'},404);
-        const job={id:body.id,prompt:body.prompt,status:'queued',createdAt:Date.now()};
+        const session=await txn.get('session');
+        if(!session)return json({error:'Session not found'},404);
+        if(body.editAt&&session.kind!=='chat')return json({error:'Only chat messages can be edited'},400);
+        const job={id:body.id,prompt:body.prompt,editAt:body.editAt||null,status:'queued',createdAt:Date.now()};
         await txn.put('job',job);await txn.setAlarm(Date.now()+100);
         return json(job,202);
       });
@@ -432,7 +439,7 @@ export class ArnoProbe extends DurableObject {
         const q=await txn.get('modelQuota');if(!q||q.turnId!==turnId)return;
         const safe=n=>Number.isSafeInteger(n)&&n>=0?n:0;
         q.inputTokens=(q.inputTokens||0)+safe(usage.prompt_tokens);
-        q.outputTokens=(q.outputTokens||0)+safe(usage.completion_tokens);
+        q.outputTokens=(q.outputTokens||0)+safe(usage.completion_tokens);q.cachedTokens=(q.cachedTokens||0)+safe(usage.cached_tokens);q.cacheWriteTokens=(q.cacheWriteTokens||0)+safe(usage.cache_write_tokens);
         q.measuredCalls=(q.measuredCalls||0)+1;await txn.put('modelQuota',q);
       });return new Response(null,{status:204});
     }
@@ -465,10 +472,10 @@ export class ArnoProbe extends DurableObject {
       if (this.inFlight) return json({ error: 'Arno is already working' }, 409);
       const session = await this.ctx.storage.get('session');
       if (!session) return json({ error: 'Session not found' }, 404);
-      const { prompt } = await request.json();
+      const { prompt,editAt } = await request.json();
       if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 8000) return json({ error: 'Invalid prompt' }, 400);
       if(this.inFlight)return json({error:'Arno is already working'},409);
-      if(session.kind==='chat')return this.plainTurn(session,prompt.trim());
+      if(session.kind==='chat')return this.plainTurn(session,prompt.trim(),editAt);
       this.inFlight = true;
       try {
         const began=Date.now(),turnId=crypto.randomUUID();
@@ -508,7 +515,7 @@ export class ArnoProbe extends DurableObject {
           timing:{startupMs,executionMs,workspace}
         };
         const q=await this.ctx.storage.get('modelQuota');
-        result.usage={calls:q?.used||0,measuredCalls:q?.measuredCalls||0,inputTokens:q?.measuredCalls?q.inputTokens:null,outputTokens:q?.measuredCalls?q.outputTokens:null};
+        result.usage={calls:q?.used||0,measuredCalls:q?.measuredCalls||0,inputTokens:q?.measuredCalls?q.inputTokens:null,outputTokens:q?.measuredCalls?q.outputTokens:null,cachedTokens:q?.cachedTokens||0,cacheWriteTokens:q?.cacheWriteTokens||0};
         result.sources=citedSources(result.summary,q?.sources||[],previous);result.webUsage=q?.webCounts||{searches:0,reads:0};
         const checkpointBegan=Date.now();
         const snapshot=await this.ctx.container.snapshotContainer({});
@@ -531,7 +538,7 @@ export class ArnoProbe extends DurableObject {
     if(job?.status==='queued'){
       await this.ctx.storage.put('job',{...job,status:'running'});
       try{
-        const r=await this.fetch(new Request('https://internal/session/run',{method:'POST',body:JSON.stringify({prompt:job.prompt})}));
+        const r=await this.fetch(new Request('https://internal/session/run',{method:'POST',body:JSON.stringify({prompt:job.prompt,editAt:job.editAt})}));
         const result=await r.json();
         const ok=r.ok&&(!result.exitCode||result.exitCode===0);
         if(!ok&&!result.error)result.error=result.summary||'The coding task failed.';

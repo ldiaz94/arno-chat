@@ -49,7 +49,10 @@ function message(role,text,result={}){
  const node=document.createElement('article');node.className='turn '+(role==='You'?'user':'assistant');
  const stamp=result.at?new Date(result.at).toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'}):'';
  node.innerHTML='<div class="turn-header"><div class="avatar">'+(role==='You'?esc((state.user?.login||'Y').slice(0,1).toUpperCase()):'a')+'</div><strong>'+role+'</strong>'+(role==='Arno'?'<small>'+esc(modelName(result.model||state.session?.model))+'</small>':'')+'<span class="spacer"></span><small>'+stamp+'</small></div>';
- if(role==='You'){node.innerHTML+='<div class="user-content">'+esc(text)+'</div>'}
+ if(role==='You'){
+  node.innerHTML+='<div class="user-content">'+esc(text)+'</div>';if(result.at)node.dataset.at=result.at;
+  if(state.session?.kind==='chat'){node.querySelector('.spacer').insertAdjacentHTML('afterend','<button type="button" class="edit-message">Edit</button>');node.querySelector('.edit-message').onclick=()=>editMessage(node,text)}
+ }
  else {
   const cleaned=cleanOutput(text);
   if(result.reasoning)node.innerHTML+='<details class="model-thinking"><summary>Thinking <span>Provided by the model</span></summary><div class="thinking-text">'+esc(result.reasoning)+'</div></details>';
@@ -57,7 +60,7 @@ function message(role,text,result={}){
   node._sources=result.sources||[];
   if(node._sources.length)node.innerHTML+='<div class="source-strip">'+node._sources.slice(0,3).map(s=>'<button class="source-card" type="button" data-citation="'+s.id+'"><span class="source-domain">'+esc(sourceDomain(s.url))+' <b>'+s.id+'</b></span><strong>'+esc(s.title||s.url)+'</strong></button>').join('')+(node._sources.length>3?'<button class="source-card" data-all-sources>View all '+node._sources.length+' sources</button>':'')+'</div>';
   const u=result.usage,t=result.timing,counts=diffCounts(result.diff);
-  node.innerHTML+='<div class="turn-footer"><span>'+icon('check')+' '+(result.exitCode?'Finished with errors':'Completed')+'</span>'+(t?'<span>'+duration(t.totalMs)+'</span>':'')+(u?.measuredCalls?'<span>'+num((u.inputTokens||0)+(u.outputTokens||0))+' tokens</span>':'')+'<button type="button" class="copy-answer" aria-label="Copy answer">'+icon('copy')+' Copy</button></div>';
+  node.innerHTML+='<div class="turn-footer"><span>'+icon('check')+' '+(result.exitCode?'Finished with errors':'Completed')+'</span>'+(t?'<span>'+duration(t.totalMs)+'</span>':'')+(u?.measuredCalls?'<span>'+num((u.inputTokens||0)+(u.outputTokens||0))+' tokens</span>':'')+(u?.cost!=null?'<span>'+money(u.cost)+'</span>':'')+'<button type="button" class="copy-answer" aria-label="Copy answer">'+icon('copy')+' Copy</button></div>';
   if(result.diff)node.innerHTML+='<details class="details"><summary>'+counts.files+' changed file'+(counts.files===1?'':'s')+' <span class="tag">+'+counts.add+' −'+counts.remove+'</span></summary><div class="diff-view">'+diffHtml(result.diff)+'</div></details>';
   if(result.diagnostics||cleaned!==String(text||'').trim())node.innerHTML+='<details class="details"><summary>Execution details</summary><pre>'+esc((result.diagnostics||'')+'\n'+text)+'</pre></details>';
   node.querySelector('.copy-answer').onclick=()=>copy(cleaned);
@@ -91,6 +94,7 @@ async function resume(id){
   composer.hidden=false;modelButton();busy(false);prompt.value=sessionStorage.getItem('draft:'+id)||'';resizePrompt();scrollDown(true);watchJob(id,gen);
  }catch(e){main.innerHTML='<div class="empty"><h2>Couldn’t open this session</h2><p>'+esc(e.message)+'</p><button id="retry-open">Try again</button></div>';$('#retry-open').onclick=()=>resume(id)}
 }
+function money(n){return n==null?'—':'$'+n.toFixed(n<0.01?4:2)}
 function sessionStats(){return state.session?.stats||{turns:state.session?.history?.length||0,calls:null,inputTokens:null,outputTokens:null,measuredCalls:0,totalMs:null}}
 async function newChat(){
  const model=state.session?.model||state.selectedModel||'mistral-large-4:cloud';
@@ -124,8 +128,8 @@ async function browse(path){
 function openUsage(){
  const s=state.session,stats=sessionStats(),history=s?.history||[],last=history.at(-1);
  $('#usage-body').innerHTML='<div class="eyebrow">This session</div><h3>'+esc(s?.repo||s?.title||'No session selected')+'</h3><div class="stat-grid">'+[
-  ['Completed turns',num(stats.turns)],['Model requests',num(stats.calls)],['Input tokens',stats.measuredCalls?num(stats.inputTokens):'—'],['Output tokens',stats.measuredCalls?num(stats.outputTokens):'—']
- ].map(([name,value])=>'<div class="metric"><b>'+value+'</b><span>'+name+'</span></div>').join('')+'</div><p class="caption">Tokens are reported by the selected provider. A dash means usage was not recorded. Historical turns may have incomplete usage. Subscription balance and monetary cost are not available.</p>'+
+  ['Completed turns',num(stats.turns)],['Model requests',num(stats.calls)],['Input tokens',stats.measuredCalls?num(stats.inputTokens):'—'],['Output tokens',stats.measuredCalls?num(stats.outputTokens):'—'],['Cost',stats.cost||stats.turns?money(stats.cost||0)+(stats.unpriced?' + '+num(stats.unpriced)+' unpriced':''):'—']
+ ].map(([name,value])=>'<div class="metric"><b>'+value+'</b><span>'+name+'</span></div>').join('')+'</div><p class="caption">Tokens are reported by the selected provider. A dash means usage was not recorded. Historical turns may have incomplete usage. Cost uses each model’s list price on the day of the turn (Ollama’s pricing page; Anthropic and OpenAI via OpenRouter); unpriced turns used a model missing from those tables. Ollama’s off-peak rates apply to turns saved off-peak. Web searches are not included.</p>'+
  (last?.timing?'<div class="eyebrow">Last turn</div>'+[['Workspace',last.timing.workspace||'—'],['Preparation',duration(last.timing.startupMs)],['Agent execution',duration(last.timing.executionMs)],['Checkpoint',duration(last.timing.checkpointMs)],['Total',duration(last.timing.totalMs)]].map(([k,v])=>'<div class="timing-row"><span>'+k+'</span><strong>'+v+'</strong></div>').join(''):'<p class="caption">Timing measurements will appear after a new turn.</p>')+
  (s&&s.kind!=='chat'?'<div class="section-title"><h2>Repository identity</h2></div><p><a href="'+esc(s.remoteUrl||'https://github.com/'+s.repo)+'" target="_blank" rel="noopener noreferrer">'+esc(s.repo)+'</a></p><div class="timing-row"><span>Branch</span><strong>'+esc(s.ref||'main')+'</strong></div><div class="timing-row"><span>Source commit</span><strong>'+esc(s.sourceSha?.slice(0,12)||'Not recorded for this session')+'</strong></div><p class="caption">The workspace is imported from a GitHub snapshot. Git history and GitHub writes require the publishing workflow.</p>':'');
  $('#usage-dialog').showModal();
@@ -213,7 +217,7 @@ async function watchJob(id,gen,expected){
    if(!active&&!expected&&job.prompt)message('You',job.prompt);active=true;state.job=job;
    if(job.status==='completed'||job.status==='failed'||job.status==='cancelled'){
     stopLive?.();$('#activity')?.remove();$('#live-response')?.remove();
-    if(job.status==='completed'){message('Arno',job.result.summary,{...job.result,at:job.finishedAt});const updated=await api('/api/sessions/'+id);if(gen===state.generation){state.session={id,...updated};state.sessions=state.sessions.map(s=>s.id===id?{...s,...updated}:s);sidebar();title(updated.title||updated.repo,updated.kind==='chat'?'Private chat · Web research enabled':(updated.ref||'main')+' · GitHub workspace')}toast(state.session?.kind==='chat'?'Response saved':'Turn complete · workspace saved')}
+    if(job.status==='completed'){message('Arno',job.result.summary,{...job.result,at:job.finishedAt});const updated=await api('/api/sessions/'+id);if(gen===state.generation){state.session={id,...updated};const asked=[...document.querySelectorAll('#thread .turn.user')].at(-1),saved=updated.history?.at(-1)?.at;if(asked&&saved)asked.dataset.at=saved;state.sessions=state.sessions.map(s=>s.id===id?{...s,...updated}:s);sidebar();title(updated.title||updated.repo,updated.kind==='chat'?'Private chat · Web research enabled':(updated.ref||'main')+' · GitHub workspace')}toast(state.session?.kind==='chat'?'Response saved':'Turn complete · workspace saved')}
     else{const node=document.createElement('div');node.className='banner';node.textContent=job.status==='cancelled'?'Task stopped. The next turn restores the last completed checkpoint.':job.result?.error||'Task failed. Your previous checkpoint is preserved.';$('#thread').append(node);prompt.value=job.prompt||'';toast(job.status==='cancelled'?'Task stopped':'Task failed. Review the error and retry when ready.')}
     return;
    }
@@ -225,8 +229,21 @@ async function watchJob(id,gen,expected){
 }
 async function submit(e){
  e.preventDefault();if(!state.session||state.busy||!prompt.value.trim())return;
- const id=state.session.id,gen=state.generation,body={id:crypto.randomUUID(),prompt:prompt.value.trim()};
- $('#thread .starter')?.remove();message('You',body.prompt);prompt.value='';resizePrompt();sessionStorage.removeItem('draft:'+id);busy(true);activity({stage:'queued',createdAt:Date.now()});scrollDown(true);
+ const text=prompt.value.trim();prompt.value='';resizePrompt();sessionStorage.removeItem('draft:'+state.session.id);await send(text);
+}
+/** Edit a saved chat message in place; sending replaces it and every later turn. */
+function editMessage(node,text){
+ if(state.busy)return toast('Wait for the current turn to finish');
+ const at=Number(node.dataset.at);if(!at)return toast('This message can be edited once its answer is saved');
+ const box=node.querySelector('.user-content');box.innerHTML='<textarea class="edit-box" rows="3"></textarea><div class="edit-actions"><button type="button">Cancel</button><button type="button" class="primary">Send</button></div>';
+ const area=box.querySelector('textarea');area.value=text;area.focus();
+ const [cancel,save]=box.querySelectorAll('button');
+ cancel.onclick=()=>{box.textContent=text};
+ save.onclick=()=>{const v=area.value.trim();if(!v||state.busy)return;while(node.nextSibling)node.nextSibling.remove();node.remove();send(v,at)};
+}
+async function send(text,editAt){
+ const id=state.session.id,gen=state.generation,body={id:crypto.randomUUID(),prompt:text,...(editAt?{editAt}:{})};
+ $('#thread .starter')?.remove();message('You',body.prompt);busy(true);activity({stage:'queued',createdAt:Date.now()});scrollDown(true);
  try{await api('/api/sessions/'+id+'/messages',{method:'POST',body:JSON.stringify(body)})}catch{toast('Checking whether your message was saved…')}
  await watchJob(id,gen,body);
 }

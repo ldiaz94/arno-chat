@@ -12,9 +12,7 @@ No browser fixture test is evidence of real OAuth authorization or GitHub public
 
 ## Deployment
 
-Deploy every JavaScript module referenced by worker.js and ui-v2.mjs. Current modules are worker.js, gateway.mjs, models.mjs, publish.mjs, context.mjs, ui-v2.mjs, render.mjs, theme.mjs, and client.mjs.
-
-Use deployment.json as multipart Worker metadata. Preserve secret bindings with keep_bindings. Keep the existing ArnoProbe export and PROBE binding to preserve session routing and storage. Its container application uses the durable_object scheduling policy and the pinned runner digest in deployment.json. The account.mjs, mcp.mjs, web.mjs, chat.mjs, files.mjs, branding.mjs, and settings-client.mjs modules must also be uploaded. Upload brand/mascot.webp as an application/octet-stream module named mascot.webp.
+Deploy with `npx wrangler deploy` (wrangler is a dev dependency; run `npm install` first). wrangler.jsonc names the Worker, the PROBE Durable Object binding and its ArnoProbe sqlite export (keep both to preserve session routing and storage), the container's pinned runner image digest, and the login allowlist. Secrets are kept across deploys.
 
 Required encrypted Worker secrets:
 
@@ -29,7 +27,7 @@ Production: https://arno-compat-probe.lucelad.workers.dev
 
 OAuth callback: https://arno-compat-probe.lucelad.workers.dev/auth/callback
 
-An authenticated Cloudflare connector is sufficient for module deployment; no provider secret value should be retrieved, printed, or placed in the repository.
+Wrangler must be logged in (`npx wrangler login`); no provider secret value should be retrieved, printed, or placed in the repository.
 
 ## Troubleshooting
 

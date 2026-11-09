@@ -1,0 +1,20 @@
+// Deploy with `npx wrangler deploy`. Secrets are kept by Cloudflare across
+// deploys and never live here (see OPERATIONS.md).
+{
+  "name": "arno-compat-probe",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-30",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "vars": { "ALLOWED_GITHUB_LOGINS": "ldiaz94" },
+  "durable_objects": { "bindings": [{ "name": "PROBE", "class_name": "ArnoProbe" }] },
+  "exports": { "ArnoProbe": { "type": "durable-object", "storage": "sqlite" } },
+  "containers": [{
+    "class_name": "ArnoProbe",
+    "scheduling_policy": "durable_object",
+    "images": { "runner": { "image": "registry.cloudflare.com/8186b19f2173607e1dc594e4dd579aed/arno-runner@sha256:30b625292c310b48ed5459bf7aacc0a7dc18496354fb35104d0e8bc5b3eba084" } }
+  }],
+  "rules": [{ "type": "Data", "globs": ["**/*.webp"], "fallthrough": true }],
+  "observability": { "enabled": true, "head_sampling_rate": 1, "traces": { "enabled": true } },
+  "limits": { "cpu_ms": 100 }
+}

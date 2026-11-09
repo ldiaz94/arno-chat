@@ -1,5 +1,6 @@
 import {WEB_TOOLS} from './web.mjs';
 import {displayDelta} from './gateway.mjs';
+import {tokens} from './prices.mjs';
 
 /** Decode text, native tool calls, and reported usage from either provider's
  * streaming dialect. Credential-bearing headers never enter these results. */
@@ -39,7 +40,7 @@ export async function plainChat({model,history,prompt,key,provider='ollama',inst
  if(instructions&&provider!=='anthropic')messages.unshift({role:'system',content:instructions});
  if(!key)throw Error('Save an API key for '+provider+' in Account settings');
  const endpoint=provider==='anthropic'?'https://api.anthropic.com/v1/messages':provider==='openai'?'https://api.openai.com/v1/chat/completions':'https://ollama.com/v1/chat/completions';
- const total={calls:0,measuredCalls:0,inputTokens:0,outputTokens:0};
+ const total={calls:0,measuredCalls:0,inputTokens:0,cachedTokens:0,cacheWriteTokens:0,outputTokens:0};
  for(let round=0;round<8;round++){
   await onRound();
   const tools=runTool&&round<7?(provider==='anthropic'?WEB_TOOLS.map(t=>({name:t.name,description:t.description,input_schema:t.inputSchema})):WEB_TOOLS.map(t=>({type:'function',function:{name:t.name,description:t.description,parameters:t.inputSchema}}))):undefined;
@@ -48,7 +49,7 @@ export async function plainChat({model,history,prompt,key,provider='ollama',inst
   total.calls++;
   if(!response.ok){await response.body?.cancel();throw Error(provider+' could not complete this chat ('+response.status+')')}
   const reply=await readReply(response,preview=>onProgress({...preview,round:round+1}));
-  if(reply.usage){total.measuredCalls++;total.inputTokens+=reply.usage.prompt_tokens??reply.usage.input_tokens??0;total.outputTokens+=reply.usage.completion_tokens??reply.usage.output_tokens??0}
+  if(reply.usage){const t=tokens(reply.usage);total.measuredCalls++;total.inputTokens+=t.input+t.cached+t.write;total.cachedTokens+=t.cached;total.cacheWriteTokens+=t.write;total.outputTokens+=t.output}
   if(!reply.calls.length){
    if(!reply.summary.trim())throw Error('The model returned no text. Try another model or a shorter request.');
    return {exitCode:0,model,summary:reply.summary.trim(),reasoning:reply.reasoning,diff:'',usage:{...total,inputTokens:total.measuredCalls?total.inputTokens:null,outputTokens:total.measuredCalls?total.outputTokens:null}};

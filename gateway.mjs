@@ -1,3 +1,4 @@
+import {tokens} from './prices.mjs';
 const MAX_BODY = 1024 * 1024;
 
 async function readBounded(body) {
@@ -42,7 +43,7 @@ export function usageStream(onUsage,onProgress=async()=>{}) {
       if(buffer.length>65536)buffer='';
       await publish(false);
     },
-    async flush(){buffer+=decoder.decode();read(buffer);await publish(true);if(usage)await onUsage({prompt_tokens:usage.prompt_tokens??usage.input_tokens??0,completion_tokens:usage.completion_tokens??usage.output_tokens??0})}
+    async flush(){buffer+=decoder.decode();read(buffer);await publish(true);if(usage){const t=tokens(usage);await onUsage({prompt_tokens:t.input+t.cached+t.write,completion_tokens:t.output,cached_tokens:t.cached,cache_write_tokens:t.write})}}
   });
 }
 export async function modelRequest(request, { key, model,provider='ollama',instructions='',authorize, onUsage=async()=>{},onProgress=async()=>{}, upstream = fetch }) {

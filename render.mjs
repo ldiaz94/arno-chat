@@ -4,6 +4,19 @@
  */
 export function markdown(source,sources=[]) {
   const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  // Table helpers: a GFM delimiter row, and a row split on unescaped pipes outside code spans (\| becomes |).
+  const isDelimiter=s=>s.includes('-')&&splitRow(s).every(c=>/^:?-+:?$/.test(c));
+  const splitRow=s=>{
+    s=s.trim().replace(/^\|/,'').replace(/(^|[^\\])\|$/,'$1');const cells=[];let cur='';
+    for(let j=0;j<s.length;j++){
+      const c=s[j];
+      if(c==='\\'&&s[j+1]==='|'){cur+='|';j++}
+      else if(c==='\x60'&&s.indexOf('\x60',j+1)>0){const e=s.indexOf('\x60',j+1);cur+=s.slice(j,e+1).replace(/\\\|/g,'|');j=e}
+      else if(c==='|'){cells.push(cur);cur=''}
+      else cur+=c;
+    }
+    cells.push(cur);return cells.map(c=>c.trim());
+  };
   const inline=s=>{
     const code=[];let text=escape(s).replace(/\x60([^\x60]+)\x60/g,(_,v)=>'\u0000'+(code.push('<code>'+v+'</code>')-1)+'\u0000');
     text=text.replace(/\[(\d+)\](?:\((https?:\/\/[^\s)]+)\))?/g,(original,id)=>{
@@ -33,10 +46,11 @@ export function markdown(source,sources=[]) {
       while(i<lines.length&&/^\s*(?:[-*+] |\d+\. )/.test(lines[i])){let item=lines[i++].replace(/^\s*(?:[-*+] |\d+\. )/,'');item=item.replace(/^\[([ xX])\]\s*/,(_,x)=>x===' '?'☐ ':'☑ ');out+='<li>'+inline(item)+'</li>'}
       out+='</'+tag+'>';continue;
     }
-    if(line.includes('|')&&i+1<lines.length&&/^\s*\|?\s*:?-{3}/.test(lines[i+1])){
-      const cells=s=>s.trim().replace(/^\||\|$/g,'').split('|');
-      out+='<div class="table-wrap"><table><thead><tr>'+cells(line).map(v=>'<th>'+inline(v.trim())+'</th>').join('')+'</tr></thead><tbody>';i+=2;
-      while(i<lines.length&&lines[i].includes('|'))out+='<tr>'+cells(lines[i++]).map(v=>'<td>'+inline(v.trim())+'</td>').join('')+'</tr>';
+    if(line.includes('|')&&i+1<lines.length&&isDelimiter(lines[i+1])){
+      const head=splitRow(line),n=head.length,align=splitRow(lines[i+1]).map(c=>c.startsWith(':')?(c.endsWith(':')?'center':'left'):c.endsWith(':')?'right':'');
+      const cell=(tag,v,k)=>{const t=v.trim(),num=tag==='td'&&!align[k]&&/^[-+~]?[$€£]?\d[\d,.]*\s?(?:%|[kKmMbB]|x)?$/.test(t);return '<'+tag+(align[k]?' style="text-align:'+align[k]+'"':'')+(num?' class="num"':'')+'>'+inline(t)+(tag==='th'?'<span class="col-resize" aria-hidden="true"></span>':'')+'</'+tag+'>'};
+      out+='<div class="table-wrap"><table><thead><tr>'+head.map((v,k)=>cell('th',v,k)).join('')+'</tr></thead><tbody>';i+=2;
+      while(i<lines.length&&lines[i].includes('|')){const row=splitRow(lines[i++]);out+='<tr>'+Array.from({length:n},(_,k)=>cell('td',row[k]||'',k)).join('')+'</tr>'}
       out+='</tbody></table></div>';continue;
     }
     const paragraph=[line];i++;
@@ -52,4 +66,24 @@ export function cleanOutput(text) {
 export function diffHtml(diff) {
   const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   return String(diff||'').split('\n').map(line=>'<div class="diff-line '+(line.startsWith('+++')||line.startsWith('---')||line.startsWith('diff ')?'file':line.startsWith('+')?'add':line.startsWith('-')?'remove':line.startsWith('@@')?'hunk':'')+'">'+escape(line||' ')+'</div>').join('');
+}
+/** Let users drag a table header's .col-resize handle to size its columns;
+ * double-click a handle to go back to automatic sizing. Delegated on root. */
+export function tableResize(root) {
+  const sum=th=>[...th.parentElement.children].reduce((n,h)=>n+parseFloat(h.style.width),0);
+  root.addEventListener('pointerdown',e=>{
+    const grip=e.target.closest&&e.target.closest('.col-resize');if(!grip)return;
+    const th=grip.parentElement,table=th.closest('table'),heads=[...th.parentElement.children];
+    if(!table.classList.contains('sized')){heads.forEach(h=>h.style.width=h.getBoundingClientRect().width+'px');table.classList.add('sized')}
+    const x0=e.clientX,w0=parseFloat(th.style.width);
+    const move=m=>{th.style.width=Math.max(40,w0+m.clientX-x0)+'px';table.style.width=sum(th)+'px'};
+    const stop=()=>{grip.removeEventListener('pointermove',move);grip.removeEventListener('pointerup',stop);grip.removeEventListener('pointercancel',stop)};
+    e.preventDefault();table.style.width=sum(th)+'px';grip.setPointerCapture(e.pointerId);
+    grip.addEventListener('pointermove',move);grip.addEventListener('pointerup',stop);grip.addEventListener('pointercancel',stop);
+  });
+  root.addEventListener('dblclick',e=>{
+    const grip=e.target.closest&&e.target.closest('.col-resize');if(!grip)return;
+    const table=grip.closest('table');table.classList.remove('sized');table.style.width='';
+    table.querySelectorAll('th').forEach(h=>h.style.width='');
+  });
 }

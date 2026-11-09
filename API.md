@@ -35,7 +35,7 @@ All API routes require the opaque GitHub-authenticated session cookie except GET
 
 Create session: repo is owner/name, ref is the selected branch, model is an approved cloud model ID. The host resolves ref to a 40-character source commit and downloads that exact archive. The response includes id, repo, ref, model, sourceSha, remoteUrl, createdAt.
 
-Submit task: id is a client-generated UUID and prompt is 1–8,000 characters. Reusing the same ID deduplicates an uncertain submission. A different ID is rejected with 409 while a turn is queued or running. Do not automatically retry an uncertain request with a new UUID.
+Submit task: id is a client-generated UUID and prompt is 1–8,000 characters. In a regular chat, optional editAt (a saved turn's at) replaces that turn: it and every later turn are left out of the context and deleted once the new answer is saved. Reusing the same ID deduplicates an uncertain submission. A different ID is rejected with 409 while a turn is queued or running. Do not automatically retry an uncertain request with a new UUID.
 
 Publish: digest must match the reviewed changed files and source revision. branch must use arno/ followed by an alphanumeric, underscore, or hyphen name. title is the commit/PR title, at most 200 characters. The result includes branch, commit, url, and an optional warning if the branch was created but the PR could not be opened.
 
