@@ -45,17 +45,14 @@ export function drawer(open) {
   shell.classList.toggle('drawer-open', open);
   $('#menu').setAttribute('aria-expanded', String(open));
 }
+$('#send').innerHTML = icon('arrow');
+$('#stop').innerHTML = icon('stop');
 export function busy(value) {
   state.busy = value;
+  // While a turn runs, Stop takes Send's place; the thread shows what is happening.
   $('#stop').hidden = !value;
+  $('#send').hidden = value;
   controls(); // send and model change wait while busy; offline, attaching too
-  $('#send').innerHTML = value
-    ? state.session?.kind === 'chat'
-      ? $('#live-response .prose')?.textContent
-        ? 'Responding…'
-        : 'Thinking…'
-      : '<span class="spinner"></span> Working'
-    : icon('arrow') + '<span>Send</span>';
 }
 export function title(name, subtitle) {
   const t = $('#title'),

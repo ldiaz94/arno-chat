@@ -41,6 +41,7 @@ const paths = {
   plus: 'M12 5v14M5 12h14',
   menu: 'M4 6h16M4 12h16M4 18h16',
   arrow: 'M12 19V5M5 12l7-7 7 7',
+  stop: 'M7 7h10v10H7z',
   chevron: 'm9 5 7 7-7 7',
   branch: 'M6 3v12a3 3 0 0 0 6 0V9a3 3 0 0 1 3-3h3M3 6h6',
   search: 'M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0',

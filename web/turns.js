@@ -98,7 +98,6 @@ function livePreview(preview) {
   if (state.session?.kind === 'chat' && preview.text) {
     const label = $('#activity > span');
     if (label) label.textContent = 'Responding…';
-    $('#send').textContent = 'Responding…';
   }
   node.querySelector('.live-pass').textContent =
     state.session?.kind === 'chat'

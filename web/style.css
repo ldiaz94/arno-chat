@@ -2908,3 +2908,54 @@ details.setting-card.collapsible[open] > summary {
 .turn-footer .option-tag {
   align-self: center;
 }
+
+/* The composer's row: attach, options and model on the left, then one round
+   Send button, or Stop (ringed by a spinner) while a turn runs. The model
+   button takes the slack and truncates, so the row never overflows. */
+.composer-actions {
+  gap: 6px;
+}
+.composer-actions > button {
+  flex-shrink: 0;
+}
+.composer-actions > .model-button {
+  flex: 0 1 auto;
+  max-width: none;
+}
+.composer-actions .send-button,
+.composer-actions .stop-button {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+.send-button svg {
+  width: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.stop-button {
+  position: relative;
+  border: 0;
+  background: var(--panel);
+  color: var(--text);
+}
+.stop-button svg {
+  width: 14px;
+  fill: currentColor;
+}
+.stop-button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  animation: spin 0.9s linear infinite;
+}
