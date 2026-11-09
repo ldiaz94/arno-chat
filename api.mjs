@@ -220,6 +220,54 @@ export const apiRoutes = {
       return json({ error: 'Ollama usage is unavailable: ' + e.message }, 502);
     }
   },
+  /** What the GitHub connection can see, for Developer mode: the token's kind
+   * and scopes, the account's own counts, what /user/repos lists by owner and
+   * visibility, organisations, and (for GitHub App tokens) installations. */
+  async 'GET /api/github/check'(request, env, url, auth) {
+    const get = async path => {
+      const r = await github(path, auth.token);
+      return { r, data: r.ok ? await r.json() : null };
+    };
+    const me = await get('/user'),
+      repos = [];
+    for (let page = 1; page <= 20; page++) {
+      const { data } = await get(
+        '/user/repos?per_page=100&page=' +
+          page +
+          '&affiliation=owner,collaborator,organization_member',
+      );
+      if (!data?.length) break;
+      repos.push(...data);
+      if (data.length < 100) break;
+    }
+    const count = key => repos.reduce((m, r) => ((m[key(r)] = (m[key(r)] || 0) + 1), m), {});
+    const orgs = await get('/user/orgs'),
+      installs = await get('/user/installations');
+    return json({
+      tokenKind: /^ghu_/.test(auth.token)
+        ? 'GitHub App user token'
+        : /^gho_/.test(auth.token)
+          ? 'OAuth App token'
+          : 'other',
+      scopes: me.r.headers.get('X-OAuth-Scopes'),
+      account: me.data && {
+        login: me.data.login,
+        publicRepos: me.data.public_repos,
+        ownedPrivateRepos: me.data.owned_private_repos ?? null,
+        totalPrivateRepos: me.data.total_private_repos ?? null,
+      },
+      listed: repos.length,
+      byOwner: count(r => r.owner.login),
+      byVisibility: count(r => r.visibility || (r.private ? 'private' : 'public')),
+      orgs: orgs.data ? orgs.data.map(o => o.login) : 'unavailable (' + orgs.r.status + ')',
+      installations: installs.data
+        ? installs.data.installations.map(i => ({
+            account: i.account?.login,
+            repositorySelection: i.repository_selection,
+          }))
+        : 'not a GitHub App token (' + installs.r.status + ')',
+    });
+  },
   async 'GET /api/models'(request, env, url, auth) {
     const base = await catalog(),
       p = await profile(env, auth.user.id);

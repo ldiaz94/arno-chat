@@ -2641,3 +2641,15 @@ details.setting-card.collapsible[open] > summary {
   border-radius: 10px;
   text-decoration: none;
 }
+
+/* Developer mode output (GitHub connection check). */
+.debug-out {
+  max-height: 320px;
+  overflow: auto;
+  font-size: 11px;
+  white-space: pre-wrap;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+}
