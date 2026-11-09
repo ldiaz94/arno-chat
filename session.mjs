@@ -9,7 +9,7 @@ import { modelInput } from './attachments.mjs';
 import { profile, credential, instructions, providerModel } from './account.mjs';
 import { WEB_INSTRUCTIONS, WEB_TOOLS, research, citedSources } from './web.mjs';
 import { ARTIFACT_INSTRUCTIONS, ARTIFACT_TOOLS, artifactTool } from './artifacts.mjs';
-import { prices, priceOf, cost } from './prices.mjs';
+import { prices, priceOf, cost, costParts, webRates } from './prices.mjs';
 import { storeRoutes } from './store-routes.mjs';
 import { gatewayRoutes } from './gateway-routes.mjs';
 import { sessionRoutes } from './session-routes.mjs';
@@ -127,10 +127,35 @@ export class ArnoProbe extends DurableObject {
       totalMs: 0,
     };
     result.model ||= (await this.ctx.storage.get('session'))?.model;
-    result.usage.cost = cost(priceOf(await prices(), result.model), result.usage);
+    // Cost: the model's tokens at list price (null when unpriced) plus searches;
+    // the parts are kept per turn and summed per session for the breakdown.
+    const price = priceOf(await prices(), result.model),
+      modelCost = cost(price, result.usage),
+      session = await this.ctx.storage.get('session'),
+      webKey =
+        result.webUsage?.searches || result.webUsage?.reads
+          ? await credential(
+              this.env,
+              session?.ownerId,
+              await profile(this.env, session?.ownerId),
+              'ollama',
+            )
+          : null,
+      parts = costParts(
+        price,
+        result.usage,
+        result.webUsage,
+        webKey ? await webRates(webKey) : undefined,
+      ),
+      web = parts.search + parts.reads;
+    result.usage.costParts = parts;
+    result.usage.cost = modelCost == null && !web ? null : (modelCost || 0) + web;
     stats.cost = (stats.cost || 0) + (result.usage.cost || 0);
+    stats.costParts = Object.fromEntries(
+      Object.entries(parts).map(([k, v]) => [k, (stats.costParts?.[k] || 0) + (v || 0)]),
+    );
     stats.unpriced =
-      (stats.unpriced || 0) + Number(result.usage.cost == null && !!result.usage.measuredCalls);
+      (stats.unpriced || 0) + Number(modelCost == null && !!result.usage.measuredCalls);
     stats.turns++;
     stats.calls += result.usage.calls;
     stats.measuredCalls += result.usage.measuredCalls;

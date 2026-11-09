@@ -65,6 +65,21 @@ export function markdown(source, sources = []) {
         '\u0000'
       );
     });
+    // [Title](artifact:<uuid>) opens the artifact dialog; any other artifact: target stays text.
+    text = text.replace(
+      /\[([^\]]+)\]\(artifact:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\)/gi,
+      (_, label, id) =>
+        '\u0000' +
+        (code.push(
+          '<button type="button" class="artifact-link" data-artifact="' +
+            id.toLowerCase() +
+            '">' +
+            label +
+            '</button>',
+        ) -
+          1) +
+        '\u0000',
+    );
     text = text.replace(/\[(\d+)\](?:\((https?:\/\/[^\s)]+)\))?/g, (original, id) => {
       const source = sources.find(s => s.id === Number(id));
       if (!source) return original;

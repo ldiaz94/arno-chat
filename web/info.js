@@ -1,8 +1,8 @@
 /** The "Conversation details" panel: context fill, usage, sources, shared links, images and
  * repository identity of the open conversation, in the `#usage-dialog`. Depends on core and
- * thread (source preview) and attach. Artifacts are reserved, not rendered yet.
+ * thread (source preview) and attach. Artifacts are listed from the server and open in the artifact dialog.
  */
-import { $, state, esc, num, duration, money } from './core.js';
+import { $, state, esc, num, duration, money, api } from './core.js';
 import { openSources } from './thread.js';
 import { attachmentsHtml } from './attach.js';
 
@@ -81,6 +81,38 @@ function contextSection(history) {
       '</p>',
   );
 }
+// What a session's (and its last turn's) cost is made of; parts are recorded
+// per turn from this feature on, so older sessions show only the total.
+const COST_PARTS = [
+  ['input', 'Input tokens'],
+  ['cached', 'Cached input'],
+  ['cacheWrite', 'Cache writes'],
+  ['output', 'Output tokens'],
+  ['search', 'Web searches'],
+  ['reads', 'Page reads'],
+];
+function costBreakdown(stats, last) {
+  const session = stats.costParts,
+    turn = last?.usage?.costParts;
+  if (!session && !turn) return '';
+  const rows = COST_PARTS.filter(([k]) => session?.[k] || turn?.[k]);
+  return (
+    '<div class="eyebrow">Cost breakdown</div><div class="table-wrap"><table class="cost-table"><thead><tr><th></th><th class="num">Session</th><th class="num">Last turn</th></tr></thead><tbody>' +
+    rows
+      .map(
+        ([k, label]) =>
+          '<tr><td>' +
+          label +
+          '</td><td class="num">' +
+          (session ? money(session[k] || 0) : '—') +
+          '</td><td class="num">' +
+          (turn ? money(turn[k] ?? null) : '—') +
+          '</td></tr>',
+      )
+      .join('') +
+    '</tbody></table></div>'
+  );
+}
 function usageSection(history) {
   const stats = sessionStats(),
     last = history.at(-1);
@@ -102,7 +134,9 @@ function usageSection(history) {
       ]
         .map(([k, v]) => '<div class="metric"><b>' + v + '</b><span>' + k + '</span></div>')
         .join('') +
-      '</div><p class="caption">Tokens are reported by the selected provider. A dash means usage was not recorded. Historical turns may have incomplete usage. Cost uses each model’s list price on the day of the turn (Ollama’s and Google’s pricing pages; Anthropic and OpenAI via OpenRouter); unpriced turns used a model missing from those tables. Ollama’s off-peak rates apply to turns saved off-peak. Web searches are not included.</p>' +
+      '</div>' +
+      costBreakdown(stats, history.filter(t => !t.failed).at(-1)) +
+      '<p class="caption">Tokens are reported by the selected provider. A dash means usage was not recorded. Historical turns may have incomplete usage. Cost uses each model’s list price on the day of the turn (Ollama’s and Google’s pricing pages; Anthropic and OpenAI via OpenRouter); unpriced turns used a model missing from those tables. Ollama’s off-peak rates apply to turns saved off-peak. Web searches and page reads use the per-request rates Ollama actually billed this account (from its usage data).</p>' +
       (last?.timing
         ? '<div class="eyebrow">Last turn</div>' +
           [
@@ -200,9 +234,32 @@ function attachmentsSection(history) {
       (files.length ? '<div class="attach-files">' + html(files) + '</div>' : ''),
   );
 }
-// Reserved: files the assistant produced.
-function artifactsSection() {
-  return '';
+// Artifacts of the conversation, from the list route; rows open the artifact dialog.
+function artifactRows(list) {
+  return list
+    .map(
+      a =>
+        '<button type="button" class="info-row artifact-row" data-artifact="' +
+        esc(a.id) +
+        '"><strong>' +
+        esc(a.title) +
+        '</strong><span>v' +
+        a.version +
+        ' · ' +
+        new Date(a.updatedAt).toLocaleString() +
+        '</span></button>',
+    )
+    .join('');
+}
+// Fills the Artifacts section once the list arrives; absent when there are none.
+async function loadArtifacts(sessionId) {
+  try {
+    const { artifacts } = await api('/api/sessions/' + sessionId + '/artifacts');
+    if (artifacts.length && state.session?.id === sessionId)
+      $('#info-artifacts').innerHTML = section('Artifacts', artifactRows(artifacts));
+  } catch {
+    // The panel works without it.
+  }
 }
 function repositorySection(s) {
   return s && s.kind !== 'chat'
@@ -230,11 +287,12 @@ export function openInfo() {
     linksSection(history, sources) +
     imagesSection(history) +
     attachmentsSection(history) +
-    artifactsSection() +
+    '<div id="info-artifacts"></div>' +
     repositorySection(s);
   $('#usage-body').onclick = e => {
     const row = e.target.closest('[data-info-source]');
     if (row) openSources(sources, Number(row.dataset.infoSource));
   };
   $('#usage-dialog').showModal();
+  if (s?.id) loadArtifacts(s.id);
 }

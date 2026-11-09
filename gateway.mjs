@@ -141,10 +141,10 @@ export async function modelRequest(
   ) {
     return new Response('Unsupported model or request', { status: 400 });
   }
-  const payload = { model, messages: body.messages, stream: true, max_tokens: 4096 };
+  const payload = { model, messages: body.messages, stream: true, max_tokens: 16384 };
   if (provider === 'openai') {
     delete payload.max_tokens;
-    payload.max_completion_tokens = 4096;
+    payload.max_completion_tokens = 16384;
   }
   // Thinking counts against Gemini's output limit; keep its default.
   if (provider === 'gemini') delete payload.max_tokens;

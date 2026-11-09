@@ -43,12 +43,27 @@ const { chromium } = require('playwright'),
     '## What this repository does\n\nThis is **rlsp**, a library for the [Raz language](https://github.com/ldiaz94/raz).\n\n- Wire framing\n- Protocol types\n- Client sessions\n\n```raz\nMODULE Example;\nEND Example.\n```\n\n| Module | Role |\n| --- | --- |\n| LspWire | Framing |';
   const diff =
     'diff --git a/src/demo.raz b/src/demo.raz\n--- a/src/demo.raz\n+++ b/src/demo.raz\n@@ -1 +1 @@\n-old\n+new';
+  const artId = '33333333-3333-4333-8333-333333333333';
+  const artifact = {
+    id: artId,
+    title: 'Packing list',
+    version: 2,
+    createdAt: Date.now() - 9e5,
+    updatedAt: Date.now(),
+    content: '# Packing\n\n| Item | Qty |\n| --- | --- |\n| Tent, 2-person | 1 |\n| Socks | 4 |\n',
+    previous: [
+      { version: 1, title: 'Packing list', content: 'First draft', updatedAt: Date.now() - 9e5 },
+    ],
+  };
   const turn = {
     prompt: 'What does this repo do?',
     summary:
       'safety: auto, working on a copy at /cache\n' +
       answer +
-      '\n\nSee the original specification [1]. Notes: https://example.com/guide/start.\n\n![Diagram](https://example.com/img/diagram.png)',
+      '\n\nSee the original specification [1]. Notes: https://example.com/guide/start.\n\n![Diagram](https://example.com/img/diagram.png)\n\nSee [Packing list](artifact:' +
+      artId +
+      ').',
+    artifacts: [{ id: artId, title: 'Packing list', version: 2 }],
     sources: [
       {
         id: 1,
@@ -92,6 +107,15 @@ const { chromium } = require('playwright'),
       outputTokens: 350,
       measuredCalls: 2,
       totalMs: 6650,
+      cost: 0.035,
+      costParts: {
+        input: 0.004,
+        cached: 0,
+        cacheWrite: 0,
+        output: 0.008,
+        search: 0.022,
+        reads: 0.001,
+      },
     },
   };
   // Static files come from web/ as Cloudflare would serve them; /api/ is mocked below.
@@ -121,7 +145,9 @@ const { chromium } = require('playwright'),
   await page.route('**/api/**', async route => {
     const u = new URL(route.request().url());
     let d;
-    if (u.pathname === '/api/me') d = { user: { login: 'ldiaz94' } };
+    if (u.pathname.endsWith('/artifacts/' + artId)) d = artifact;
+    else if (u.pathname.endsWith('/artifacts')) d = { artifacts: [artifact] };
+    else if (u.pathname === '/api/me') d = { user: { login: 'ldiaz94' } };
     else if (u.pathname === '/api/account') {
       if (route.request().method() === 'POST')
         preferences = { ...preferences, ...route.request().postDataJSON() };
@@ -272,6 +298,23 @@ const { chromium } = require('playwright'),
   await page.getByRole('heading', { name: 'What this repository does' }).waitFor();
   assert.equal(await page.locator('.prose strong').first().textContent(), 'rlsp');
   assert.equal(await page.locator('.prose script').count(), 0);
+  assert.equal(await page.locator('.artifact-card').textContent(), 'Packing listv2');
+  await page.locator('.prose .artifact-link').click();
+  await page.locator('#artifact-content table').waitFor();
+  await page.getByRole('button', { name: 'Download .csv' }).waitFor();
+  assert.equal(await page.locator('#artifact-heading').textContent(), 'Packing list');
+  assert.ok(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+    ),
+  );
+  await page.locator('#artifact-versions').selectOption('1');
+  await page.getByText('First draft').waitFor();
+  assert.ok(await page.getByRole('button', { name: 'Download .csv' }).isHidden());
+  await page.getByRole('button', { name: 'Close artifact' }).click();
+  await page.locator('.artifact-card').click();
+  await page.locator('#artifact-content table').waitFor();
+  await page.getByRole('button', { name: 'Close artifact' }).click();
   await page.locator('.prose .citation').click();
   await page.getByRole('heading', { name: 'Language Server Protocol specification' }).waitFor();
   await page.screenshot({ path: '/tmp/arno-citations-mobile.png', fullPage: true });
@@ -293,7 +336,13 @@ const { chromium } = require('playwright'),
     'noopener noreferrer',
   );
   assert.equal(await info.locator('.info-images img').count(), 1);
+  await info.getByRole('heading', { name: 'Artifacts' }).waitFor();
+  assert.ok((await info.locator('[data-artifact]').textContent()).includes('Packing list'));
+  await info.locator('[data-artifact]').click();
+  await page.locator('#artifact-content table').waitFor();
+  await page.getByRole('button', { name: 'Close artifact' }).click();
   await info.getByRole('heading', { name: 'Repository identity' }).waitFor();
+  assert.match(await info.locator('.cost-table').innerText(), /Web searches\s+\$0\.02/);
   await page.screenshot({ path: '/tmp/arno-usage-mobile.png', fullPage: true });
   await page.getByRole('button', { name: 'Close usage' }).click();
   await page.getByRole('button', { name: /^Conversation details/ }).press('Enter');

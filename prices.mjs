@@ -193,6 +193,55 @@ export function tokens(u = {}) {
 }
 
 /** Dollars for a turn's usage, or null when the model has no listed price. */
+/** Ollama's web search and page-read fees in dollars each. They aren't on its
+ * pricing page, so they are derived from what the account was actually billed:
+ * ollama.com/api/usage?group_by=model (undocumented, used by its usage page)
+ * lists web_search and web_fetch with request counts and dollars. Cached for a
+ * day per isolate; these fallbacks are the rates observed on 2026-11-09. */
+export const WEB_RATES = { search: 0.011, fetch: 0.001 };
+let webMemo = null;
+export async function webRates(key, upstream = fetch) {
+  if (webMemo && Date.now() - webMemo.at < DAY * 1000) return webMemo.rates;
+  const rates = { ...WEB_RATES };
+  try {
+    const r = await upstream('https://ollama.com/api/usage?group_by=model', {
+      headers: { Authorization: 'Bearer ' + key },
+      signal: AbortSignal.timeout(5000),
+    });
+    const totals = {};
+    for (const bucket of r.ok ? (await r.json()).buckets || [] : [])
+      for (const g of bucket.groups || []) {
+        const t = (totals[g.model] ||= { usd: 0, n: 0 });
+        t.usd += g.usage_usd || 0;
+        t.n += g.request_count || 0;
+      }
+    if (totals.web_search?.n) rates.search = totals.web_search.usd / totals.web_search.n;
+    if (totals.web_fetch?.n) rates.fetch = totals.web_fetch.usd / totals.web_fetch.n;
+    if (r.ok) webMemo = { at: Date.now(), rates };
+  } catch {
+    // keep the fallback rates
+  }
+  return rates;
+}
+
+/** A turn's cost by part, in dollars: model input (uncached), cached input,
+ * cache writes, output, web searches and page reads. Model parts are null
+ * when the model has no listed price. */
+export function costParts(price, usage, webUsage, rates = WEB_RATES) {
+  const { inputTokens = 0, cachedTokens = 0, cacheWriteTokens = 0, outputTokens = 0 } = usage || {};
+  const priced = !!price && !!usage?.measuredCalls,
+    part = (tokens, rate) => (priced ? (tokens * rate) / 1e6 : null);
+  return {
+    input: part(inputTokens - cachedTokens - cacheWriteTokens, price?.inp),
+    cached: part(cachedTokens, price?.cached),
+    cacheWrite: part(cacheWriteTokens, price?.write ?? price?.inp),
+    output: part(outputTokens, price?.out),
+    search: (webUsage?.searches || 0) * rates.search,
+    reads: (webUsage?.reads || 0) * rates.fetch,
+  };
+}
+
+/** Dollars for a turn's model usage, or null when the model has no listed price. */
 export function cost(price, usage) {
   if (!price || !usage?.measuredCalls) return null;
   const { inputTokens = 0, cachedTokens = 0, cacheWriteTokens = 0, outputTokens = 0 } = usage;

@@ -214,6 +214,25 @@
       </div>
       <div id="sources-body" class="modal-body"></div>
     </dialog>
+    <dialog id="artifact-dialog" class="modal artifact-dialog" aria-labelledby="artifact-heading">
+      <div class="modal-head">
+        <h2 id="artifact-heading">Artifact</h2>
+        <button data-close class="ghost icon" aria-label="Close artifact">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="artifact-bar">
+          <small id="artifact-meta" class="muted"></small>
+          <select id="artifact-versions" aria-label="Version" hidden></select>
+        </div>
+        <div class="artifact-actions">
+          <button id="artifact-copy" type="button">Copy</button>
+          <button id="artifact-md" type="button">Download .md</button>
+          <button id="artifact-csv" type="button" hidden>Download .csv</button>
+          <button id="artifact-print" type="button">Print</button>
+        </div>
+        <div id="artifact-content" class="prose"></div>
+      </div>
+    </dialog>
     <dialog id="conversation-dialog" class="modal" aria-labelledby="conversation-menu-heading">
       <div class="modal-head">
         <h2 id="conversation-menu-heading">Conversation</h2>

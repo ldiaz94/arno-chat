@@ -15,7 +15,7 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 | store-routes.mjs | Internal routes of the per-user index/profile and auth/OAuth store objects |
 | gateway-routes.mjs | Internal callbacks from the model and MCP gateways (permits, progress, usage, research state) |
 | gateways.mjs | ModelGateway and McpGateway entrypoints the container's traffic is routed through |
-| prices.mjs | Daily-cached list prices (Ollama and Gemini pricing pages, OpenRouter for Anthropic/OpenAI) and turn cost |
+| prices.mjs | Daily-cached list prices (Ollama and Gemini pricing pages, OpenRouter for Anthropic/OpenAI), turn cost by part, and web search/read rates derived from the account's Ollama usage data |
 | gateway.mjs | Fixed-destination Ollama gateway, bounded payloads, streaming usage observation |
 | context.mjs | Repository provenance and bounded conversation context for every Arno invocation |
 | models.mjs | Live tool-capable cloud catalog and explicit fallback |
@@ -34,6 +34,7 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 | web/thread.js | Message rendering, follow-the-stream scroll, sources, suggestions |
 | web/sessions.js | Open, create, search, export, rename and delete sessions; home |
 | web/info.js | Conversation details panel (title or usage button): context, usage, sources, links, images, repository |
+| web/artifacts.js | Artifact dialog (versions, Copy, .md and first-table .csv download, Print), turn cards, click handler |
 | web/code.js | Code dialog: file browser, diff, review and publish |
 | web/attach.js | Composer attachments: upload on pick/paste/drop, chips, attachment rendering for messages and details |
 | web/turns.js | Sending, editing, job polling and live output |
@@ -196,7 +197,7 @@ The model dialog loads the catalog and includes completion models with tool supp
 
 The gateway rebuilds allowed inference requests, fixes the upstream to the selected provider's origin, and adds credentials outside the container. A streaming observer reads provider SSE usage chunks while forwarding the original bytes unchanged. Each usage report carries a turn ID, so a stale response cannot touch a later turn's counters.
 
-Statistics are cumulative from when measurement was added. Missing provider usage shows as unavailable. Requests, tokens and wall time are separate measurements. Cost is each turn's tokens at the model's list price, computed when the turn is saved (prices.mjs); a model absent from the price tables is counted as unpriced, never guessed. Web searches are not priced. There is no account balance.
+Statistics are cumulative from when measurement was added. Missing provider usage shows as unavailable. Requests, tokens and wall time are separate measurements. Cost is each turn's tokens at the model's list price, computed when the turn is saved (prices.mjs); a model absent from the price tables is counted as unpriced, never guessed. Web searches and page reads are priced at the per-request rates Ollama billed the account, read daily from ollama.com/api/usage?group_by=model (undocumented; fallback $0.011 and $0.001). Each turn stores its cost by part (input, cached input, cache writes, output, searches, reads) and the session sums them for the breakdown in the details panel.
 
 ## Web research and citations
 
@@ -230,6 +231,7 @@ Remote coding is presented as a workspace, not a terminal transcript.
 - Input: send button and Cmd/Ctrl+Enter; Enter alone adds a newline, which suits mobile. Drafts persist per session in the tab. The model dialog searches names and IDs, and opens with Cmd/Ctrl+K. Regular-chat messages have an Edit button: sending an edit replaces that message and the turns after it.
 - Footers and usage: each turn footer shows completion, wall time, measured tokens and list-price cost when available. The Usage & workspace dialog separates provider counters, phase timings and repository identity; unknown values show a dash with an explanation.
 - Honest state: search reports progress until every page is scanned; task activity distinguishes restoring, preparing, execution and checkpointing; a warm workspace is labeled apart from a saved sleeping one. No account balances, live tool traces or completion percentages are invented.
+- Artifacts: a turn's `artifacts` show as cards under the answer, `[Title](artifact:<uuid>)` renders as a button, and the details panel lists them; all open web/artifacts.js's dialog, which fetches the document, offers its earlier versions, and prints alone through a print stylesheet.
 - Accessibility: descriptive button names, decorative SVGs hidden, native modal focus management, named dialog headings, visible focus outlines, role=status toasts, explicit form buttons.
 
 Client state: drafts and the last selected session ID live in sessionStorage; repository and conversation state stay server-owned. Navigation (resume in web/sessions.js) increments a generation when navigation changes, and async results and job polls check it before repainting. Repository search has its own generation so an old query cannot overwrite a new one.
@@ -238,7 +240,7 @@ Client state: drafts and the last selected session ID live in sessionStorage; re
 
 - Cloudflare checkpoints are kept 30 days, refreshed by restoration.
 - Up to 20 turns are retained; very large diffs and logs are truncated for display.
-- Each task allows up to 16 model calls, a four-minute CLI deadline and 4,096 output tokens per inference request. Gateway bodies are capped at 1 MB; repository archives at 50 MB.
+- Each task allows up to 16 model calls, a four-minute CLI deadline and 16,384 output tokens per inference request (regular chat too; Gemini keeps its own default, since thinking counts against it). Gateway bodies are capped at 1 MB; repository archives at 50 MB.
 - Container Internet access is off. Model inference, built-in research and enabled remote MCP are host-mediated exceptions. Arbitrary dependency downloads are unavailable.
 - Publishing takes up to 50 regular UTF-8 changed files totaling 1 MB; binary files and symlinks are rejected.
 - Answer text and provider-exposed thinking stream live over SSE; coding previews show the current model pass. Tool arguments and raw tool events are not streamed; the final coding result appears after its checkpoint.

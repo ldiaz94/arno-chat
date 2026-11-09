@@ -1120,3 +1120,38 @@ test('artifacts: create, update keeps earlier versions, bad input refused', asyn
   await assert.rejects(artifactTool(storage, 'create_artifact', { title: '', content: 'x' }, []));
   await assert.rejects(artifactTool(storage, 'update_artifact', { id: 'nope', content: 'x' }, []));
 });
+test('artifact links render as buttons only for a uuid', () => {
+  const id = '3f2b8c1e-5a4d-4e6f-9a1b-2c3d4e5f6a7b';
+  const html = markdown('See [Packing <list>](artifact:' + id + ') and [x](artifact:nope).');
+  assert.match(
+    html,
+    new RegExp('<button type="button" class="artifact-link" data-artifact="' + id + '">'),
+  );
+  assert.match(html, /Packing &lt;list&gt;<\/button>/);
+  assert.doesNotMatch(html, /data-artifact="nope"/);
+  assert.match(html, /\[x\]\(artifact:nope\)/);
+});
+test('cost parts: model tokens by kind plus searches; unpriced models still count searches', async () => {
+  const { costParts } = await import('./prices.mjs');
+  const parts = costParts(
+    { inp: 1, cached: 0.1, out: 10 },
+    { measuredCalls: 1, inputTokens: 2e6, cachedTokens: 1e6, outputTokens: 1e5 },
+    { searches: 3 },
+  );
+  assert.deepEqual(parts, {
+    input: 1,
+    cached: 0.1,
+    cacheWrite: 0,
+    output: 1,
+    search: 0.033,
+    reads: 0,
+  });
+  assert.deepEqual(costParts(null, { measuredCalls: 1 }, { searches: 1 }), {
+    input: null,
+    cached: null,
+    cacheWrite: null,
+    output: null,
+    search: 0.011,
+    reads: 0,
+  });
+});

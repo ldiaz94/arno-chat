@@ -5,6 +5,7 @@ import { markdown, cleanOutput, diffHtml } from './render.mjs';
 import { $, state, esc, icon, num, duration, modelName, money, copy, main } from './core.js';
 import { editMessage, retry } from './turns.js';
 import { attachmentsHtml } from './attach.js';
+import { artifactCard } from './artifacts.js';
 function diffCounts(diff) {
   const lines = (diff || '').split('\n');
   return {
@@ -82,6 +83,9 @@ export function message(role, text, result = {}) {
             ' sources</button>'
           : '') +
         '</div>';
+    if (result.artifacts?.length)
+      node.innerHTML +=
+        '<div class="artifact-cards">' + result.artifacts.map(artifactCard).join('') + '</div>';
     const u = result.usage,
       t = result.timing,
       counts = diffCounts(result.diff);

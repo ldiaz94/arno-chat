@@ -10,6 +10,7 @@ import { drawer, title, sidebar, theme } from './layout.js';
 import { loadModels, openModels, renderModels, chooseModel } from './models.js';
 import { openSources } from './thread.js';
 import { openInfo } from './info.js';
+import { artifactClick } from './artifacts.js';
 import {
   resume,
   newChat,
@@ -112,6 +113,7 @@ document.addEventListener('click', e => {
   const citation = e.target.closest('[data-citation]');
   if (citation)
     openSources(citation.closest('.turn')._sources || [], Number(citation.dataset.citation));
+  artifactClick(e);
   const allSources = e.target.closest('[data-all-sources]');
   if (allSources) openSources(allSources.closest('.turn')._sources || []);
   const suggestion = e.target.closest('[data-suggest]');

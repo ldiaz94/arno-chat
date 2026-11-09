@@ -189,12 +189,12 @@ export async function plainChat({
           ? { system: instructions || 'You are a helpful assistant.' }
           : { stream_options: { include_usage: true } }),
         ...(provider === 'openai'
-          ? { max_completion_tokens: 4096 }
+          ? { max_completion_tokens: 16384 }
           : provider === 'gemini'
             ? // Thinking counts against Gemini's output limit, so keep its default,
               // and ask for thoughts, which arrive in content as <thought>…</thought>.
               { extra_body: { google: { thinking_config: { include_thoughts: true } } } }
-            : { max_tokens: 4096 }),
+            : { max_tokens: 16384 }),
       }),
     });
     total.calls++;
