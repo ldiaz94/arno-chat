@@ -2019,3 +2019,10 @@ test('creating a chat with a client id twice returns the same chat', async () =>
   const second = await (await init()).json();
   assert.equal(second.createdAt, first.createdAt);
 });
+test('your name reaches the model through the instructions', () => {
+  assert.match(
+    instructions({ name: 'Luis', about: 'Builds things' }),
+    /^The user's name is Luis\.\n\nAbout the user:\nBuilds things/,
+  );
+  assert.equal(instructions({}), '');
+});

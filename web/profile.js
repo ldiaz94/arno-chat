@@ -15,6 +15,9 @@ export function profilePanel(account) {
   return (
     '<section data-account-panel="you">' +
     '<section class="setting-card"><strong>Picture</strong><div class="picture-row"><span class="avatar picture" id="picture"></span><div class="setting-row"><button id="picture-upload" class="ghost" type="button">Upload</button><input id="picture-file" type="file" hidden accept="image/png,image/jpeg,image/webp"><button id="picture-remove" class="ghost" type="button">Remove</button></div></div><p class="caption" id="picture-status">Shown next to your messages. Large photos are shrunk to 256 × 256 pixels.</p></section>' +
+    '<label>Your name<input id="name" class="field" maxlength="80" autocomplete="name" placeholder="What should Arno call you?" value="' +
+    esc(account.name) +
+    '"></label>' +
     '<label>About you<textarea id="about" class="field" rows="5" maxlength="2000" placeholder="What should the assistant know about you? (name, role, preferences)">' +
     esc(account.about) +
     '</textarea></label><p class="caption">Up to 2,000 characters, sent to every model with each request. Saved with Save preferences.</p>' +
@@ -105,6 +108,7 @@ export async function profilePrefs() {
   // A typed place is checked now, so a misspelling shows here, not on the home page.
   if (weather && place && !spot && !state.offline) await geocode(place);
   return {
+    name: $('#name').value,
     about: $('#about').value,
     enterSends: $('#enter-sends').checked,
     defaultModel: $('#default-model').value,

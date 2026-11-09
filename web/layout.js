@@ -68,6 +68,11 @@ export function title(name, subtitle) {
   if (open) t.tabIndex = 0;
   else t.removeAttribute('tabindex');
   $('#subtitle').textContent = subtitle;
+  // Header buttons that only mean something in a conversation (actions, export,
+  // details) or only in a coding one (code browser, publish).
+  const coding = !!state.session && state.session.kind !== 'chat';
+  for (const id of ['actions', 'export', 'usage']) $('#' + id).hidden = !state.session;
+  for (const id of ['code', 'publish']) $('#' + id).hidden = !coding;
   $('#workspace-pill').hidden = !state.session || state.session.kind === 'chat';
   $('#workspace-label').textContent =
     state.session?.workspaceState === 'warm' ? 'Workspace warm' : 'Workspace saved';

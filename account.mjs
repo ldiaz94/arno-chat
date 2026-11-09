@@ -143,6 +143,7 @@ export async function profile(env, userId) {
 }
 export function instructions(p) {
   return [
+    p.name ? "The user's name is " + p.name + '.' : '',
     p.about ? 'About the user:\n' + p.about : '',
     p.systemPrompt || '',
     ...(p.skills || []).filter(s => s.enabled).map(s => 'Skill: ' + s.name + '\n' + s.content),
@@ -180,6 +181,7 @@ export function homeSettings(value) {
 export function publicProfile(env, p) {
   return {
     systemPrompt: p.systemPrompt || '',
+    name: p.name || '',
     about: p.about || '',
     home: p.home || HOME,
     enterSends: p.enterSends ?? false, // false (default): Enter adds a line, Ctrl/⌘+Enter sends; true: Enter sends
@@ -376,6 +378,8 @@ export async function accountRoute(request, env, userId) {
     } else {
       if (typeof body.systemPrompt !== 'string' || body.systemPrompt.length > 12000)
         throw Error('System prompt must be at most 12,000 characters');
+      const name = String(body.name ?? p.name ?? '').trim();
+      if (name.length > 80) throw Error('Names are limited to 80 characters');
       const about = body.about ?? p.about ?? '';
       if (typeof about !== 'string' || about.length > 2000)
         throw Error('About you must be at most 2,000 characters');
@@ -439,6 +443,7 @@ export async function accountRoute(request, env, userId) {
       });
       await save({
         systemPrompt: body.systemPrompt,
+        name,
         about,
         home,
         enterSends,

@@ -24,7 +24,7 @@ export const homePrefs = () => ({
 const skips = { quote: 0, fact: 0 }; // how many times "another" was pressed today
 /** The greeting by the mascot: "Good evening, <login>", with a line below. */
 export function greeting(eyebrow, line) {
-  const name = esc(state.user?.login || 'there'),
+  const name = esc(state.profile?.name || state.user?.login || 'there'),
     part = partOfDay(new Date().getHours());
   return (
     '<div class="welcome"><div class="eyebrow">' +

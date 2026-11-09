@@ -63,8 +63,6 @@ export async function resume(id) {
     $('.composer-hint').textContent = composerHint(s);
     prompt.placeholder =
       s.kind === 'chat' ? 'Message Arno…' : 'Ask Arno to build, fix, or explain…';
-    $('#code').hidden = s.kind === 'chat';
-    $('#publish').hidden = s.kind === 'chat';
     title(
       s.title || s.repo,
       s.kind === 'chat'
@@ -157,8 +155,6 @@ export async function newChat(text) {
 }
 export async function home() {
   $('#code-dialog').close();
-  $('#code').hidden = false;
-  $('#publish').hidden = false;
   ++state.generation;
   state.search++;
   state.session = null;
@@ -261,6 +257,10 @@ function codeHome() {
           .join('') +
         '</div>'
       : '') +
+    // Without repository access GitHub shows only public repositories.
+    (state.githubConnected
+      ? ''
+      : '<div class="connect-repos"><div><strong>Private repositories aren’t connected</strong><p class="caption">Signing in only lets Arno see your public repositories. Connect repository access to search, clone and publish private ones. For an organisation’s repositories, approve Arno for that organisation on the GitHub page that opens.</p></div><a class="primary button-link" href="/auth/github?repos=1">Connect GitHub repositories</a></div>') +
     '<div class="section-title"><h2>Start from a repository</h2>' +
     modelChip() +
     '</div><div class="searchbox">' +

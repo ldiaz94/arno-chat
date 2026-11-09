@@ -2618,3 +2618,26 @@ details.setting-card.collapsible[open] > summary {
 .brand[role='button'] {
   cursor: pointer;
 }
+
+/* Code home: the prompt to connect private repositories. */
+.connect-repos {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 24px 0 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.connect-repos p {
+  margin: 4px 0 0;
+}
+.button-link {
+  display: inline-block;
+  padding: 10px 16px;
+  border-radius: 10px;
+  text-decoration: none;
+}
