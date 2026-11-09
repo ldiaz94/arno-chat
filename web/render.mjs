@@ -1,5 +1,5 @@
 /** Render a deliberately small Markdown dialect. Raw HTML is always text.
- * Links are restricted to HTTP(S); repository/model content never enters an
+ * Links and images are restricted to HTTP(S); repository/model content never enters an
  * HTML attribute without escaping. Code fences are parsed before inline markup.
  */
 export function markdown(source, sources = []) {
@@ -34,12 +34,37 @@ export function markdown(source, sources = []) {
     cells.push(cur);
     return cells.map(c => c.trim());
   };
+  const entities = { quot: '"', '#39': "'", lt: '<', gt: '>', amp: '&' };
   const inline = s => {
     const code = [];
     let text = escape(s).replace(
       /\x60([^\x60]+)\x60/g,
       (_, v) => '\u0000' + (code.push('<code>' + v + '</code>') - 1) + '\u0000',
     );
+    // Images load through the same-origin /api/image proxy; the original URL only links out.
+    text = text.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, (original, alt, href) => {
+      const real = href.replace(/&(quot|#39|lt|gt|amp);/g, (_, e) => entities[e]);
+      try {
+        if (real.length > 2000 || !['https:', 'http:'].includes(new URL(real).protocol))
+          return original;
+      } catch {
+        return original;
+      }
+      return (
+        '\u0000' +
+        (code.push(
+          '<a class="md-image" href="' +
+            href +
+            '" target="_blank" rel="noopener noreferrer"><img src="/api/image?url=' +
+            escape(encodeURIComponent(real)) +
+            '" alt="' +
+            alt +
+            '" loading="lazy" decoding="async" referrerpolicy="no-referrer"></a>',
+        ) -
+          1) +
+        '\u0000'
+      );
+    });
     text = text.replace(/\[(\d+)\](?:\((https?:\/\/[^\s)]+)\))?/g, (original, id) => {
       const source = sources.find(s => s.id === Number(id));
       if (!source) return original;

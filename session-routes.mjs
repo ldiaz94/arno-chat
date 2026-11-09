@@ -84,6 +84,7 @@ export const sessionRoutes = {
     if (['checkpointing', 'saving'].includes(job.stage))
       return json({ error: 'This response is being saved. Please wait for it to finish.' }, 409);
     await this.ctx.storage.put('job', { ...job, status: 'cancelled', finishedAt: Date.now() });
+    await this.recordFailure(job, 'Stopped before it finished.');
     this.chatAbort?.abort();
     await this.ctx.storage.delete('modelQuota');
     if (this.ctx.container?.running) await this.ctx.container.destroy();
@@ -154,7 +155,8 @@ export const sessionRoutes = {
       !body.prompt.trim() ||
       body.prompt.length > 8000 ||
       !/^[-a-f0-9]{36}$/.test(body.id || '') ||
-      (body.editAt != null && !Number.isSafeInteger(body.editAt))
+      (body.editAt != null && !Number.isSafeInteger(body.editAt)) ||
+      (body.replaces != null && !Number.isSafeInteger(body.replaces))
     )
       return json({ error: 'Invalid message' }, 400);
     return this.ctx.storage.transaction(async txn => {
@@ -170,6 +172,7 @@ export const sessionRoutes = {
         id: body.id,
         prompt: body.prompt,
         editAt: body.editAt || null,
+        replaces: body.replaces || null,
         status: 'queued',
         createdAt: Date.now(),
       };
@@ -203,7 +206,7 @@ export const sessionRoutes = {
       remoteUrl: meta.remoteUrl || 'https://github.com/' + meta.repo,
       workspaceState: this.ctx.container?.running ? 'warm' : 'sleeping',
       stats: (await this.ctx.storage.get('stats')) || null,
-      history: await this.history(),
+      history: await this.history(true),
     });
   },
   async 'POST /session/init'(request) {

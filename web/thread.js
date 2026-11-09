@@ -3,7 +3,7 @@
  */
 import { markdown, cleanOutput, diffHtml } from './render.mjs';
 import { $, state, esc, icon, num, duration, modelName, money, copy, main } from './core.js';
-import { editMessage } from './turns.js';
+import { editMessage, retry } from './turns.js';
 function diffCounts(diff) {
   const lines = (diff || '').split('\n');
   return {
@@ -127,6 +127,23 @@ main.addEventListener(
   },
   { passive: true },
 );
+/** A failed or stopped turn, shown after its message, with Retry. at is the
+ * saved failure's time (known once the session is refreshed), which the retry
+ * names so the server replaces the failed record. */
+export function failure(text, error, at) {
+  const node = document.createElement('div');
+  node.className = 'failure';
+  node.setAttribute('role', 'alert');
+  node.innerHTML =
+    '<p>' +
+    esc(error || 'This turn failed.') +
+    '</p><div class="failure-actions"><button type="button" class="primary">Retry</button></div>';
+  if (at) node.dataset.at = at;
+  node.querySelector('button').onclick = () => retry(node, text);
+  $('#thread').append(node);
+  scrollDown();
+  return node;
+}
 export function scrollDown(force = false) {
   if (force) following = true;
   if (following) main.scrollTo({ top: main.scrollHeight, behavior: 'instant' });

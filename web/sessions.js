@@ -20,7 +20,7 @@ import {
 } from './core.js';
 import { drawer, busy, title, sidebar } from './layout.js';
 import { modelButton, openModels } from './models.js';
-import { message, scrollDown, suggestions } from './thread.js';
+import { message, failure, scrollDown, suggestions } from './thread.js';
 import { watchJob, resizePrompt } from './turns.js';
 export async function resume(id) {
   $('#code-dialog').close();
@@ -60,7 +60,8 @@ export async function resume(id) {
     else
       for (const t of s.history) {
         message('You', t.prompt, { at: t.at });
-        message('Arno', t.summary, t);
+        if (t.failed) failure(t.prompt, t.error, t.at);
+        else message('Arno', t.summary, t);
       }
     composer.hidden = false;
     modelButton();

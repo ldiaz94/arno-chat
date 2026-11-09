@@ -36,6 +36,7 @@ function fixture(values = {}) {
           ? map.set(k, v)
           : Object.entries(k).forEach(([key, value]) => map.set(key, value)),
       setAlarm: async () => {},
+      delete: async k => [].concat(k).forEach(key => map.delete(key)),
     },
     container: {
       running: false,
@@ -837,4 +838,66 @@ test('Gemini prices: first tier, dated changes resolved at the turn time', async
     out: 3,
   });
   assert.equal(priceOf(rows, 'gemini/gemini-9-flash', Date.UTC(2027, 0, 1, 1)).inp, 1.5);
+});
+
+test('markdown images load through the proxy and only over HTTP(S)', () => {
+  const html = markdown('![a "cat" & co](https://img.example.com/c.png?x=1&y=2)');
+  assert.match(
+    html,
+    /<img src="\/api\/image\?url=https%3A%2F%2Fimg\.example\.com%2Fc\.png%3Fx%3D1%26y%3D2"/,
+  );
+  assert.match(html, /alt="a &quot;cat&quot; &amp; co"/);
+  assert.match(
+    html,
+    /<a class="md-image" href="https:\/\/img\.example\.com\/c\.png\?x=1&amp;y=2" target="_blank"/,
+  );
+  assert.doesNotMatch(html, /<a [^>]*>[^<]*<a /);
+  for (const bad of ['javascript:alert(1)', 'data:image/png;base64,AAAA'])
+    assert.doesNotMatch(markdown('![x](' + bad + ')'), /<img|<a /);
+});
+
+test('image proxy refuses private hosts, non-images, SVG and private redirects, and passes PNG', async () => {
+  const { proxyImage } = await import('./api.mjs');
+  const reply =
+    (body, type, status = 200, headers = {}) =>
+    async () =>
+      new Response(body, { status, headers: { 'Content-Type': type, ...headers } });
+  const never = async () => assert.fail('upstream must not be called');
+  assert.equal((await proxyImage('http://127.0.0.1/x.png', never)).status, 400);
+  assert.equal((await proxyImage('file:///etc/passwd', never)).status, 400);
+  assert.equal(
+    (await proxyImage('https://a.example.com/x', reply('<html>', 'text/html'))).status,
+    415,
+  );
+  assert.equal(
+    (await proxyImage('https://a.example.com/x.svg', reply('<svg/>', 'image/svg+xml'))).status,
+    415,
+  );
+  const redirect = reply('', 'text/plain', 302, { Location: 'http://localhost/x.png' });
+  assert.equal((await proxyImage('https://a.example.com/x.png', redirect)).status, 400);
+  const ok = await proxyImage(
+    'https://a.example.com/x.png',
+    reply(new Uint8Array([137, 80]), 'image/png'),
+  );
+  assert.equal(ok.status, 200);
+  assert.equal(ok.headers.get('Content-Type'), 'image/png');
+  assert.equal(ok.headers.get('Cache-Control'), 'private, max-age=86400');
+  assert.equal(ok.headers.get('X-Content-Type-Options'), 'nosniff');
+  assert.equal(ok.headers.get('Content-Security-Policy'), "default-src 'none'; sandbox");
+  assert.equal((await ok.arrayBuffer()).byteLength, 2);
+});
+
+test('failed turns stay in the transcript, out of context, until a retry replaces them', async () => {
+  const f = fixture({ session: { id: 's', kind: 'chat' } });
+  await f.obj.recordFailure({ prompt: 'first try' }, 'boom');
+  const [failed] = await f.obj.history(true);
+  assert.equal(failed.failed, true);
+  assert.equal(failed.error, 'boom');
+  assert.deepEqual(await f.obj.history(), []);
+  // A retry that fails again replaces the old record rather than adding one.
+  await new Promise(r => setTimeout(r, 2));
+  await f.obj.recordFailure({ prompt: 'first try', replaces: failed.at }, 'boom again');
+  const after = await f.obj.history(true);
+  assert.equal(after.length, 1);
+  assert.equal(after[0].error, 'boom again');
 });

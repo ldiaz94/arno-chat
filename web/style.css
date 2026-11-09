@@ -845,7 +845,16 @@ table.sized th {
   z-index: 100;
   max-width: 90vw;
 }
-.banner {
+.failure-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.failure p {
+  margin: 0;
+}
+.banner,
+.failure {
   border: 1px solid #6d3c3a;
   color: var(--red);
   padding: 12px;
@@ -1758,4 +1767,16 @@ body.light {
   .streaming .prose > :last-child::after {
     animation: none;
   }
+}
+
+.prose .md-image {
+  display: inline-block;
+  max-width: 100%;
+}
+.prose img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  border: 1px solid var(--line);
 }

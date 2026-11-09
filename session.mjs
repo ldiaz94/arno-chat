@@ -94,6 +94,7 @@ export class ArnoProbe extends DurableObject {
   }
   /** Shared persistent transcript/statistics path for plain and coding turns. */
   async saveTurn(result, prompt, snapshot, sourceRegistry, editAt) {
+    await this.dropReplaced(await this.ctx.storage.get('job'));
     if (editAt) {
       const turns = await this.ctx.storage.list({ prefix: 'turn:' });
       await this.ctx.storage.delete([...turns].filter(([, t]) => t.at >= editAt).map(([k]) => k));
@@ -152,6 +153,31 @@ export class ArnoProbe extends DurableObject {
     };
     await this.ctx.storage.put(records);
     if (legacy) await this.ctx.storage.delete('history');
+    await this.trimTurns();
+  }
+  /** Keep a failed or stopped turn in the transcript so it survives a reload
+   * and can be retried. It never enters model context (see history). */
+  async recordFailure(job, error) {
+    await this.dropReplaced(job);
+    const at = Date.now();
+    await this.ctx.storage.put('turn:' + String(at).padStart(16, '0') + ':' + crypto.randomUUID(), {
+      prompt: job.prompt,
+      failed: true,
+      error,
+      at,
+    });
+    await this.trimTurns();
+  }
+  /** A retry names the failed turn it replaces (job.replaces, that turn's at);
+   * the failed record goes once the retry's own outcome is saved. */
+  async dropReplaced(job) {
+    if (!job?.replaces) return;
+    const turns = await this.ctx.storage.list({ prefix: 'turn:' });
+    const keys = [...turns].filter(([, t]) => t.failed && t.at === job.replaces).map(([k]) => k);
+    if (keys.length) await this.ctx.storage.delete(keys);
+  }
+  /** Retain the 20 most recent turns. */
+  async trimTurns() {
     const all = await this.ctx.storage.list({ prefix: 'turn:' });
     if (all.size > 20) await this.ctx.storage.delete([...all.keys()].slice(0, all.size - 20));
   }
@@ -231,9 +257,12 @@ export class ArnoProbe extends DurableObject {
   }
   /** Read bounded recent turns; old sessions migrate lazily after a successful
    * checkpoint, so a failed model run never discards their prior transcript. */
-  async history() {
+  async history(withFailures = false) {
     const rows = await this.ctx.storage.list({ prefix: 'turn:', reverse: true, limit: 20 });
-    return rows.size ? [...rows.values()].reverse() : (await this.ctx.storage.get('history')) || [];
+    const turns = rows.size
+      ? [...rows.values()].reverse()
+      : (await this.ctx.storage.get('history')) || [];
+    return withFailures ? turns : turns.filter(t => !t.failed);
   }
   /** Persist phase updates for mobile polling; never revive a cancelled job. */
   async phase(stage, extra = {}) {
@@ -340,6 +369,7 @@ export class ArnoProbe extends DurableObject {
         const ok = r.ok && (!result.exitCode || result.exitCode === 0);
         if (!ok && !result.error) result.error = result.summary || 'The coding task failed.';
         const current = await this.ctx.storage.get('job');
+        if (!ok && current?.status !== 'cancelled') await this.recordFailure(job, result.error);
         if (current?.status !== 'cancelled')
           await this.ctx.storage.put('job', {
             ...current,
@@ -353,22 +383,19 @@ export class ArnoProbe extends DurableObject {
         const current = await this.ctx.storage.get('job');
         if (current?.status === 'cancelled') {
           if (this.ctx.container?.running) await this.ctx.container.destroy();
-        } else
-          await this.ctx.storage.put('job', {
-            ...job,
-            status: 'failed',
-            result: { error: 'The coding task failed. Your last checkpoint is preserved.' },
-          });
+        } else {
+          const error = 'The coding task failed. Your last checkpoint is preserved.';
+          await this.recordFailure(job, error);
+          await this.ctx.storage.put('job', { ...job, status: 'failed', result: { error } });
+        }
       }
       await this.ctx.storage.setAlarm(Date.now() + 35 * 60 * 1000);
       return;
     }
     if (job?.status === 'running') {
-      await this.ctx.storage.put('job', {
-        ...job,
-        status: 'failed',
-        result: { error: 'The task was interrupted. Retry from the last saved checkpoint.' },
-      });
+      const error = 'The task was interrupted. Retry from the last saved checkpoint.';
+      await this.recordFailure(job, error);
+      await this.ctx.storage.put('job', { ...job, status: 'failed', result: { error } });
     }
     await this.ctx.storage.delete('modelQuota');
     if (this.ctx.container?.running) await this.ctx.container.destroy();

@@ -7,6 +7,66 @@ import { catalog, modelAllowed } from './models.mjs';
 import { validateFiles } from './publish.mjs';
 import { profile, credential, providerModels, accountRoute, unseal } from './account.mjs';
 import { testMcp } from './mcp.mjs';
+import { publicWebUrl } from './web.mjs';
+
+const IMAGE_TYPE = /^image\/(png|jpeg|gif|webp|avif)$/;
+const IMAGE_LIMIT = 8 * 1024 * 1024;
+
+/** Fetch a public image for the viewer so third-party hosts never see them.
+ * Follows at most three redirects, re-checking each target (SSRF); only
+ * raster types pass (never SVG); the body is capped at 8 MB. */
+export async function proxyImage(target, upstream = fetch) {
+  if (target.length > 2000 || !publicWebUrl(target))
+    return json({ error: 'Invalid image URL' }, 400);
+  let response;
+  for (let hops = 0; ; hops++) {
+    try {
+      response = await upstream(target, {
+        redirect: 'manual',
+        headers: { 'User-Agent': 'ArnoChat-ImageProxy/1', Accept: 'image/*' },
+        signal: AbortSignal.timeout(10000),
+      });
+    } catch {
+      return json({ error: 'Image fetch failed' }, 502);
+    }
+    const location = response.headers.get('Location');
+    if (response.status < 300 || response.status >= 400 || !location) break;
+    await response.body?.cancel();
+    target = new URL(location, target).href;
+    if (hops === 3 || !publicWebUrl(target)) return json({ error: 'Invalid image redirect' }, 400);
+  }
+  if (!response.ok) return json({ error: 'Image fetch failed' }, 502);
+  const type = (response.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
+  if (!IMAGE_TYPE.test(type)) {
+    await response.body?.cancel();
+    return json({ error: 'Not a supported image' }, 415);
+  }
+  const reader = response.body.getReader(),
+    chunks = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > IMAGE_LIMIT) {
+        await reader.cancel();
+        return json({ error: 'Image is too large' }, 502);
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return json({ error: 'Image fetch failed' }, 502);
+  }
+  return new Response(new Blob(chunks), {
+    headers: {
+      ...SECURITY,
+      'Content-Type': type,
+      'Cache-Control': 'private, max-age=86400',
+      'Content-Security-Policy': "default-src 'none'; sandbox",
+    },
+  });
+}
 
 async function account(request, env, url, auth) {
   if (!['GET', 'POST'].includes(request.method)) return json({ error: 'Unsupported method' }, 405);
@@ -18,6 +78,9 @@ async function account(request, env, url, auth) {
 }
 
 export const apiRoutes = {
+  async 'GET /api/image'(request, env, url) {
+    return proxyImage(url.searchParams.get('url') || '');
+  },
   async 'POST /api/account/mcp-test'(request, env, url, auth) {
     const { id } = await boundedJson(request),
       p = await profile(env, auth.user.id),

@@ -4,7 +4,7 @@
 import { markdown } from './render.mjs';
 import { $, state, esc, duration, api, toast, showError, prompt } from './core.js';
 import { busy, title, sidebar } from './layout.js';
-import { message, scrollDown } from './thread.js';
+import { message, failure, scrollDown } from './thread.js';
 function activity(job) {
   let node = $('#activity');
   if (!node) {
@@ -169,14 +169,21 @@ export async function watchJob(id, gen, expected) {
             state.session?.kind === 'chat' ? 'Response saved' : 'Turn complete · workspace saved',
           );
         } else {
-          const node = document.createElement('div');
-          node.className = 'banner';
-          node.textContent =
+          const card = failure(
+            job.prompt,
             job.status === 'cancelled'
-              ? 'Task stopped. The next turn restores the last completed checkpoint.'
-              : job.result?.error || 'Task failed. Your previous checkpoint is preserved.';
-          $('#thread').append(node);
-          prompt.value = job.prompt || '';
+              ? 'Stopped before it finished.'
+              : job.result?.error || 'Task failed. Your previous checkpoint is preserved.',
+          );
+          // The saved failure's time lets Retry and Edit replace it.
+          const updated = await api('/api/sessions/' + id).catch(() => null),
+            saved = updated?.history?.at(-1);
+          if (gen === state.generation && saved?.failed) {
+            state.session = { id, ...updated };
+            card.dataset.at = saved.at;
+            const asked = card.previousElementSibling;
+            if (asked?.classList.contains('user')) asked.dataset.at = saved.at;
+          }
           toast(
             job.status === 'cancelled'
               ? 'Task stopped'
@@ -235,10 +242,23 @@ export function editMessage(node, text) {
     send(v, at);
   };
 }
-async function send(text, editAt) {
+/** Send a failed turn's message again in its place. */
+export function retry(card, text) {
+  if (state.busy) return toast('Wait for the current turn to finish');
+  const replaces = Number(card.dataset.at) || undefined;
+  card.previousElementSibling?.classList.contains('user') && card.previousElementSibling.remove();
+  card.remove();
+  send(text, undefined, replaces);
+}
+async function send(text, editAt, replaces) {
   const id = state.session.id,
     gen = state.generation,
-    body = { id: crypto.randomUUID(), prompt: text, ...(editAt ? { editAt } : {}) };
+    body = {
+      id: crypto.randomUUID(),
+      prompt: text,
+      ...(editAt ? { editAt } : {}),
+      ...(replaces ? { replaces } : {}),
+    };
   $('#thread .starter')?.remove();
   message('You', body.prompt);
   busy(true);
