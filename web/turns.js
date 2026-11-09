@@ -1,20 +1,24 @@
 /** Running a turn: sending a prompt, editing a message, polling the job and showing
- * live output. Depends on core, layout, thread, offline and render.mjs.
+ * live output. A message that can't go now (offline, or others of its conversation
+ * still waiting) goes to the outbox instead. Depends on core, layout, thread,
+ * sessions, attach, offline, outbox, queue.mjs and render.mjs.
  */
 import { markdown } from './render.mjs';
 import { $, state, esc, duration, api, toast, showError, prompt } from './core.js';
 import { busy, title, sidebar } from './layout.js';
-import { message, failure, scrollDown } from './thread.js';
+import { message, failure, scrollDown, place } from './thread.js';
 import { resume } from './sessions.js';
 import { uploading, takeReady, restore } from './attach.js';
 import { warm } from './offline.js';
+import { queueMessage, waiting } from './outbox.js';
+import { isLocal } from './queue.mjs';
 function activity(job) {
   let node = $('#activity');
   if (!node) {
     node = document.createElement('div');
     node.id = 'activity';
     node.className = 'activity';
-    $('#thread').append(node);
+    place(node);
   }
   if (state.session?.kind === 'chat') {
     node.className = 'chat-activity';
@@ -222,7 +226,6 @@ export async function watchJob(id, gen, expected) {
 export async function submit(e) {
   e.preventDefault();
   if (!state.session || state.busy || !prompt.value.trim()) return;
-  if (state.offline) return toast('Reconnect to send');
   if (uploading()) return toast('Wait for the uploads to finish');
   const text = prompt.value.trim();
   prompt.value = '';
@@ -232,6 +235,7 @@ export async function submit(e) {
 }
 /** Edit a saved chat message in place; sending replaces it and every later turn. */
 export function editMessage(node, text) {
+  if (state.offline) return toast('Reconnect to edit');
   if (state.busy) return toast('Wait for the current turn to finish');
   const at = Number(node.dataset.at);
   if (!at) return toast('This message can be edited once its answer is saved');
@@ -255,15 +259,16 @@ export function editMessage(node, text) {
 }
 /** Send a failed turn's message again in its place. */
 export function retry(card, text) {
+  if (state.offline) return toast('Reconnect to retry');
   if (state.busy) return toast('Wait for the current turn to finish');
   const replaces = Number(card.dataset.at) || undefined;
   card.previousElementSibling?.classList.contains('user') && card.previousElementSibling.remove();
   card.remove();
   send(text, undefined, replaces, card._attachments);
 }
-// attachments are the metadata of uploaded files sent with the message.
+// attachments are the metadata of uploaded files sent with the message (or, for
+// files picked offline, the files themselves).
 async function send(text, editAt, replaces, attachments = []) {
-  if (state.offline) return toast('Reconnect to send');
   const id = state.session.id,
     gen = state.generation,
     body = {
@@ -273,6 +278,16 @@ async function send(text, editAt, replaces, attachments = []) {
       ...(editAt ? { editAt } : {}),
       ...(replaces ? { replaces } : {}),
     };
+  // A new message waits in the outbox while offline, while earlier ones of its
+  // conversation wait, or while its files are not uploaded; edits and retries
+  // of saved turns need the network.
+  const plain = !editAt && !replaces;
+  if (
+    plain &&
+    (state.offline || isLocal(id) || waiting(id, 'message') || attachments.some(a => !a.id))
+  )
+    return queueMessage(id, body, attachments);
+  if (state.offline) return toast('Reconnect to send');
   $('#thread .starter')?.remove();
   const asked = message('You', body.prompt, { attachments });
   busy(true);
@@ -281,6 +296,15 @@ async function send(text, editAt, replaces, attachments = []) {
   try {
     await api('/api/sessions/' + id + '/messages', { method: 'POST', body: JSON.stringify(body) });
   } catch (e) {
+    if (e.network && plain && (state.offline || !navigator.onLine)) {
+      // The network went: the outbox sends it later. The server de-duplicates
+      // by the message's id, so if this one did arrive, that does no harm.
+      // (Still online, only the reply was lost: the job poll below finds out.)
+      asked.remove();
+      $('#activity')?.remove();
+      busy(false);
+      return queueMessage(id, body, attachments);
+    }
     if (e.status === 400) {
       // An edit already cleared the turns after it: show the saved thread again
       // first (resume clears pending chips), then give back the draft and files.

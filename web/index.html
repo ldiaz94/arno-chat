@@ -253,6 +253,20 @@
         </button>
       </div>
     </dialog>
+    <dialog id="conflict-dialog" class="modal" aria-labelledby="conflict-heading">
+      <form method="dialog">
+        <div class="modal-head">
+          <h2 id="conflict-heading">Changed on another device</h2>
+        </div>
+        <div class="modal-body">
+          <p id="conflict-text"></p>
+          <div class="conflict-actions">
+            <button value="theirs" type="submit">Keep theirs</button>
+            <button value="mine" class="primary" type="submit">Keep yours</button>
+          </div>
+        </div>
+      </form>
+    </dialog>
     <div id="toast" class="toast" role="status" hidden></div>
   </body>
 </html>

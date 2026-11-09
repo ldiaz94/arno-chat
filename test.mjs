@@ -4,6 +4,7 @@ import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { catalog } from './models.mjs';
 import { markdown, cleanOutput } from './web/render.mjs';
+import { Outbox, conflicted, isLocal } from './web/queue.mjs';
 import { buildPrompt } from './context.mjs';
 import { validateFiles } from './publish.mjs';
 import { usageStream, modelRequest, displayDelta } from './gateway.mjs';
@@ -1792,4 +1793,117 @@ test('models that let the provider train on your data are never offered or run',
   assert.ok(TRAINS_ON_DATA.test('meta/muse-spark-1.3-contributor'));
   assert.equal(await modelAllowed('meta/muse-spark-1.3-contributor'), false);
   assert.equal(await modelAllowed('meta/muse-spark-1.3'), true);
+});
+
+/** An outbox over an array, standing in for IndexedDB. */
+function memoryOutbox(stored = []) {
+  const rows = new Map(stored.map(e => [e.key, e]));
+  return new Outbox({
+    all: async () => [...rows.values()],
+    put: async e => void rows.set(e.key, structuredClone(e)),
+    delete: async key => void rows.delete(key),
+    clear: async () => rows.clear(),
+  });
+}
+
+test('outbox: each conversation sends in order, a refused message pauses only its own', async () => {
+  const box = memoryOutbox(),
+    a1 = await box.add({ kind: 'message', sessionId: 'a', body: { prompt: '1' } }),
+    b1 = await box.add({ kind: 'message', sessionId: 'b', body: { prompt: '1' } }),
+    a2 = await box.add({ kind: 'message', sessionId: 'a', body: { prompt: '2' } }),
+    p = await box.add({ kind: 'profile', sessionId: null, body: {} });
+  assert.ok(a1.createdAt < b1.createdAt && b1.createdAt < a2.createdAt);
+  assert.deepEqual(
+    box.heads().map(e => e.key),
+    [a1.key, b1.key, p.key],
+  );
+  await box.remove(a1.key);
+  assert.equal(box.head('a').key, a2.key);
+  await box.update(b1.key, { state: 'failed', error: 'No images' });
+  assert.equal(box.head('b'), null);
+  assert.deepEqual(
+    box.heads().map(e => e.key),
+    [a2.key, p.key],
+  );
+  // Reloaded mid-send: the entry is queued again, in its place.
+  await box.update(a2.key, { state: 'sending' });
+  const again = memoryOutbox(await box.storage.all());
+  await again.load();
+  assert.equal(again.get(a2.key).state, 'queued');
+  assert.deepEqual(
+    again.entries.map(e => e.key),
+    [b1.key, a2.key, p.key],
+  );
+});
+
+test('outbox: repeated renames and profile edits merge, keeping the first base', async () => {
+  const box = memoryOutbox();
+  const first = await box.edit('rename', 's', { title: 'One' }, 'Old');
+  await box.add({ kind: 'message', sessionId: 's', body: { prompt: 'hi' } });
+  await box.edit('rename', 's', { title: 'Two' }, 'One');
+  await box.edit('rename', 't', { title: 'Other' }, 'T');
+  await box.edit('profile', null, { about: 'a' }, 5);
+  await box.edit('profile', null, { about: 'b' }, 7);
+  const renames = box.entries.filter(e => e.kind === 'rename' && e.sessionId === 's');
+  assert.equal(renames.length, 1);
+  assert.equal(renames[0].key, first.key);
+  assert.deepEqual(renames[0].body, { title: 'Two' });
+  assert.equal(renames[0].base, 'Old');
+  assert.equal(box.head('s').key, first.key); // keeps its place in the line
+  const profiles = box.entries.filter(e => e.kind === 'profile');
+  assert.equal(profiles.length, 1);
+  assert.deepEqual([profiles[0].body, profiles[0].base], [{ about: 'b' }, 5]);
+});
+
+test('outbox: an edit clashes only with a change made elsewhere', () => {
+  const rename = { kind: 'rename', base: 'Trip' },
+    profile = { kind: 'profile', base: 100 };
+  assert.equal(conflicted(rename, { title: 'Trip', customTitle: true }), false);
+  assert.equal(conflicted(rename, { title: 'Holiday', customTitle: true }), true);
+  // The server naming a new chat after its first message is no clash.
+  assert.equal(conflicted(rename, { title: 'What should I pack?' }), false);
+  assert.equal(conflicted({ kind: 'rename' }, { title: 'X', customTitle: true }), false);
+  assert.equal(conflicted(profile, { updatedAt: 100 }), false);
+  assert.equal(conflicted(profile, { updatedAt: 200 }), true);
+  assert.equal(conflicted({ kind: 'profile', base: 0 }, {}), false);
+});
+
+test('outbox: a chat made offline moves its line to the id the server gives it', async () => {
+  const box = memoryOutbox(),
+    local = 'local-' + crypto.randomUUID();
+  assert.ok(isLocal(local) && !isLocal(crypto.randomUUID()));
+  const chat = await box.add({ kind: 'chat', sessionId: local, body: { model: 'm' } });
+  const m1 = await box.add({ kind: 'message', sessionId: local, body: { prompt: '1' } });
+  const other = await box.add({ kind: 'message', sessionId: 'x', body: { prompt: 'x' } });
+  const m2 = await box.add({ kind: 'message', sessionId: local, body: { prompt: '2' } });
+  assert.equal(box.head(local).key, chat.key); // the chat is made first
+  await box.remove(chat.key);
+  await box.rewrite(local, 'real');
+  assert.deepEqual(box.of(local), []);
+  assert.deepEqual(
+    box.of('real').map(e => e.key),
+    [m1.key, m2.key],
+  );
+  assert.equal(box.head('real').key, m1.key);
+  assert.equal((await box.storage.all()).find(e => e.key === m2.key).sessionId, 'real');
+  assert.equal(box.get(other.key).sessionId, 'x');
+  await box.dropSession('real');
+  assert.deepEqual(
+    box.entries.map(e => e.key),
+    [other.key],
+  );
+});
+test('creating a chat with a client id twice returns the same chat', async () => {
+  const f = fixture({});
+  const init = () =>
+    f.obj.fetch(
+      new Request('https://internal/session/chat-init', {
+        method: 'POST',
+        body: JSON.stringify({ model: 'mistral-large-4:cloud', ownerId: 7, id: 'x' }),
+      }),
+    );
+  const first = await (await init()).json();
+  await new Promise(r => setTimeout(r, 2));
+  const second = await (await init()).json();
+  assert.equal(second.createdAt, first.createdAt);
 });

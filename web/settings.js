@@ -1,14 +1,38 @@
 /** Account settings dialog: the You tab (profile.js), instructions, skills, MCP connections,
  * custom models, provider keys with setup guides, the account's own SearXNG web search, and
- * notifications. Depends on core, layout, models, marks, profile and push.
+ * notifications. Offline, Save preferences keeps them in the outbox; keys, connections,
+ * the picture and account deletion wait for the network. Depends on core, layout, models,
+ * marks, profile, push, offline and outbox.
  */
-import { $, state, esc, api, toast } from './core.js';
+import { $, state, esc, api, toast, unreachable } from './core.js';
 import { fit } from './layout.js';
 import { loadModels } from './models.js';
 import { providerMark } from './marks.js';
 import { profilePanel, wireProfile } from './profile.js';
 import { pushState, enablePush, disablePush } from './push.js';
+import { controls } from './offline.js';
+import { queueProfile } from './outbox.js';
 let account = null;
+// What in the dialog needs the network, with the tooltip it shows while offline
+// (offline.js's controls() disables what is marked data-online).
+const ONLINE_ONLY = [
+  [
+    '.provider-key, [data-key-save], [data-key-remove], [data-provider-test]',
+    'Reconnect to change API keys',
+  ],
+  [
+    '#search-card input, #search-card select, #search-card button',
+    'Reconnect to change web search',
+  ],
+  ['#mcp-cards input, #mcp-cards button, #add-mcp', 'Reconnect to change MCP connections'],
+  ['#picture-upload, #picture-remove', 'Reconnect to change your picture'],
+  ['#delete-start', 'Reconnect to delete your account'],
+];
+function onlineOnly() {
+  for (const [selector, why] of ONLINE_ONLY)
+    for (const n of $('#account-body').querySelectorAll(selector)) n.dataset.online = why;
+  controls();
+}
 function settingsTabs(tab) {
   document
     .querySelectorAll('[data-account-panel]')
@@ -347,6 +371,7 @@ async function openAccount() {
     wireProfile();
     showPush();
     settingsTabs('you');
+    onlineOnly();
   } catch (e) {
     $('#account-body').innerHTML = '<p class="banner">' + esc(e.message) + '</p>';
   }
@@ -446,7 +471,18 @@ async function saveAccount() {
     })),
   };
   try {
-    account = await api('/api/account', { method: 'POST', body: JSON.stringify(body) });
+    try {
+      if (state.offline) throw unreachable();
+      account = await api('/api/account', { method: 'POST', body: JSON.stringify(body) });
+    } catch (e) {
+      if (!e.network) throw e;
+      // Sent once online, checked against the profile it was edited from. MCP
+      // connections can't change offline; their saved tokens stay as they are.
+      body.mcp = body.mcp.map(m => ({ ...m, token: undefined, clearToken: false }));
+      await queueProfile(body, account.updatedAt || 0);
+      status.textContent = 'Saved on this device · sends when online.';
+      return;
+    }
     document.querySelectorAll('#account-body input[type=password]').forEach(n => (n.value = ''));
     status.textContent = 'Saved. Instructions, skills, and connections apply to subsequent turns.';
     await loadModels();

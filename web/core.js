@@ -85,16 +85,29 @@ export function date(ms) {
     ? new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
     : 'Saved session';
 }
+/** The error api() throws when the network is gone; the outbox (outbox.js) keeps
+ * what failed this way and sends it later. */
+export const unreachable = () => Object.assign(Error('Network unavailable'), { network: true });
+/** Calls the server and returns its JSON. Errors carry the reply's `status`, or
+ * `network` when there was no network. With `fresh`, a reply the service
+ * worker served from the device's saved copy counts as no network. */
 export async function api(path, opt = {}) {
-  const r = await fetch(path, {
-    ...opt,
-    headers: { 'Content-Type': 'application/json' },
-    signal: AbortSignal.timeout(path === '/api/sessions' && opt.method === 'POST' ? 180000 : 25000),
-  });
+  let r;
+  try {
+    r = await fetch(path, {
+      ...opt,
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(
+        path === '/api/sessions' && opt.method === 'POST' ? 180000 : 25000,
+      ),
+    });
+  } catch (e) {
+    throw e instanceof TypeError ? unreachable() : e;
+  }
+  const saved = r.headers.has('X-Arno-Offline');
   // Tells offline.js whether the reply came from the device's saved copy (sw.js).
-  dispatchEvent(
-    new CustomEvent('arno:reply', { detail: { offline: r.headers.has('X-Arno-Offline') } }),
-  );
+  dispatchEvent(new CustomEvent('arno:reply', { detail: { offline: saved } }));
+  if (saved && opt.fresh) throw unreachable();
   let d;
   try {
     d = await r.json();

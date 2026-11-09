@@ -157,6 +157,7 @@ export function publicProfile(env, p) {
   return {
     systemPrompt: p.systemPrompt || '',
     about: p.about || '',
+    updatedAt: p.updatedAt || 0, // when preferences were last saved; offline edits compare it
     skills: p.skills || [],
     models: p.models || [],
     providers: Object.fromEntries(
@@ -400,7 +401,14 @@ export async function accountRoute(request, env, userId) {
           );
         return { id: m.id, name: String(m.name || m.id).slice(0, 120) };
       });
-      await save({ systemPrompt: body.systemPrompt, about, skills, mcp, models });
+      await save({
+        systemPrompt: body.systemPrompt,
+        about,
+        skills,
+        mcp,
+        models,
+        updatedAt: Date.now(),
+      });
     }
     return Response.json(publicProfile(env, await profile(env, userId)));
   } catch (e) {

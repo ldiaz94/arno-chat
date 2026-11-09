@@ -1,12 +1,19 @@
 /** Composer attachments: files and images are uploaded to the open session as soon as they
  * are picked, pasted or dropped, shown as chips above the prompt, and sent by id with the
- * message. Also renders attachments of saved messages. Depends on core only.
+ * message. Offline (or in a chat made offline) a picked file stays on the device, kept by
+ * the outbox until it can be uploaded. Also renders attachments of saved messages.
+ * Depends on core and queue.mjs.
  */
-import { $, state, esc, icon, toast, showError } from './core.js';
+import { $, state, esc, icon, toast, showError, unreachable } from './core.js';
+import { isLocal } from './queue.mjs';
 
 const MaxFiles = 8;
-// Chips of the composer: { key, sid, name, size, kind, type, id?, preview?, status }.
-// status is 'uploading' or 'ready'; preview is an object URL for a picked image.
+const MB = 1024 * 1024;
+// The server's size limits (attachments.mjs), checked here for files kept offline.
+const LIMITS = { image: 5 * MB, text: MB };
+// Chips of the composer: { key, sid, name, size, kind, type, id?, file?, preview?, status }.
+// status is 'uploading' or 'ready'; preview is an object URL for a picked image; file is
+// the picked file while it is not uploaded (offline).
 let chips = [];
 
 export function bytes(n) {
@@ -78,21 +85,12 @@ function drop(c) {
   chips = chips.filter(x => x !== c);
 }
 
-async function upload(file) {
-  const sid = state.session.id,
-    chip = {
-      key: crypto.randomUUID(),
-      sid,
-      name: file.name,
-      size: file.size,
-      kind: file.type.startsWith('image/') ? 'image' : 'text',
-      status: 'uploading',
-      preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : '',
-    };
-  chips.push(chip);
-  render();
+/** Uploads a file to a conversation and returns its metadata. Errors carry the
+ * reply's `status`, or `network` when there was no network. */
+export async function uploadFile(sid, file) {
+  let r;
   try {
-    const r = await fetch('/api/sessions/' + sid + '/attachments', {
+    r = await fetch('/api/sessions/' + sid + '/attachments', {
       method: 'POST',
       body: file,
       headers: {
@@ -100,9 +98,45 @@ async function upload(file) {
         'X-Filename': encodeURIComponent(file.name),
       },
     });
-    const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw Error(d.error || 'Upload failed');
-    Object.assign(chip, { id: d.id, name: d.name, size: d.size, kind: d.kind, status: 'ready' });
+  } catch {
+    throw unreachable();
+  }
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(Error(d.error || 'Upload failed'), { status: r.status });
+  return { id: d.id, name: d.name, size: d.size, kind: d.kind, type: file.type };
+}
+
+async function upload(file) {
+  const sid = state.session.id,
+    kind = file.type.startsWith('image/') ? 'image' : 'text',
+    chip = {
+      key: crypto.randomUUID(),
+      sid,
+      name: file.name,
+      size: file.size,
+      kind,
+      type: file.type,
+      status: 'uploading',
+      preview: kind === 'image' ? URL.createObjectURL(file) : '',
+    };
+  // Offline the file waits on the device; the outbox uploads it before its message.
+  if (state.offline || isLocal(sid)) {
+    if (file.size > LIMITS[kind]) {
+      if (chip.preview) URL.revokeObjectURL(chip.preview);
+      return toast(
+        (kind === 'image' ? 'Images' : 'Text files') +
+          ' are limited to ' +
+          LIMITS[kind] / MB +
+          ' MB',
+      );
+    }
+    chips.push(Object.assign(chip, { file, status: 'ready' }));
+    return render();
+  }
+  chips.push(chip);
+  render();
+  try {
+    Object.assign(chip, await uploadFile(sid, file), { status: 'ready' });
   } catch (e) {
     drop(chip);
     showError(e);
@@ -127,7 +161,7 @@ export const uploading = () => chips.some(c => c.status === 'uploading');
 export function takeReady() {
   const ready = chips
     .filter(c => c.status === 'ready')
-    .map(({ id, name, type, size, kind }) => ({ id, name, type, size, kind }));
+    .map(({ id, name, type, size, kind, file }) => ({ id, name, type, size, kind, file }));
   clearAttachments();
   return ready;
 }

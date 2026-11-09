@@ -15,6 +15,8 @@ A responsive chat and remote coding workspace built around [Arno](https://github
 
 Answers stream as they arrive in both chat modes. Expand **Thinking** to view provider-exposed reasoning when available; it stays collapsed by default. Coding previews identify the current model pass and remain provisional until the workspace checkpoint is saved. Closing the page does not cancel a turn.
 
+It installs as an app and works offline: every conversation reads from the device, and messages (with attachments), new chats, renames and saved preferences wait in an outbox, sent in order once the network is back (on iPhone and iPad the app must be open for that).
+
 Conversation-row menus support rename/delete without opening a conversation. The interface includes dark/light themes, safe Markdown, copy/export, persistent drafts, editable chat messages, usage/timings with per-turn and per-session cost at current list prices, resizable tables, source previews, and distinct chat/coding loading states. The code pane docks on ultrawide screens and becomes a dialog on smaller displays.
 
 ## Providers and research
@@ -38,7 +40,7 @@ If GitHub shows only 17 repositories, check the connection permissions rather th
 
 - `npm test`: ESLint, Prettier check, and unit tests (including a wrangler bundle build).
 - `node design-test.cjs`: Playwright against the local web/ files in the system Chromium (set CHROMIUM_PATH if it is not /usr/bin/chromium). `node browser-test.cjs` runs it against the deployed files.
-- `node offline-test.cjs`: Playwright offline reading against a local server (warm, go offline, reload, open a conversation and artifact).
+- `node offline-test.cjs`: Playwright offline reading against a local server (warm, go offline, reload, open a conversation and artifact; queue messages, a rename and a new chat, then check they reach the server in order once back online).
 - Deploy with `npx wrangler deploy`.
 
 Browser fixtures are not evidence of real OAuth or GitHub publication. Real provider, container, MCP and research runs are in the validation record in [OPERATIONS.md](OPERATIONS.md).

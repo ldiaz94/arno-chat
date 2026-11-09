@@ -76,6 +76,9 @@ export const sessionRoutes = {
   },
   async 'POST /session/chat-init'(request) {
     const { model, ownerId, id } = await request.json();
+    const existing = await this.ctx.storage.get('session');
+    if (existing)
+      return existing.ownerId === ownerId ? json(existing) : json({ error: 'Conflict' }, 409);
     if (!(await modelAllowed(model))) return json({ error: 'Unsupported model' }, 400);
     const meta = {
       id,

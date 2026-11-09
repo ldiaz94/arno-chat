@@ -37,6 +37,7 @@ import { submit, resizePrompt } from './turns.js';
 import './attach.js'; // wires the paperclip, paste and drop
 import './settings.js'; // wires the account settings dialog
 import { register, warm, clearData } from './offline.js';
+import { startOutbox, flush } from './outbox.js';
 tableResize(document);
 
 $('#menu').onclick = () => drawer(true);
@@ -161,6 +162,7 @@ async function boot() {
       loadAvatar(),
       api('/api/sessions').then(d => (state.sessions = d.sessions)),
     ]);
+    await startOutbox(); // chats made offline join the list
     sidebar();
     // A notification links to /?session=<id>: open it, then tidy the address.
     const linked = new URLSearchParams(location.search).get('session');
@@ -168,6 +170,7 @@ async function boot() {
     const saved = /^[0-9a-f-]{36}$/.test(linked || '') ? linked : sessionStorage.getItem('session');
     if (saved) await resume(saved);
     else await home();
+    flush(); // whatever waited from an earlier visit
     if (!state.offline) setTimeout(warm, 2000); // after the page settles
   } catch (e) {
     main.innerHTML =

@@ -864,8 +864,33 @@ table.sized th {
 }
 .failure-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   justify-content: flex-end;
   margin-top: 8px;
+}
+/* Messages waiting in the outbox (outbox.js): dashed, with a badge. */
+.turn.user.queued .user-content {
+  border: 1px dashed var(--line);
+  opacity: 0.85;
+}
+.queued-badge,
+.queued-mark {
+  font-size: 11px;
+  color: var(--warn);
+}
+.queued-badge {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
 }
 .failure p {
   margin: 0;

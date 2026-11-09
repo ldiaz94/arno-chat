@@ -135,9 +135,15 @@ export function message(role, text, result = {}) {
         '</pre></details>';
     node.querySelector('.copy-answer').onclick = () => copy(cleaned);
   }
-  $('#thread').append(node);
+  place(node);
   scrollDown();
   return node;
+}
+/** Adds a node to the end of the thread, above the messages still waiting in
+ * the outbox (outbox.js), which stay last. */
+export function place(node) {
+  const thread = $('#thread');
+  thread.insertBefore(node, thread.querySelector(':scope > .outbox-items'));
 }
 // Follow the stream only while the reader is at the bottom: scrolling up stops
 // following, scrolling back down (or sending) resumes it. Jumps are instant so
@@ -164,7 +170,7 @@ export function failure(text, error, at, attachments = []) {
   if (at) node.dataset.at = at;
   node._attachments = attachments;
   node.querySelector('button').onclick = () => retry(node, text);
-  $('#thread').append(node);
+  place(node);
   scrollDown();
   return node;
 }

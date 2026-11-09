@@ -1,15 +1,16 @@
 /** Offline reading: registers the service worker (sw.js), shows the offline
- * banner and disables sending while offline, warms the saved-data cache with
- * every conversation so all of them open with no network, and clears that
- * cache on sign-out. Everything the app keeps on the device for offline use
- * lives here (a later outbox of unsent messages belongs here too).
+ * banner (with what waits in the outbox, outbox.js) and disables what needs the
+ * network while offline, warms the saved-data cache with every conversation so
+ * all of them open with no network, and clears that cache and the outbox on
+ * sign-out. Back online, it tells the outbox to send.
  *
  *   page fetch ──> sw.js ──network ok──> reply, copy kept in 'arno-data'
  *                        └─network down─> kept copy + X-Arno-Offline: 1
  *
- * Depends on core.
+ * Depends on core and outbox.
  */
 import { $, state } from './core.js';
+import { outboxStatus, flush, clearOutbox } from './outbox.js';
 
 const DATA_CACHE = 'arno-data'; // the service worker's cache of API replies
 const WARM_BYTES = 50 * 1024 * 1024; // attachment images warmed per pass, at most
@@ -24,32 +25,56 @@ const BOOT_READS = [
   '/api/account/avatar',
   '/api/usage/requests',
 ];
-// Controls that need the network, disabled while offline.
-const CONTROLS = ['send', 'attach', 'model-button', 'home-model'];
+// Changing the model needs the network, so these buttons are disabled while offline.
+const MODEL_BUTTONS = ['model-button', 'home-model'];
 
 /** Registers the service worker for the whole site; push.js uses the same one. */
 export function register() {
   navigator.serviceWorker?.register('/sw.js', { scope: '/' }).catch(() => {});
 }
 
-/** Enables or disables the controls that need the network: sending, attaching
- * and changing the model. Busy disables all but attaching. */
+/** Enables or disables the controls that need the network: changing the model,
+ * and every element marked `data-online="Reconnect to …"` (that text is its
+ * tooltip while offline). Busy disables sending and changing the model; offline,
+ * sending and attaching still work, into the outbox. */
 export function controls() {
-  for (const id of CONTROLS) {
+  $('#send').disabled = state.busy;
+  for (const id of MODEL_BUTTONS) {
     const b = document.getElementById(id);
     if (!b) continue;
-    b.disabled = state.offline || (state.busy && id !== 'attach');
-    if (state.offline) b.title = 'Reconnect to send';
+    b.disabled = state.offline || state.busy;
+    if (state.offline) b.title = 'Reconnect to change the model';
     else b.removeAttribute('title');
   }
+  for (const b of document.querySelectorAll('[data-online]')) {
+    b.disabled = state.offline;
+    if (state.offline) b.title = b.dataset.online;
+    else b.removeAttribute('title');
+  }
+}
+
+/** The banner: offline, with how much waits to send; online, the progress of
+ * sending it. Hidden when online with nothing left to send. */
+export function banner() {
+  const { waiting, sending, done, total } = outboxStatus(),
+    node = $('#offline-banner');
+  node.hidden = !state.offline && !(sending && waiting);
+  node.textContent = state.offline
+    ? waiting
+      ? 'Offline · ' + waiting + ' waiting to send'
+      : 'Offline · showing saved conversations'
+    : 'Sending ' + Math.min(done + 1, total) + ' of ' + total + '…';
 }
 
 function setOffline(value) {
   if (value === state.offline) return;
   state.offline = value;
-  $('#offline-banner').hidden = !value;
+  banner();
   controls();
-  if (!value && state.user) warm();
+  if (!value && state.user) {
+    warm();
+    flush();
+  }
 }
 state.offline = null;
 setOffline(!navigator.onLine);
@@ -58,13 +83,15 @@ addEventListener('online', () => setOffline(false));
 // core.js's api() reports whether each reply came from the device (sw.js).
 addEventListener('arno:reply', e => setOffline(e.detail.offline || !navigator.onLine));
 
-/** Deletes everything kept on this device for offline use. */
+/** Deletes everything kept on this device for offline use: the saved replies
+ * and whatever waits in the outbox. */
 export async function clearData() {
   try {
     await caches.delete(DATA_CACHE);
   } catch {
     // No Cache API (an insecure origin): nothing was kept.
   }
+  await clearOutbox();
 }
 
 // Sign-out clears the device's copy before leaving.

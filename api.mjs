@@ -173,8 +173,11 @@ export const apiRoutes = {
     return new Response(null, { status: 204 });
   },
   async 'POST /api/chats'(request, env, url, auth) {
-    const { model } = await boundedJson(request),
-      id = crypto.randomUUID();
+    // A client may name the id (a chat made offline does), which makes a retried
+    // create return the same chat instead of making a second one.
+    const body = await boundedJson(request),
+      model = body.model,
+      id = /^[0-9a-f-]{36}$/.test(body.id || '') ? body.id : crypto.randomUUID();
     const object = env.PROBE.getByName('code:' + auth.user.id + ':' + id);
     const r = await object.fetch('https://internal/session/chat-init', {
       method: 'POST',

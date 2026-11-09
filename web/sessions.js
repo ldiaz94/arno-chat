@@ -1,14 +1,29 @@
 /** Sessions and the home page: open, create, list, search, export, rename and delete
- * conversations, and rename. Depends on core, layout, models, thread, turns and render.mjs.
+ * conversations. Offline, a new chat and a rename wait in the outbox. Depends on core,
+ * layout, models, thread, turns, attach, offline, outbox, queue.mjs and render.mjs.
  */
 import { cleanOutput } from './render.mjs';
-import { $, state, esc, icon, api, toast, showError, main, composer, prompt } from './core.js';
+import {
+  $,
+  state,
+  esc,
+  icon,
+  api,
+  toast,
+  showError,
+  unreachable,
+  main,
+  composer,
+  prompt,
+} from './core.js';
 import { drawer, busy, title, sidebar } from './layout.js';
 import { modelButton, modelLabel, openModels } from './models.js';
 import { message, failure, scrollDown, suggestions } from './thread.js';
 import { watchJob, resizePrompt } from './turns.js';
 import { clearAttachments } from './attach.js';
 import { controls } from './offline.js';
+import { showQueued, localChat, queueChat, queueRename, dropSession } from './outbox.js';
+import { isLocal } from './queue.mjs';
 export async function resume(id) {
   $('#code-dialog').close();
   const gen = ++state.generation;
@@ -18,7 +33,9 @@ export async function resume(id) {
   main.innerHTML =
     '<div class="loading"><span class="spinner"></span><p>Opening saved workspace…</p></div>';
   try {
-    const s = await api('/api/sessions/' + id);
+    // A chat made offline lives only in the outbox until the server makes it.
+    const s = isLocal(id) ? localChat(id) : await api('/api/sessions/' + id);
+    if (!s) throw Error('This conversation is no longer on this device.');
     if (gen !== state.generation) return;
     state.session = { id, ...s };
     state.job = null;
@@ -51,13 +68,14 @@ export async function resume(id) {
         if (t.failed) failure(t.prompt, t.error, t.at, t.attachments);
         else message('Arno', t.summary, t);
       }
+    showQueued();
     composer.hidden = false;
     modelButton();
     busy(false);
     prompt.value = sessionStorage.getItem('draft:' + id) || '';
     resizePrompt();
     scrollDown(true);
-    watchJob(id, gen);
+    if (!isLocal(id)) watchJob(id, gen);
   } catch (e) {
     main.innerHTML =
       '<div class="empty"><h2>Couldn’t open this session</h2><p>' +
@@ -69,7 +87,14 @@ export async function resume(id) {
 export async function newChat() {
   const model = state.session?.model || state.selectedModel || 'mistral-large-4:cloud';
   try {
-    const s = await api('/api/chats', { method: 'POST', body: JSON.stringify({ model }) });
+    let s;
+    try {
+      if (state.offline) throw unreachable();
+      s = await api('/api/chats', { method: 'POST', body: JSON.stringify({ model }) });
+    } catch (e) {
+      if (!e.network) throw e;
+      s = await queueChat(model); // made on the server once back online
+    }
     state.sessions.unshift(s);
     await resume(s.id);
   } catch (e) {
@@ -128,12 +153,13 @@ function repoCard(r) {
     esc(r.description || 'Open a workspace to explore this repository.') +
     '</p><div class="repo-foot"><span class="caption">' +
     esc(r.language || r.default_branch || 'main') +
-    '</span><button class="open-repo" aria-label="Open ' +
+    '</span><button class="open-repo" data-online="Reconnect to start a coding session" aria-label="Open ' +
     esc(r.full_name) +
     '">Open ' +
     icon('chevron') +
     '</button></div>';
   node.querySelector('button').onclick = () => openRepo(r);
+  node.querySelector('button').disabled = state.offline;
   return node;
 }
 // Search advances until there are no GitHub pages left, even if early pages have
@@ -289,10 +315,20 @@ export async function renameConversation(id = state.session?.id) {
   const value = window.prompt('Conversation name', target.title || target.repo);
   if (value == null || !value.trim()) return;
   try {
-    const d = await api('/api/sessions/' + id, {
-      method: 'PATCH',
-      body: JSON.stringify({ title: value.trim() }),
-    });
+    let d, queued;
+    try {
+      if (state.offline || isLocal(id)) throw unreachable();
+      d = await api('/api/sessions/' + id, {
+        method: 'PATCH',
+        body: JSON.stringify({ title: value.trim() }),
+      });
+    } catch (e) {
+      if (!e.network) throw e;
+      // Sent once back online, checked against the name it replaces.
+      await queueRename(id, value.trim(), target.title);
+      d = { title: value.trim(), ref: target.ref, repo: target.repo };
+      queued = true;
+    }
     if (state.session?.id === id) {
       state.session = { ...state.session, ...d };
       title(
@@ -304,7 +340,7 @@ export async function renameConversation(id = state.session?.id) {
     }
     state.sessions = state.sessions.map(s => (s.id === id ? { ...s, ...d } : s));
     sidebar();
-    toast('Conversation renamed');
+    toast(queued ? 'Rename saved · sends when online' : 'Conversation renamed');
   } catch (e) {
     showError(e);
   }
@@ -315,7 +351,8 @@ export async function deleteConversation(id = state.session?.id) {
     return toast('Stop the active task before deleting this conversation');
   if (!confirm('Delete this conversation and its saved workspace? This cannot be undone.')) return;
   try {
-    await api('/api/sessions/' + id, { method: 'DELETE' });
+    if (isLocal(id)) await dropSession(id);
+    else await api('/api/sessions/' + id, { method: 'DELETE' });
     state.sessions = state.sessions.filter(s => s.id !== id);
     $('#actions-dialog').close();
     $('#conversation-dialog').close();
