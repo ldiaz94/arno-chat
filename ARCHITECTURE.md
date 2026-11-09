@@ -1,4 +1,4 @@
-# Architecture and implementation guide
+# Architecture
 
 Arno Chat turns a GitHub repository snapshot into a resumable remote coding workspace. The browser owns presentation; a Cloudflare Worker owns authentication and GitHub publication; one Durable Object per session owns coordination, transcript, task state, and the container.
 
@@ -15,12 +15,12 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 | store-routes.mjs | Internal routes of the per-user index/profile and auth/OAuth store objects |
 | gateway-routes.mjs | Internal callbacks from the model and MCP gateways (permits, progress, usage, research state) |
 | gateways.mjs | ModelGateway and McpGateway entrypoints the container's traffic is routed through |
-| prices.mjs | Daily-cached list prices (Ollama pricing page, OpenRouter for Anthropic/OpenAI) and turn cost |
+| prices.mjs | Daily-cached list prices (Ollama and Gemini pricing pages, OpenRouter for Anthropic/OpenAI) and turn cost |
 | gateway.mjs | Fixed-destination Ollama gateway, bounded payloads, streaming usage observation |
 | context.mjs | Repository provenance and bounded conversation context for every Arno invocation |
 | models.mjs | Live tool-capable cloud catalog and explicit fallback |
 | account.mjs | Masked account settings, AES-GCM key envelopes, provider discovery |
-| chat.mjs | Container-free OpenAI/Ollama/Anthropic conversation and research loop |
+| chat.mjs | Container-free conversation and research loop for every provider |
 | web.mjs | Multi-result search, page reading, host-assigned citations, built-in research MCP |
 | mcp.mjs | Account-approved HTTPS MCP proxy and initialization test |
 | files.mjs | Read-only directory and UTF-8 code navigation |
@@ -32,9 +32,11 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 | web/_headers | Security headers for the static files, including the page's CSP |
 | wrangler.jsonc | Worker config, durable namespace, pinned container image, observability; `npx wrangler deploy` |
 | test.mjs | Backend and rendering regression tests; test-hooks.mjs stubs cloudflare:workers for Node |
-| design-test.cjs | Browser workflow and viewport tests against the local web/ files |
+| design-test.cjs | Playwright browser workflow and viewport tests against the local web/ files; browser-test.cjs runs it against the deployed ones |
 
 Everything in web/ is served by Cloudflare as static files, before the worker runs; the worker handles /api/ and /auth/ only.
+
+Security boundaries are in [SECURITY.md](SECURITY.md); testing and deployment in [OPERATIONS.md](OPERATIONS.md).
 
 ## A session's lifecycle
 
@@ -64,48 +66,159 @@ Arno is a fresh CLI process per turn. The container and repository remain the sa
 
 After execution, the host collects the cumulative diff, model request count, provider-reported usage, phase timings, and raw diagnostics. It saves the filesystem checkpoint, transcript, and cumulative statistics before returning a completed job. Each turn is stored as an individual bounded record, with lazy migration from the original single history value. The browser polls saved status and may leave/reopen without replaying work.
 
-## Frontend state and navigation
+## Routes
 
-The browser stores drafts and the last selected session ID in sessionStorage. Repository and conversation state remain server-owned.
+All API routes require the GitHub-authenticated session cookie except GET /api/me. Cross-origin requests are rejected. JSON errors have an `error` field; provider and token values are never included.
 
-web/app.js increments a generation when navigation changes. Async results and job polls check that generation before repainting. Repository search has a separate generation so a response for an old query cannot overwrite a new query.
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | / and static files | web/ served as static assets (not the worker) |
+| GET | /auth/github | Begin GitHub OAuth |
+| GET | /auth/callback | Consume state and exchange code |
+| GET | /auth/logout | Delete the authentication record and clear cookie |
+| GET | /api/me | User profile and GitHub configuration status |
+| GET | /api/models | Live tool-capable catalog or labeled fallback |
+| GET/POST | /api/account | Masked preferences, system prompt, skills, MCP, custom models |
+| POST | /api/account/key | Encrypt/save or remove a personal provider key |
+| POST | /api/account/test | Verify provider model-API access |
+| POST | /api/account/mcp-test | Verify configured MCP initialization |
+| POST | /api/chats | Create an ordinary conversation without a container or repository |
+| GET | /api/repos?page=N&q=text | Search one authenticated repository page; returns repos, scanned, nextPage |
+| GET | /api/sessions | Recent sessions owned by the user |
+| POST | /api/sessions | Create a workspace from repo, ref, model |
+| GET | /api/sessions/:id | Repository identity, transcript, workspace state, cumulative statistics |
+| PATCH | /api/sessions/:id | Rename a conversation |
+| DELETE | /api/sessions/:id | Delete an idle conversation and its saved workspace reference |
+| GET | /api/sessions/:id/files?path=... | Browse directories or preview a regular UTF-8 file |
+| POST | /api/sessions/:id/messages | Save a task from id and prompt; returns HTTP 202 |
+| GET | /api/sessions/:id/job | Latest durable task state and completed result |
+| GET | /api/sessions/:id/events | Server-sent events: live preview of the running task |
+| POST | /api/sessions/:id/model | Save model selection for the next turn |
+| POST | /api/sessions/:id/cancel | Stop an active task and preserve the last completed checkpoint |
+| GET | /api/sessions/:id/changes | Export exact changed text files and a review digest |
+| POST | /api/sessions/:id/publish | Validate digest, create a new arno/ branch and commit, open a PR |
 
-The desktop sidebar becomes an off-canvas drawer on phones. The main transcript is the scrolling element; the composer stays in the surrounding flex layout. The shell follows visualViewport height/offset so mobile keyboard changes reduce available transcript height. Inputs use a 16px font to avoid Safari focus zoom. Code, tables, and diffs scroll within their own containers.
+Payloads worth knowing:
 
-Account settings open from the avatar/name. On mobile they use a full-height sheet with a compact header and a persistent save area. Conversation-row menus support rename/delete without opening the conversation. The code browser docks alongside chat on ultrawide displays and opens as a dialog on smaller screens.
+- Create session: `repo` is owner/name, `ref` the selected branch, `model` an approved model ID. The host resolves `ref` to a 40-character source commit and downloads that exact archive. The response has id, repo, ref, model, sourceSha, remoteUrl, createdAt.
+- Submit task: `id` is a client-generated UUID, `prompt` is 1-8,000 characters. Reusing an ID deduplicates an uncertain submission; a different ID gets 409 while a turn is queued or running. Never retry an uncertain request with a new UUID. In a regular chat, optional `editAt` (a saved turn's `at`) replaces that turn: it and every later turn are left out of the context and deleted once the new answer is saved.
+- Publish: `digest` must match the reviewed files and source revision. `branch` is `arno/` plus an alphanumeric, underscore or hyphen name. `title` is the commit/PR title, at most 200 characters. The result has branch, commit, url, and a `warning` if the branch exists but the PR could not be opened.
 
-## Repository discovery
+### Task state
 
-GitHub's authenticated user/repositories endpoint is read page by page. The server filters each page by repository name or description. Search automatically continues through every page and shows checked/matched counts until completion. A blank query uses explicit Load more buttons.
+A job has id, prompt, status, createdAt, stage, and optional timing fields while active; terminal states add result and finishedAt.
 
-The server uses both GitHub's Link header and a full-page fallback for continuation, so a missing Link header cannot silently hide repositories after the first 100. Archived repositories remain discoverable and are labeled.
+| Status | Meaning |
+| --- | --- |
+| queued | Durable input exists; alarm scheduled |
+| running | Alarm owns Arno execution |
+| completed | Output and resulting checkpoint saved |
+| failed | Execution, provider, or persistence failed; error available |
+| cancelled | Explicitly stopped; resume from previous checkpoint |
 
-## Model selection and telemetry
+Stage is preparing, restoring, thinking, or checkpointing: work phases, not percent complete. A completed result has summary, model, exitCode, diff, diagnostics, timing (preparation, agent execution, checkpoint, total, workspace mode) and usage (calls, measuredCalls, inputTokens, outputTokens, cost; token values may be null).
 
-The model dialog loads the cloud catalog and includes completion models with tool support. Selecting a different model saves metadata only; it does not wake a container or create a checkpoint. The next turn updates the CLI configuration and gateway policy.
+### Live events
 
-The gateway rebuilds allowed inference requests, fixes the upstream destination for Ollama, OpenAI, or Anthropic, and adds credentials outside the container. Personal keys are encrypted in per-account storage; the private deployment can supply an Ollama fallback. A streaming observer watches provider SSE usage chunks while forwarding the original bytes unchanged. Each usage report is associated with a turn ID so a stale response cannot affect a later turn's counters.
+GET .../events is an authenticated text/event-stream with the same owner-scoped routing as polling. Preview events carry jobId, round, text, reasoning, updatedAt. Each event is a complete bounded snapshot, so a reconnect never duplicates tokens; the current preview is replayed on connect and also returned by GET .../job as a polling fallback. Closing a stream does not cancel its job; the durable job completion is the final saved result. Thinking comes only from provider-designated display fields, is collapsed in the UI and excluded from later prompts; encrypted or redacted reasoning and signatures are never exposed.
 
-Statistics are cumulative from deployment of measurement support onward. Missing provider usage is shown as unavailable. Model requests, token counts, and elapsed wall time are different measurements; none is presented as account balance or monetary cost.
+## State ownership
+
+One Durable Object class (ArnoProbe) has separate named instances:
+
+- `auth:<cookie id>`: encrypted-at-rest GitHub token and user identity;
+- random OAuth state instances: short-lived, one-time;
+- `index:<github user id>`: that user's recent-session entries;
+- `code:<github user id>:<session id>`: repository metadata, checkpoint, transcript, task, statistics.
+
+Internal /session, /model, /auth and /index paths are binding-only; no public router reaches them. The model gateway can request a quota permit and report usage but has no GitHub publication authority.
+
+Keys in a session object:
+
+- `session`: repository provenance and selected model.
+- `snapshot`: the opaque Cloudflare checkpoint handle.
+- `turn:<timestamp>:<uuid>`: one retained transcript turn each; `history` is the legacy key, migrated after a successful turn.
+- `stats`: measured cumulative counters.
+- `job`: latest task state.
+- `modelQuota`: current turn ID, deadline, used calls, measured usage.
+- `live`: latest bounded preview, persisted at most once a second plus at model-pass completion. In-memory previews may be newer, so a reconnect after an object restart can briefly replay the persisted one. Previews are scoped to a job ID.
+
+The checkpoint, current transcript record and statistics are written together after successful persistence. A snapshot failure never replaces the last good checkpoint.
+
+## Accounts, providers and BYOK
+
+Sign-in is separate from repository access. GitHub OAuth is the identity provider. A fresh sign-in requests `read:user`, enough for ordinary conversations. Connecting GitHub from the repository browser or account connections requests `repo` scope for private coding workspaces. Accounts that already granted `repo` may keep it; the app cannot revoke a scope by requesting less later.
+
+The app does not bypass GitHub permissions. If a connection sees few repositories (say 17), that is a visibility result: the API reports scopes and SSO hints. A GitHub App user token is identified separately; expand its selected repositories at https://github.com/settings/installations. Organizations may need approval or SSO authorization.
+
+Repository discovery reads GitHub's user/repositories endpoint page by page and filters each page by name or description. A search continues through every page and shows checked/matched counts; a blank query uses Load more. Continuation uses both the Link header and a full-page fallback, so a missing header cannot hide repositories after the first 100. Archived repositories are listed and labeled. Pasting an exact owner/repo or GitHub URL also tries a direct authorized lookup.
+
+Providers:
+
+- Ollama Cloud, with a personal key or the private deployment's fallback.
+- OpenAI Chat Completions-compatible models.
+- Anthropic's native Messages API.
+- Google Gemini through its OpenAI-compatible endpoint. Each tool call carries a thought signature that is sent back on the next round; thoughts arrive in the text as `<thought>...</thought>` and move to the Thinking panel; thinking tokens, missing from completion_tokens, are counted from total_tokens.
+
+Custom model IDs are `openai/`, `anthropic/` or `gemini/` plus the model ID (Ollama's have no prefix). Connected providers' models join the shared model dialog (Gemini's list is filtered to chat models). Responses-only, realtime, image and audio APIs are not implemented. API billing is separate from ChatGPT/Claude consumer subscriptions.
+
+Keys are AES-GCM encrypted with a random IV and authenticated data bound to user ID and credential field; the master key is the encrypted Worker secret ACCOUNT_ENCRYPTION_KEY (see [SECURITY.md](SECURITY.md)). Public account responses carry saved/available flags, never values or ciphertext. Rotating the secret needs a decrypt/re-encrypt migration, so never rotate it casually. Keys save separately from other preferences. Test connection checks authenticated access and reports a model count; Ollama's catalog is public, so its test also sends a one-token inference request. Saved does not mean tested. Key inputs are cleared after saving and when the dialog closes, and never go to localStorage.
+
+Account system prompt and skills: the prompt applies to later chat and coding requests; enabled skills are named instruction snippets appended to it. They are not shell startup scripts or a plugin installer. Limits: 12,000 characters of prompt, 10 skills of 4,000 characters, 64 KB per account update.
+
+Remote MCP: coding sessions support up to six public HTTPS Streamable HTTP servers, with or without a saved bearer token, disabled until enabled in account preferences. Test performs a real initialize exchange and reports protocol and server identity. Arno sees them through an internal `mcp.internal` gateway that resolves only enabled connections, fixes the endpoint, injects the token outside the container, refuses redirects, limits methods and task requests, and forwards only required session/protocol headers. The host writes an internal alias URL into Arno's configuration, never the token. MCP IDs are lowercase slugs; `web` is reserved for built-in research. Regular chat has the built-in web tools but not custom MCP. MCP OAuth, stdio installation, resources/prompts and third-party connector OAuth are not implemented.
+
+Regular conversations: New chat allocates no VM and imports no repository. The host runs a bounded provider tool loop with persistent history, research, usage and cancellation. Any conversation can be renamed or deleted from its list row; deletion needs confirmation, rejects active work, and removes application records and the workspace handle (Cloudflare's snapshot retention still follows its TTL).
+
+The private deployment is restricted to ldiaz94 by ALLOWED_GITHUB_LOGINS so arbitrary sign-ins cannot spend the owner's subscriptions. Removing that needs entitlements, budgets, billing, abuse controls and retention policies ([OPERATIONS.md](OPERATIONS.md)).
+
+## Model selection, gateway and telemetry
+
+The model dialog loads the catalog and includes completion models with tool support. Selecting a model saves metadata only: no container wakes and no checkpoint is made. The next turn updates the CLI configuration and gateway policy.
+
+The gateway rebuilds allowed inference requests, fixes the upstream to the selected provider's origin, and adds credentials outside the container. A streaming observer reads provider SSE usage chunks while forwarding the original bytes unchanged. Each usage report carries a turn ID, so a stale response cannot touch a later turn's counters.
+
+Statistics are cumulative from when measurement was added. Missing provider usage shows as unavailable. Requests, tokens and wall time are separate measurements. Cost is each turn's tokens at the model's list price, computed when the turn is saved (prices.mjs); a model absent from the price tables is counted as unpriced, never guessed. Web searches are not priced. There is no account balance.
+
+## Web research and citations
+
+Regular and coding conversations both have search and page-reading tools. The host calls Ollama's POST /api/web_search and /api/web_fetch at fixed URLs, so source sites never see the Ollama key. A personal Ollama key is used when configured, otherwise the deployment fallback.
+
+- Search returns up to six results. The model is told to compare them, prefer primary documentation, read original pages, and read at least two credible pages for a comparison.
+- Per turn: up to three searches and six page reads. Regular chat allows up to eight model rounds, the last one without tools. Coding uses Arno's MCP tool loop with its usual call and process limits.
+- Web content is evidence, not instructions. Tool failures are reported as failures.
+- Regular chat uses OpenAI/Ollama function calls or Anthropic tool-use blocks, answering in the provider's own protocol. Coding gets the same read-only tools (web_web_search, web_web_read) from an internal MCP server, trusted in Arno's configuration so reading several sources does not use up its interactive approval input.
+- The host numbers actual results. A source record holds URL, title, excerpt and retrieval time; the recent registry holds 30 records, and retained turns keep their own. The model cites as [1], [2]; the renderer makes a button only for IDs in the answer's saved records, so invented numbers stay plain text. A button or source card opens a preview with domain, title, excerpt, retrieval time and original link. This makes citations inspectable, not correct.
 
 ## Publishing
 
-The explicit review action exports changed regular text files from the worktree, including newly created files. Both the export script and the host validate paths, file count, modes, encoding, and size. Container output is untrusted even when produced by a fixed script.
+The review action exports changed regular text files from the worktree, new files included. The export script and the host both validate paths, file count, modes, encoding and size; container output is untrusted even from a fixed script.
 
-The review response includes a SHA-256 digest of the files and original source revision. The publish action exports again and rejects a changed digest. The Worker creates a Git tree, commit whose parent is the pinned source commit, and a new arno/ branch. It then opens a pull request against the selected base branch.
+The review includes a SHA-256 digest of the files and the source revision. Publishing exports again and rejects a changed digest. The Worker creates a Git tree and a commit whose parent is the pinned source commit on a new `arno/` branch, then opens a pull request against the selected base. Existing branches are never overwritten. If PR creation fails after the branch exists, the UI links the branch and reports the partial result. Sessions without a recorded source revision must be reopened as new ones before publishing.
 
-Existing branches are never overwritten. If pull-request creation fails after branch creation, the UI links to the branch and reports the partial result. Older sessions without recorded source revisions must be reopened as new sessions before publication.
+## Interface
 
-## Limits
+Remote coding is presented as a workspace, not a terminal transcript.
 
-- Cloudflare checkpoints have a 30-day retention window refreshed by restoration.
-- The UI retains up to 20 turns. Very large diffs/logs are truncated for display.
-- Each task permits up to 16 model calls, a four-minute CLI deadline, and 4,096 maximum output tokens per inference request.
-- General container Internet access is disabled. Model inference, built-in web research, and enabled remote MCP are host-mediated exceptions. Arbitrary dependency downloads remain unavailable.
-- Publishing supports up to 50 regular UTF-8 changed files totaling 1 MB. Binary files and symlinks are rejected.
-- Answer text and provider-exposed thinking stream live through authenticated SSE; coding previews show the current model pass. Tool arguments and raw tool events are not streamed. The final coding result appears after its checkpoint completes.
-- Regular chat uses no VM. It supports a bounded host-side research loop and a quiet chat-specific loading state.
-- Physical iPhone keyboard testing remains necessary alongside automated viewport tests.
-- Account balance, pricing-based cost, and unlimited context are not available.
+- Look: dark slate surfaces with mint accents, light theme via CSS variables (colors, surfaces) in web/style.css, system font stack (no network fonts), cards and borders for hierarchy, transitions that respect prefers-reduced-motion.
+- Layout: a 252px sidebar that becomes an off-canvas drawer on phones; transcript capped at a readable width and the only scrolling element, with the composer in the surrounding flex layout. The shell follows visualViewport height and offset so the mobile keyboard shrinks the transcript. Inputs use 16px text to avoid Safari focus zoom. Code, tables and diffs scroll in their own containers. The code browser docks beside chat on ultrawide screens and opens as a dialog on smaller ones. Account settings open from the avatar/name, as a full-height sheet with a persistent save area on mobile.
+- Reading: safe Markdown; CLI setup banners collapse into execution details; code blocks have language labels and copy buttons; tables size to content (short cells on one line, long ones wrap near 40 characters, wide ones scroll, column edges drag, double-click resets).
+- Input: send button and Cmd/Ctrl+Enter; Enter alone adds a newline, which suits mobile. Drafts persist per session in the tab. The model dialog searches names and IDs, and opens with Cmd/Ctrl+K. Regular-chat messages have an Edit button: sending an edit replaces that message and the turns after it.
+- Footers and usage: each turn footer shows completion, wall time, measured tokens and list-price cost when available. The Usage & workspace dialog separates provider counters, phase timings and repository identity; unknown values show a dash with an explanation.
+- Honest state: search reports progress until every page is scanned; task activity distinguishes restoring, preparing, execution and checkpointing; a warm workspace is labeled apart from a saved sleeping one. No account balances, live tool traces or completion percentages are invented.
+- Accessibility: descriptive button names, decorative SVGs hidden, native modal focus management, named dialog headings, visible focus outlines, role=status toasts, explicit form buttons.
 
-These limits should remain visible in product documentation and must not be described as complete feature parity with another coding product.
+Client state: drafts and the last selected session ID live in sessionStorage; repository and conversation state stay server-owned. web/app.js increments a generation when navigation changes, and async results and job polls check it before repainting. Repository search has its own generation so an old query cannot overwrite a new one.
+
+## Limits and retention
+
+- Cloudflare checkpoints are kept 30 days, refreshed by restoration.
+- Up to 20 turns are retained; very large diffs and logs are truncated for display.
+- Each task allows up to 16 model calls, a four-minute CLI deadline and 4,096 output tokens per inference request. Gateway bodies are capped at 1 MB; repository archives at 50 MB.
+- Container Internet access is off. Model inference, built-in research and enabled remote MCP are host-mediated exceptions. Arbitrary dependency downloads are unavailable.
+- Publishing takes up to 50 regular UTF-8 changed files totaling 1 MB; binary files and symlinks are rejected.
+- Answer text and provider-exposed thinking stream live over SSE; coding previews show the current model pass. Tool arguments and raw tool events are not streamed; the final coding result appears after its checkpoint.
+- Regular chat uses no VM, with a bounded host-side research loop and a quiet loading state.
+- Not available: account balance, unlimited context, a live terminal, MCP OAuth/stdio.
+
+Do not describe these as feature parity with another coding product.
