@@ -129,7 +129,12 @@ const { chromium } = require('playwright'),
     async r => {
       const p = new URL(r.request().url()).pathname,
         file = p === '/' ? '/index.html' : p;
-      if (live) return r.fulfill({ response: await r.fetch({ url: live + p }) });
+      // A live fetch still in flight when the browser closes is not a failure.
+      if (live)
+        return r
+          .fetch({ url: live + p })
+          .then(response => r.fulfill({ response }))
+          .catch(() => {});
       r.fulfill({
         contentType: types[require('node:path').extname(file)],
         body: fs.readFileSync(__dirname + '/web' + file),
