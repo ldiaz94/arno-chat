@@ -6,10 +6,12 @@
   "compatibility_date": "2026-10-30",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
+  "preview_urls": false,
   "vars": { "ALLOWED_GITHUB_LOGINS": "ldiaz94" },
   "durable_objects": { "bindings": [{ "name": "PROBE", "class_name": "ArnoProbe" }] },
   "exports": { "ArnoProbe": { "type": "durable-object", "storage": "sqlite" } },
   "containers": [{
+    "name": "arno-compat-probe",
     "class_name": "ArnoProbe",
     "scheduling_policy": "durable_object",
     "images": { "runner": { "image": "registry.cloudflare.com/8186b19f2173607e1dc594e4dd579aed/arno-runner@sha256:30b625292c310b48ed5459bf7aacc0a7dc18496354fb35104d0e8bc5b3eba084" } }
