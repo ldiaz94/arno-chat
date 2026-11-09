@@ -25,6 +25,7 @@ Supported inference providers:
 - Ollama Cloud, using a personal key or the private deployment's configured fallback;
 - OpenAI Chat Completions-compatible models;
 - Anthropic's native Messages API.
+- Google Gemini through its OpenAI-compatible endpoint. Gemini returns a thought signature with each tool call, which is sent back with the call on the next round; its thoughts arrive in the text as <thought>…</thought> and are moved to the Thinking panel; and its thinking tokens, missing from completion_tokens, are counted from total_tokens. Web research uses the same host-side tools as every other provider.
 
 Keys use AES-GCM encryption with a random IV and authenticated data bound to user ID and credential field. ACCOUNT_ENCRYPTION_KEY is an encrypted Worker secret. Public account responses contain saved/available flags, never secret values or ciphertext.
 
@@ -32,7 +33,7 @@ Never rotate the encryption secret casually: existing records depend on it. Rota
 
 Provider keys save separately from other preferences. Test connection checks authenticated provider access and reports a model count. Ollama's catalog is public, so its test also makes a tiny one-token inference request to verify the key. Saved does not mean tested. Inputs are cleared after saving and when the dialog closes; they are not stored in browser localStorage.
 
-OpenAI and Anthropic model discovery adds connected models to the shared model dialog. Custom model IDs use openai/model-id or anthropic/model-id. Responses-only, realtime, image, and audio APIs are not implemented. A custom ID must be compatible with the supported provider protocol.
+OpenAI, Anthropic and Gemini model discovery adds connected models to the shared model dialog (Gemini's list is filtered to chat models). Custom model IDs use openai/, anthropic/ or gemini/ before the model id. Responses-only, realtime, image, and audio APIs are not implemented. A custom ID must be compatible with the supported provider protocol.
 
 API billing is separate from ChatGPT/Claude consumer subscriptions.
 

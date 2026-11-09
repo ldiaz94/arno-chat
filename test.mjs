@@ -737,3 +737,57 @@ test('wrangler builds the worker bundle', async () => {
     rmSync(out, { recursive: true, force: true });
   }
 });
+test('Gemini: index-less tool calls keep their thought signature; thoughts leave the answer', async () => {
+  const sse = chunks =>
+    new Response(
+      chunks.map(c => 'data: ' + JSON.stringify(c) + '\n\n').join('') + 'data: [DONE]\n\n',
+    );
+  const bodies = [];
+  const replies = [
+    sse([
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  id: 'a',
+                  type: 'function',
+                  extra_content: { google: { thought_signature: 'sig' } },
+                  function: { name: 'web_search', arguments: '{"query":"q"}' },
+                },
+              ],
+            },
+          },
+        ],
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 40 },
+      },
+    ]),
+    sse([
+      { choices: [{ delta: { content: '<thought>weighing it' } }] },
+      {
+        choices: [{ delta: { content: '</thought>Answer [1]' } }],
+        usage: { prompt_tokens: 20, completion_tokens: 3, total_tokens: 30 },
+      },
+    ]),
+  ];
+  const r = await plainChat({
+    model: 'gemini-3.8-flash',
+    provider: 'gemini',
+    key: 'k',
+    history: [],
+    prompt: 'p',
+    runTool: async () => ({ sources: [] }),
+    upstream: async (url, init) => {
+      bodies.push(JSON.parse(init.body));
+      assert.match(url, /generativelanguage\.googleapis\.com\/v1beta\/openai\/chat\/completions$/);
+      return replies.shift();
+    },
+  });
+  assert.deepEqual(bodies[1].messages.at(-2).tool_calls[0].extra_content, {
+    google: { thought_signature: 'sig' },
+  });
+  assert.equal(r.summary, 'Answer [1]');
+  assert.equal(r.reasoning, 'weighing it');
+  assert.equal(r.usage.outputTokens, 30 + 10); // thinking counted from total_tokens
+});

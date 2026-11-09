@@ -1,6 +1,17 @@
 import { WEB_TOOLS } from './web.mjs';
 import { displayDelta } from './gateway.mjs';
 import { tokens } from './prices.mjs';
+import { PROVIDERS } from './account.mjs';
+
+/** Gemini streams its thoughts as a leading <thought>…</thought> in the text;
+ * move them to the reasoning, as other providers report it. */
+function visible(text, reasoning) {
+  if (!text.startsWith('<thought>')) return { text, reasoning };
+  const end = text.indexOf('</thought>');
+  return end < 0
+    ? { text: '', reasoning: reasoning + text.slice(9) }
+    : { text: text.slice(end + 10), reasoning: reasoning + text.slice(9, end) };
+}
 
 /** Decode text, native tool calls, and reported usage from either provider's
  * streaming dialect. Credential-bearing headers never enter these results. */
@@ -28,11 +39,15 @@ async function readReply(response, onProgress) {
     summary += delta.text;
     reasoning = (reasoning + delta.reasoning).slice(0, 12000);
     for (const c of v.choices?.[0]?.delta?.tool_calls || []) {
-      const old = calls.get(c.index) || { id: '', name: '', arguments: '' };
+      // Gemini sends each call whole, without an index, and with a thought
+      // signature in extra_content that must be sent back with the call.
+      const key = c.index ?? c.id ?? calls.size;
+      const old = calls.get(key) || { id: '', name: '', arguments: '' };
       if (c.id) old.id = c.id;
       if (c.function?.name) old.name = c.function.name;
+      if (c.extra_content) old.extra_content = c.extra_content;
       old.arguments += c.function?.arguments || '';
-      calls.set(c.index, old);
+      calls.set(key, old);
     }
     if (v.type === 'content_block_start' && v.content_block?.type === 'tool_use')
       calls.set(v.index, {
@@ -59,15 +74,16 @@ async function readReply(response, onProgress) {
       for (const s of lines) line(s);
       if (Date.now() - last >= 200) {
         last = Date.now();
-        await onProgress({ text: summary, reasoning });
+        await onProgress(visible(summary, reasoning));
       }
     }
     line(buffer + decoder.decode());
-    await onProgress({ text: summary, reasoning, final: true });
+    await onProgress({ ...visible(summary, reasoning), final: true });
   } finally {
     reader.releaseLock();
   }
-  return { summary, reasoning, calls: [...calls.values()], usage };
+  const shown = visible(summary, reasoning);
+  return { summary: shown.text, reasoning: shown.reasoning, calls: [...calls.values()], usage };
 }
 
 /** Plain chat is a host-side bounded tool loop, never a coding VM. The same
@@ -105,12 +121,7 @@ export async function plainChat({
   if (instructions && provider !== 'anthropic')
     messages.unshift({ role: 'system', content: instructions });
   if (!key) throw Error('Save an API key for ' + provider + ' in Account settings');
-  const endpoint =
-    provider === 'anthropic'
-      ? 'https://api.anthropic.com/v1/messages'
-      : provider === 'openai'
-        ? 'https://api.openai.com/v1/chat/completions'
-        : 'https://ollama.com/v1/chat/completions';
+  const endpoint = PROVIDERS[provider].base + PROVIDERS[provider].chat;
   const total = {
     calls: 0,
     measuredCalls: 0,
@@ -154,7 +165,13 @@ export async function plainChat({
         ...(provider === 'anthropic'
           ? { system: instructions || 'You are a helpful assistant.' }
           : { stream_options: { include_usage: true } }),
-        ...(provider === 'openai' ? { max_completion_tokens: 4096 } : { max_tokens: 4096 }),
+        ...(provider === 'openai'
+          ? { max_completion_tokens: 4096 }
+          : provider === 'gemini'
+            ? // Thinking counts against Gemini's output limit, so keep its default,
+              // and ask for thoughts, which arrive in content as <thought>…</thought>.
+              { extra_body: { google: { thinking_config: { include_thoughts: true } } } }
+            : { max_tokens: 4096 }),
       }),
     });
     total.calls++;
@@ -213,6 +230,7 @@ export async function plainChat({
           id: c.id,
           type: 'function',
           function: { name: c.name, arguments: c.arguments || JSON.stringify(c.input || {}) },
+          ...(c.extra_content ? { extra_content: c.extra_content } : {}),
         })),
       });
     const results = [];

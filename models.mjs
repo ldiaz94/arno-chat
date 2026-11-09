@@ -1,3 +1,4 @@
+import { MODEL_ID } from './account.mjs';
 export const DEFAULT_MODEL = 'mistral-large-4:cloud';
 export const FALLBACK_MODELS = [
   { id: DEFAULT_MODEL, name: 'Mistral Large 4 · Le Chonk' },
@@ -28,7 +29,7 @@ export async function catalog(upstream = fetch) {
   }
 }
 export async function modelAllowed(model) {
-  if (/^(openai|anthropic)\/[a-zA-Z0-9][a-zA-Z0-9._:-]{0,120}$/.test(model)) return true;
+  if (MODEL_ID.test(model)) return true;
   return (
     (await catalog()).models.some(m => m.id === model) || FALLBACK_MODELS.some(m => m.id === model)
   );

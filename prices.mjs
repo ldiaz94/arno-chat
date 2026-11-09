@@ -16,7 +16,7 @@ let memo = null;
 export function priceKey(model) {
   return String(model)
     .toLowerCase()
-    .replace(/^(openai|anthropic)\//, '')
+    .replace(/^(openai|anthropic|gemini|google)\//, '')
     .replace(/[:-]cloud$/, '')
     .replace(/-\d{8}$/, '')
     .replace(/\./g, '-');
@@ -74,7 +74,7 @@ export function parseOpenRouter(data) {
     const id = String(m.id),
       p = m.pricing || {};
     if (
-      !/^(anthropic|openai)\/[^:]+$/.test(id) ||
+      !/^(anthropic|openai|google)\/[^:]+$/.test(id) ||
       perM(p.prompt) == null ||
       perM(p.completion) == null
     )
@@ -126,12 +126,12 @@ export function tokens(u = {}) {
   const cached = u.cache_read_input_tokens ?? u.prompt_tokens_details?.cached_tokens ?? 0,
     write = u.cache_creation_input_tokens ?? 0;
   const input = u.prompt_tokens != null ? u.prompt_tokens - cached : (u.input_tokens ?? 0);
-  return {
-    input: Math.max(0, input),
-    cached,
-    write,
-    output: u.completion_tokens ?? u.output_tokens ?? 0,
-  };
+  // Gemini leaves thinking out of completion_tokens; total_tokens still counts it.
+  const output =
+    u.prompt_tokens != null && u.total_tokens != null
+      ? Math.max(u.completion_tokens ?? 0, u.total_tokens - u.prompt_tokens)
+      : (u.completion_tokens ?? u.output_tokens ?? 0);
+  return { input: Math.max(0, input), cached, write, output };
 }
 
 /** Dollars for a turn's usage, or null when the model has no listed price. */

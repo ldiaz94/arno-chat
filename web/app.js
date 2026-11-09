@@ -1419,7 +1419,7 @@ function customModelCard(m = {}) {
   node.className = 'setting-row custom-model';
   const parts = (m.id || 'openai/').split('/');
   node.innerHTML =
-    '<select class="field custom-provider" aria-label="Model provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option></select><input class="field custom-id" aria-label="Model ID" placeholder="Model ID" value="' +
+    '<select class="field custom-provider" aria-label="Model provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="gemini">Google Gemini</option></select><input class="field custom-id" aria-label="Model ID" placeholder="Model ID" value="' +
     esc(parts.slice(1).join('/')) +
     '"><input class="field custom-name" aria-label="Model label" placeholder="Label" value="' +
     esc(m.name || '') +
@@ -1464,7 +1464,7 @@ async function openAccount() {
       .join('');
     $('#account-body').innerHTML =
       '<div class="account-tabs"><button data-account-tab="providers">Providers</button><button data-account-tab="instructions">Instructions & skills</button><button data-account-tab="mcp">MCP tools</button><button data-account-tab="connections">Connections</button></div>' +
-      '<section data-account-panel="providers"><p class="caption">Keys are encrypted and kept outside coding workspaces. OpenAI and Anthropic models appear after you save a key. API billing is separate from ChatGPT/Claude app subscriptions.</p>' +
+      '<section data-account-panel="providers"><p class="caption">Keys are encrypted and kept outside coding workspaces. OpenAI, Anthropic and Google Gemini models appear after you save a key. API billing is separate from ChatGPT/Claude app subscriptions.</p>' +
       providers +
       '<h3>Custom model IDs</h3><p class="caption">Use this when a provider’s model discovery does not list a model available to your key.</p><div id="custom-models"></div><button id="add-custom-model" type="button" class="ghost">＋ Add model</button></section>' +
       '<section data-account-panel="instructions" hidden><label>Account system prompt<textarea id="system-prompt" class="field" rows="7" maxlength="12000" placeholder="How should Arno work with you?">' +

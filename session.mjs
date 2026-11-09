@@ -259,11 +259,8 @@ export class ArnoProbe extends DurableObject {
       preferences = await profile(this.env, session?.ownerId);
     let config =
       'provider = ' +
-      (selected.provider === 'anthropic'
-        ? 'claude'
-        : selected.provider === 'openai'
-          ? 'openai'
-          : 'ollama-cloud') +
+      ({ anthropic: 'claude', openai: 'openai', gemini: 'gemini' }[selected.provider] ||
+        'ollama-cloud') +
       '\nmodel = ' +
       selected.id +
       '\nurl = http://model.internal/v1\nkey =\nexecution_boundary = outer-sandbox\nsafety = auto\ncontext_files = no\nproject_map = no\nmax_tokens = 4096\n';

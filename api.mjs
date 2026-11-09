@@ -54,7 +54,7 @@ export const apiRoutes = {
     const base = await catalog(),
       p = await profile(env, auth.user.id);
     const extra = await Promise.allSettled(
-      ['openai', 'anthropic']
+      ['openai', 'anthropic', 'gemini']
         .filter(id => p.keys?.[id])
         .map(async id => providerModels(id, await credential(env, auth.user.id, p, id))),
     );

@@ -2,13 +2,38 @@
  * Provider/MCP secrets are encrypted with AES-GCM and user/field-bound AAD.
  * Only masked connection metadata is ever returned by public GET routes.
  */
+/** Each provider's API: where models are listed and where chat requests go.
+ * Gemini is reached through its OpenAI-compatible endpoint. */
 export const PROVIDERS = {
-  ollama: { label: 'Ollama Cloud', base: 'https://ollama.com', models: '/api/tags' },
-  openai: { label: 'OpenAI', base: 'https://api.openai.com', models: '/v1/models' },
-  anthropic: { label: 'Anthropic', base: 'https://api.anthropic.com', models: '/v1/models' },
+  ollama: {
+    label: 'Ollama Cloud',
+    base: 'https://ollama.com',
+    models: '/api/tags',
+    chat: '/v1/chat/completions',
+  },
+  openai: {
+    label: 'OpenAI',
+    base: 'https://api.openai.com',
+    models: '/v1/models',
+    chat: '/v1/chat/completions',
+  },
+  anthropic: {
+    label: 'Anthropic',
+    base: 'https://api.anthropic.com',
+    models: '/v1/models',
+    chat: '/v1/messages',
+  },
+  gemini: {
+    label: 'Google Gemini',
+    base: 'https://generativelanguage.googleapis.com',
+    models: '/v1beta/openai/models',
+    chat: '/v1beta/openai/chat/completions',
+  },
 };
+/** Model ids name their provider ("gemini/gemini-3.8-flash"), except Ollama's. */
+export const MODEL_ID = /^(openai|anthropic|gemini)\/([a-zA-Z0-9][a-zA-Z0-9._:-]{0,120})$/;
 export function providerModel(value) {
-  const m = String(value).match(/^(openai|anthropic)\/([a-zA-Z0-9][a-zA-Z0-9._:-]{0,120})$/);
+  const m = String(value).match(MODEL_ID);
   return m ? { provider: m[1], id: m[2] } : { provider: 'ollama', id: value };
 }
 const b64 = bytes => btoa(String.fromCharCode(...bytes));
@@ -136,6 +161,15 @@ export async function providerModels(provider, key) {
     return (data.models || [])
       .filter(m => m.capabilities?.includes('completion'))
       .map(m => ({ id: m.name, name: m.name }));
+  // Gemini lists "models/gemini-…" and many non-chat models (speech, images, music).
+  if (provider === 'gemini')
+    data.data = (data.data || [])
+      .map(m => ({ ...m, id: String(m.id).replace(/^models\//, '') }))
+      .filter(
+        m =>
+          /^gemini-/.test(m.id) &&
+          !/(tts|image|transcribe|robotics|omni|customtools|embedding|live|audio)/.test(m.id),
+      );
   return (data.data || [])
     .filter(
       m =>
@@ -230,8 +264,8 @@ export async function accountRoute(request, env, userId) {
       }
       if (new Set(mcp.map(m => m.id)).size !== mcp.length) throw Error('MCP IDs must be unique');
       const models = (body.models || []).slice(0, 20).map(m => {
-        if (!/^(openai|anthropic)\/[a-zA-Z0-9][a-zA-Z0-9._:-]{0,120}$/.test(m.id))
-          throw Error('Custom model IDs use openai/model-id or anthropic/model-id');
+        if (!MODEL_ID.test(m.id))
+          throw Error('Custom model IDs use openai/, anthropic/ or gemini/ before the model id');
         return { id: m.id, name: String(m.name || m.id).slice(0, 120) };
       });
       await save({ systemPrompt: body.systemPrompt, skills, mcp, models });

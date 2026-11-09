@@ -19,7 +19,7 @@ Conversation-row menus support rename/delete without opening a conversation. The
 
 ## Providers and research
 
-Ollama Cloud is available through the private deployment fallback or a personal key. Bring your own OpenAI or Anthropic API key to use their supported chat protocols. Keys are encrypted, masked on read, and kept outside coding containers.
+Ollama Cloud is available through the private deployment fallback or a personal key. Bring your own OpenAI, Anthropic or Google Gemini API key to use their models in regular chats and coding sessions. Keys are encrypted, masked on read, and kept outside coding containers.
 
 Regular and coding conversations can search several web results and read original pages through host-mediated tools. Numbered citations link only to recorded sources and open a preview with title, domain, excerpt, and original link.
 
@@ -54,4 +54,4 @@ This is a private deployment restricted to ldiaz94 while it uses shared provider
 
 Coding workspaces use the pinned runner image in wrangler.jsonc. Completed turns checkpoint files and retain up to 20 recent turns, with bounded model context. Snapshot retention follows Cloudflare's 30-day window. Arbitrary dependency downloads, a live terminal, MCP OAuth/stdio installation, and unlimited context are not implemented.
 
-OpenAI/Anthropic adapters and key handling have protocol tests; real calls to those providers require the user's keys. No blanket claim of perfect security or complete Claude Code feature parity is made.
+OpenAI/Anthropic/Gemini adapters and key handling have protocol tests; Gemini's chat tool loop and coding gateway were also exercised against the real API locally. Real calls to those providers require the user's keys. No blanket claim of perfect security or complete Claude Code feature parity is made.

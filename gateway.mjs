@@ -1,4 +1,5 @@
 import { tokens } from './prices.mjs';
+import { PROVIDERS } from './account.mjs';
 const MAX_BODY = 1024 * 1024;
 
 async function readBounded(body) {
@@ -145,6 +146,8 @@ export async function modelRequest(
     delete payload.max_tokens;
     payload.max_completion_tokens = 4096;
   }
+  // Thinking counts against Gemini's output limit; keep its default.
+  if (provider === 'gemini') delete payload.max_tokens;
   if (provider === 'anthropic') {
     const original =
       typeof body.system === 'string'
@@ -168,12 +171,7 @@ export async function modelRequest(
     return new Response('Task model request limit reached', { status: 429 });
   let response;
   try {
-    const endpoint =
-      provider === 'anthropic'
-        ? 'https://api.anthropic.com/v1/messages'
-        : provider === 'openai'
-          ? 'https://api.openai.com/v1/chat/completions'
-          : 'https://ollama.com/v1/chat/completions';
+    const endpoint = PROVIDERS[provider].base + PROVIDERS[provider].chat;
     response = await upstream(endpoint, {
       method: 'POST',
       redirect: 'manual',
