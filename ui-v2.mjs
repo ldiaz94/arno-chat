@@ -1,60 +1,164 @@
-export const HTML=String.raw`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Arno Chat</title><style>
-*{box-sizing:border-box;min-width:0}html,body{margin:0;width:100%;overflow:hidden;background:#0b0d0c;color:#edf2ed;font:16px/1.5 system-ui}#shell{position:fixed;top:0;left:0;width:100%;height:100dvh;display:flex;flex-direction:column;padding:env(safe-area-inset-top) 12px env(safe-area-inset-bottom)}header{padding:12px 0;display:flex;gap:15px;align-items:center;border-bottom:1px solid #333}header strong{flex:1}main{flex:1;overflow:auto;overflow-x:hidden;overflow-wrap:anywhere;padding:10px 0}button,select,input,textarea{font:inherit;font-size:16px;min-height:44px;max-width:100%;background:#171d17;border:1px solid #394339;color:inherit;border-radius:8px;padding:9px}button{cursor:pointer}button:disabled{opacity:.5}a{color:#c5f36c}form{display:flex;gap:8px;padding:10px 0;align-items:flex-end;flex-shrink:0}form[hidden]{display:none}textarea{flex:1;resize:none;max-height:100px}.message{white-space:pre-wrap;overflow-wrap:anywhere;border-left:2px solid #394339;padding:10px;margin:12px 0}.user{border-color:#c5f36c}.muted{color:#a0aaa0}.error{color:#ffaaa0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.5 monospace;max-width:100%}.repo{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid #333}.repo span{flex:1}#search{width:100%}label{display:block;margin:12px 0}@media(min-width:800px){#shell{width:800px;left:calc((100vw - 800px)/2)}}
-</style></head><body><div id="shell"><header><strong>ARNO CHAT</strong><button id="home">Sessions</button><a href="/auth/logout">Sign out</a></header><main id="app">Loading…</main><form id="composer" hidden><textarea id="prompt" rows="1" maxlength="8000" placeholder="Ask Arno…" aria-label="Message"></textarea><button id="send">Run</button></form></div><script type="module">
-const $=s=>document.querySelector(s),app=$('#app'),form=$('#composer'),prompt=$('#prompt');let session=null,version=0;
-const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-async function api(path,opt={}){const r=await fetch(path,{...opt,headers:{'Content-Type':'application/json'}});const d=await r.json();if(!r.ok)throw Error(d.error||'Request failed');return d}
-function fit(){const v=window.visualViewport;$('#shell').style.height=(v?v.height:innerHeight)+'px';$('#shell').style.top=(v?v.offsetTop:0)+'px'}window.visualViewport?.addEventListener('resize',fit);window.visualViewport?.addEventListener('scroll',fit);window.addEventListener('resize',fit);fit();
-function error(e){app.insertAdjacentHTML('beforeend','<p class="error">'+esc(e.message)+'</p>')}
-async function modelPicker(select,id){
- const current=id?session.model:'mistral-large-4:cloud';
- try{
-  const d=await api('/api/models');
-  if(!select.isConnected)return;
-  const models=d.models.some(m=>m.id===current)?d.models:[{id:current,name:current},...d.models];
-  select.innerHTML=models.map(m=>'<option value="'+esc(m.id)+'">'+esc(m.name)+'</option>').join('');
-  select.value=current;
-  if(d.fallback)select.insertAdjacentHTML('afterend','<small class="muted">Catalog unavailable; showing saved models.</small>');
-  if(id)select.onchange=async()=>{
-   const old=session.model;select.disabled=true;$('#send').disabled=true;
-   try{const r=await api('/api/sessions/'+id+'/model',{method:'POST',body:JSON.stringify({model:select.value})});session.model=r.model}
-   catch(e){select.value=old;error(e)}
-   finally{select.disabled=false;$('#send').disabled=false}
-  };
- }catch(e){error(e)}
-}
-new MutationObserver(()=>{
- for(const select of document.querySelectorAll('select:not([data-loaded])')){
-  select.dataset.loaded='true';modelPicker(select,select.id==='session-model'?session?.id:null);
- }
-}).observe(app,{childList:true,subtree:true});
-function message(role,text,diff){app.insertAdjacentHTML('beforeend','<div class="message '+(role==='You'?'user':'')+'"><strong>'+role+'</strong>\n'+esc(text)+(diff?'<details><summary>Working tree diff</summary><pre>'+esc(diff)+'</pre></details>':'')+'</div>');app.scrollTop=app.scrollHeight}
-async function resume(id){version++;form.hidden=true;app.textContent='Loading saved session…';try{session={id,...await api('/api/sessions/'+id)};sessionStorage.setItem('session',id);app.innerHTML='<p>'+esc(session.repo)+'</p><label>Model <select id="session-model" aria-label="Session model"><option>'+esc(session.model)+'</option></select></label>';for(const t of session.history||[]){message('You',t.prompt);message('Arno · '+esc(t.model||session.model),t.summary,t.diff)}form.hidden=false;watchJob(id)}catch(e){error(e)}}
-function repoRow(r,box){const row=document.createElement('div');row.className='repo';row.innerHTML='<span>'+esc(r.full_name)+'<br><small class="muted">'+(r.private?'private':'public')+'</small></span><button>Open</button>';row.querySelector('button').onclick=()=>openRepo(r);box.append(row)}
-async function pageRepos(q,page,box,v){try{const d=await api('/api/repos?page='+page+'&q='+encodeURIComponent(q));if(v!==version||!box.isConnected)return;for(const r of d.repos)repoRow(r,box);if(d.nextPage){if(q){await pageRepos(q,d.nextPage,box,v)}else{const b=document.createElement('button');b.textContent='Load more repositories';b.onclick=()=>{b.remove();pageRepos(q,d.nextPage,box,v)};box.append(b)}}else if(!box.children.length)box.textContent='No matching repositories.'}catch(e){if(v===version)box.textContent=e.message}}
-function search(q){const v=++version,box=$('#repos');box.textContent='';pageRepos(q,1,box,v)}
-async function home(){version++;session=null;form.hidden=true;sessionStorage.removeItem('session');app.textContent='Loading…';try{const me=await api('/api/me');if(!me.user){app.innerHTML='<p>Remote coding with Arno and Ollama Cloud.</p><a href="/auth/github">Continue with GitHub</a>';return}const d=await api('/api/sessions');app.innerHTML='<h2>Recent sessions</h2><div id="sessions"></div><h2>Open repository</h2><label>Model <select id="model"><option>mistral-large-4:cloud</option><option>devstral-2:123b-cloud</option><option>qwen3-coder:480b-cloud</option></select></label><input id="search" type="search" placeholder="Search all accessible repositories" aria-label="Search repositories"><div id="repos"></div>';for(const s of d.sessions){const b=document.createElement('button');b.textContent=s.repo;b.onclick=()=>resume(s.id);$('#sessions').append(b)}let timer;$('#search').oninput=()=>{version++;clearTimeout(timer);timer=setTimeout(()=>search($('#search').value),300)};search('')}catch(e){error(e)}}
-async function openRepo(r){const model=$('#model').value;version++;app.textContent='Preparing workspace and saving checkpoint…';try{const s=await api('/api/sessions',{method:'POST',body:JSON.stringify({repo:r.full_name,ref:r.default_branch,model})});await resume(s.id)}catch(e){error(e)}}
-function busy(value){$('#send').disabled=value;if($('#session-model'))$('#session-model').disabled=value}
-async function watchJob(id,expected){
- const status=document.createElement('p');status.className='muted';let active=false;
- try{
-  for(let attempts=0;attempts<200&&session?.id===id;attempts++){
-   let job;
-   try{job=await api('/api/sessions/'+id+'/job')}
-   catch{if(!active){app.append(status);active=true}busy(true);status.textContent='Connection interrupted. Reconnecting to your saved task…';await new Promise(r=>setTimeout(r,3000));continue}
-   if(!expected&&!['queued','running'].includes(job.status))return;
-   if(job.status==='idle'){status.textContent='The message was not received. Please submit it again.';app.append(status);prompt.value=expected?.prompt||'';return}
-   if(expected&&job.id!==expected.id)return;
-   if(!active){app.append(status);active=true}
-   if(job.status==='completed'){message('Arno · '+esc(job.result.model||session.model),job.result.summary,job.result.diff);status.remove();return}
-   if(job.status==='failed'){status.textContent=job.result?.error||'Task failed. You can retry.';status.className='error';return}
-   busy(true);status.textContent=job.status==='queued'?'Task saved. Starting Arno…':'Arno is working. You can leave and reopen this session.';
-   await new Promise(r=>setTimeout(r,3000));
-  }
-  if(session?.id===id)status.textContent='Still waiting. Reopen this session to check the saved task.';
- }finally{if(session?.id===id)busy(false)}
-}
-form.onsubmit=async e=>{e.preventDefault();const text=prompt.value.trim();if(!text||!session||$('#send').disabled)return;const id=session.id,body={id:crypto.randomUUID(),prompt:text};message('You',text);prompt.value='';busy(true);try{await api('/api/sessions/'+id+'/messages',{method:'POST',body:JSON.stringify(body)})}catch(e){error({message:'Submission connection interrupted. Checking whether the task was saved…'})}await watchJob(id,body)};
-prompt.oninput=()=>{prompt.style.height='auto';prompt.style.height=Math.min(prompt.scrollHeight,100)+'px'};$('#home').onclick=home;const saved=sessionStorage.getItem('session');if(saved)resume(saved);else home();
-</script></body></html>`;
+import {CSS} from './theme.mjs';
+import {CLIENT} from './client.mjs';
+import {markdown,cleanOutput,diffHtml} from './render.mjs';
+import {SETTINGS_CLIENT} from './settings-client.mjs';
+
+/** Static application shell. DOM IDs form the browser/controller contract.
+ * No repository, model, or account text is interpolated into this document.
+ * All untrusted content goes through the renderer or explicit escaping later.
+ */
+const BODY=String.raw`<div id="shell">
+<div id="overlay" class="overlay">
+</div>
+<aside class="sidebar" aria-label="Sessions">
+<div class="brand">
+<div class="mark">a</div>
+<b>arno chat</b>
+<small>REMOTE</small>
+</div>
+<button id="new-chat" class="primary" type="button">＋ New chat</button>
+<button id="new-session" class="ghost">＋ New session</button>
+<div class="eyebrow" style="padding:0 10px">Your sessions</div>
+<nav id="session-list" class="session-list">
+</nav>
+<div class="sidebar-foot">
+<button id="account-settings" class="account-trigger ghost" type="button" aria-label="Account settings">
+<span id="account-avatar" class="avatar">a</span>
+<span class="account-trigger-name">
+<strong id="account">Connecting…</strong>
+<small>Account & connections</small>
+</span>
+</button>
+<button id="theme" class="ghost icon" aria-label="Toggle color theme">◐</button>
+<a href="/auth/logout" aria-label="Sign out" class="caption">Exit</a>
+</div>
+</aside>
+<section class="workspace">
+<header class="topbar">
+<button id="menu" class="ghost icon mobile-only" aria-label="Open sessions" aria-expanded="false">☰</button>
+<div class="topbar-title">
+<strong id="title">Your workspace</strong>
+<small id="subtitle">Connecting…</small>
+</div>
+<div id="workspace-pill" class="pill" hidden>
+<span class="dot">
+</span>
+<span id="workspace-label">Workspace saved</span>
+</div>
+<button id="publish" class="ghost icon" aria-label="Review and publish" title="Review and publish">↗</button>
+<button id="code" class="ghost icon" aria-label="Browse code and changes" title="Browse code and changes">⌘</button>
+<button id="actions" class="ghost icon" aria-label="Session actions" title="Session actions">⋯</button>
+<button id="export" class="ghost icon" aria-label="Export conversation" title="Export conversation">↧</button>
+<button id="usage" class="ghost icon" aria-label="Usage and session details" title="Usage and session details">▥</button>
+</header>
+<main id="main" tabindex="-1">
+<div class="loading">
+<div class="skeleton">
+</div>
+<div class="skeleton" style="width:65%">
+</div>
+<p>Opening your workspace…</p>
+</div>
+</main>
+<div id="composer-wrap" class="composer-wrap" hidden>
+<form id="composer" class="composer">
+<textarea id="prompt" rows="1" maxlength="8000" placeholder="Ask Arno to build, fix, or explain…" aria-label="Message">
+</textarea>
+<div class="composer-actions">
+<button id="model-button" class="ghost model-button" type="button" aria-label="Change model">
+</button>
+<button id="stop" class="ghost" type="button" hidden>Stop</button>
+<button id="send" class="primary" type="submit">↑ Send</button>
+</div>
+</form>
+<div class="composer-hint">⌘ / Ctrl + Enter to send · ⌘ / Ctrl + K to switch model · Changes are saved after each turn</div>
+</div>
+</section>
+</div>
+<dialog id="model-dialog" class="modal" aria-labelledby="model-heading">
+<div class="modal-head">
+<h2 id="model-heading">Choose your model</h2>
+<button data-close class="ghost icon" aria-label="Close models">×</button>
+</div>
+<div class="modal-body">
+<div class="searchbox">
+<input id="model-search" placeholder="Search cloud models…" aria-label="Search models">
+</div>
+<div id="model-options" class="model-options">
+</div>
+<p class="caption">Changing models keeps your repository and conversation.</p>
+</div>
+</dialog>
+<dialog id="usage-dialog" class="modal" aria-labelledby="usage-heading">
+<div class="modal-head">
+<h2 id="usage-heading">Usage & workspace</h2>
+<button data-close class="ghost icon" aria-label="Close usage">×</button>
+</div>
+<div id="usage-body" class="modal-body">
+</div>
+</dialog>
+<dialog id="account-dialog" class="modal account-dialog" aria-labelledby="account-heading">
+<div class="modal-head">
+<h2 id="account-heading">Your account</h2>
+<button data-close class="ghost icon" aria-label="Close account settings">×</button>
+</div>
+<div id="account-body" class="modal-body">
+</div>
+</dialog>
+<dialog id="actions-dialog" class="modal" aria-label="Session actions">
+<div class="modal-head">
+<h2>Session actions</h2>
+<button data-close class="ghost icon" aria-label="Close actions">×</button>
+</div>
+<div id="action-items" class="modal-body">
+<button id="rename-conversation" class="model-option" type="button">Rename conversation</button>
+<button id="delete-conversation" class="model-option danger" type="button">Delete conversation</button>
+</div>
+</dialog>
+<dialog id="code-dialog" class="modal code-dialog" aria-label="Code and changes">
+<div class="modal-head">
+<h2>Code & changes</h2>
+<button data-close class="ghost icon" aria-label="Close code">×</button>
+</div>
+<div class="code-tabs">
+<button id="files-tab">Files</button>
+<button id="diff-tab">Changes</button>
+</div>
+<div id="code-body" class="code-body">
+</div>
+</dialog>
+<dialog id="publish-dialog" class="modal" aria-labelledby="publish-heading">
+<div class="modal-head">
+<h2 id="publish-heading">Review & publish</h2>
+<button data-close class="ghost icon" aria-label="Close publishing">×</button>
+</div>
+<div id="publish-body" class="modal-body">
+</div>
+</dialog>
+<dialog id="sources-dialog" class="modal" aria-labelledby="sources-heading">
+<div class="modal-head">
+<h2 id="sources-heading">Sources & citations</h2>
+<button data-close class="ghost icon" aria-label="Close sources">×</button>
+</div>
+<div id="sources-body" class="modal-body">
+</div>
+</dialog>
+<dialog id="conversation-dialog" class="modal" aria-labelledby="conversation-menu-heading">
+<div class="modal-head">
+<h2 id="conversation-menu-heading">Conversation</h2>
+<button data-close class="ghost icon" aria-label="Close conversation menu">×</button>
+</div>
+<div class="modal-body">
+<button id="list-rename" class="model-option" type="button">Rename</button>
+<button id="list-delete" class="model-option danger" type="button">Delete conversation</button>
+</div>
+</dialog>
+<div id="toast" class="toast" role="status" hidden>
+</div>`;
+
+/** Ship a self-contained document without third-party fonts or script CDNs.
+ * Serializing the tested renderer functions keeps browser and Node behavior
+ * identical. Upstream logo/mascot resources are served from our own origin.
+ */
+export const HTML='<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0d1117"><link rel="icon" href="/brand/logo.svg"><title>Arno · Chat & coding</title><style>'+CSS+'</style></head><body>'+BODY+
+ '<script type="module">const markdown='+markdown.toString()+';const cleanOutput='+cleanOutput.toString()+';const diffHtml='+diffHtml.toString()+';'+CLIENT+SETTINGS_CLIENT+'</script></body></html>';

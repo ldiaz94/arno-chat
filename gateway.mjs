@@ -24,13 +24,25 @@ async function readBounded(body) {
   return JSON.parse(new TextDecoder().decode(bytes));
 }
 
-export async function modelRequest(request, { key, model, authorize, upstream = fetch }) {
+export function usageStream(onUsage) {
+  const decoder=new TextDecoder();let buffer='',usage=null;
+  const read=line=>{if(!line.startsWith('data:'))return;try{const data=JSON.parse(line.slice(5).trim());const u=data.message?.usage||data.usage;if(u)usage={...(usage||{}),...u}}catch{}};
+  return new TransformStream({
+    transform(chunk,controller){
+      controller.enqueue(chunk);buffer+=decoder.decode(chunk,{stream:true});
+      const lines=buffer.split('\n');buffer=lines.pop();for(const line of lines)read(line);
+      if(buffer.length>65536)buffer='';
+    },
+    async flush(){buffer+=decoder.decode();read(buffer);if(usage)await onUsage({prompt_tokens:usage.prompt_tokens??usage.input_tokens??0,completion_tokens:usage.completion_tokens??usage.output_tokens??0})}
+  });
+}
+export async function modelRequest(request, { key, model,provider='ollama',instructions='',authorize, onUsage=async()=>{}, upstream = fetch }) {
   const url = new URL(request.url);
   if (url.hostname !== 'model.internal' || url.port || url.search ||
-      url.pathname !== '/v1/chat/completions' || request.method !== 'POST') {
+      url.pathname !== (provider==='anthropic'?'/v1/messages':'/v1/chat/completions') || request.method !== 'POST') {
     return new Response('Denied', { status: 403 });
   }
-  if (!key) return new Response('Ollama credential is not configured', { status: 503 });
+  if (!key) return new Response('Save an API key for '+provider+' in Account settings', { status: 503 });
   let body;
   try { body = await readBounded(request.body); }
   catch { return new Response('Invalid or oversized JSON body', { status: 400 }); }
@@ -39,6 +51,14 @@ export async function modelRequest(request, { key, model, authorize, upstream = 
     return new Response('Unsupported model or request', { status: 400 });
   }
   const payload = { model, messages: body.messages, stream: true, max_tokens: 4096 };
+  if(provider==='openai'){delete payload.max_tokens;payload.max_completion_tokens=4096}
+  if(provider==='anthropic'){
+    const original=typeof body.system==='string'?[{type:'text',text:body.system}]:Array.isArray(body.system)?body.system:[];
+    payload.system=[...(instructions?[{type:'text',text:instructions}]:[]),...original];
+  }else{
+    payload.stream_options={include_usage:true};
+    if(instructions)payload.messages=[{role:'system',content:instructions},...body.messages];
+  }
   if (body.tools !== undefined) {
     if (!Array.isArray(body.tools) || body.tools.length > 64) {
       return new Response('Invalid tools', { status: 400 });
@@ -48,21 +68,22 @@ export async function modelRequest(request, { key, model, authorize, upstream = 
   if (!await authorize()) return new Response('Task model request limit reached', { status: 429 });
   let response;
   try {
-    response = await upstream('https://ollama.com/v1/chat/completions', {
+    const endpoint=provider==='anthropic'?'https://api.anthropic.com/v1/messages':provider==='openai'?'https://api.openai.com/v1/chat/completions':'https://ollama.com/v1/chat/completions';
+    response = await upstream(endpoint, {
       method: 'POST',
       redirect: 'manual',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      headers:provider==='anthropic'?{'x-api-key':key,'anthropic-version':'2023-06-01','Content-Type':'application/json'}:{Authorization:'Bearer '+key,'Content-Type':'application/json'},
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(90000)
     });
   } catch {
-    return new Response('Ollama request failed', { status: 502 });
+    return new Response(provider+' request failed', { status: 502 });
   }
   if (!response.ok) {
     if (response.body) await response.body.cancel();
-    return new Response('Ollama rejected the request', { status: 502 });
+    return new Response(provider+' rejected the request', { status: 502 });
   }
-  return new Response(response.body, {
+  return new Response(response.body?.pipeThrough(usageStream(async usage=>{try{await onUsage(usage)}catch{console.error('usage_record_failed')}})), {
     headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store' }
   });
 }

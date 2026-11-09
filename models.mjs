@@ -18,5 +18,6 @@ export async function catalog(upstream=fetch) {
   }
 }
 export async function modelAllowed(model) {
+  if(/^(openai|anthropic)\/[a-zA-Z0-9][a-zA-Z0-9._:-]{0,120}$/.test(model))return true;
   return (await catalog()).models.some(m=>m.id===model)||FALLBACK_MODELS.some(m=>m.id===model);
 }

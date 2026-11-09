@@ -1,31 +1,55 @@
 # Arno Chat
 
-Mobile web interface for Arno on Cloudflare Containers with Ollama Cloud and GitHub OAuth.
+A responsive chat and remote coding workspace built around [Arno](https://github.com/ldiaz94/arno), Cloudflare Workers/Durable Objects/Containers, and hosted language models.
 
-The Worker preserves GitHub and Ollama credentials outside coding containers. The existing production endpoint is https://arno-compat-probe.lucelad.workers.dev.
+**Private deployment:** https://arno-compat-probe.lucelad.workers.dev
 
-## Session recovery
+## Use it
 
-Message submission returns a saved task ID immediately. A Durable Object alarm runs the coding turn independently of the phone connection; the interface polls saved status and reconnects after a lost response or page reload. Duplicate submissions with the same ID do not rerun a task. Interrupted tasks are marked as failed rather than replayed automatically.
+1. Sign in with GitHub. Basic sign-in does not require repository permission.
+2. Choose **New chat** for a regular conversation with web research and persistent context; no coding container starts.
+3. Choose **New session** for coding. Connect GitHub repository access, search your visible repositories, or paste an exact GitHub repository URL.
+4. Ask Arno to inspect, edit, or test. The activity indicator separates workspace preparation, execution, and checkpointing.
+5. Browse **Code & changes** to navigate files or inspect highlighted diffs. Use **Session actions → Review & publish** to create a new branch/commit and pull request.
+6. Open your **avatar/name** for provider keys, system instructions, skills, MCP, and connection settings.
 
-Repository metadata and the last 20 turns live in Durable Object storage. Full filesystem checkpoints are saved after initialization and each completed turn. A stopped container restarts from its last checkpoint. Sessions can be reopened from the recent-session list after reload or sign-in.
+Conversation-row menus support rename/delete without opening a conversation. The interface includes dark/light themes, safe Markdown, copy/export, persistent drafts, usage/timings, source previews, and distinct chat/coding loading states. The code pane docks on ultrawide screens and becomes a dialog on smaller displays.
 
-Cloudflare snapshots expire after 30 days without restoration. An interrupted turn may require retrying; only completed, checkpointed turns guarantee saved filesystem changes. Earlier prototype sessions without checkpoints cannot be recovered after their container has stopped.
+## Providers and research
 
-## Mobile and repositories
+Ollama Cloud is available through the private deployment fallback or a personal key. Bring your own OpenAI or Anthropic API key to use their supported chat protocols. Keys are encrypted, masked on read, and kept outside coding containers.
 
-The layout tracks the browser visual viewport for keyboard changes. Text wraps within the viewport, and the composer shares its height with a scrollable transcript. Repository listing supports pagination; search runs at the server over successive authenticated repository pages, including organization and collaborator repositories.
+Regular and coding conversations can search several web results and read original pages through host-mediated tools. Numbered citations link only to recorded sources and open a preview with title, domain, excerpt, and original link.
 
-## Models
+If GitHub shows only 17 repositories, check the connection permissions rather than assuming the account has only 17. Reconnect with repo scope, approve organization SSO/access, and, for a GitHub App, expand its installation's selected repositories.
 
-The model selector loads Ollama Cloud's live catalog and includes models advertising both completion and tool support. Mistral Large 4 / Le Chonk remains the default. If the catalog fails, the UI identifies the fallback list. Catalog availability does not mean every model has been exercised with Arno.
+## Documentation
 
-Use the model selector in an open session to change the next turn's model. The workspace and transcript remain in the same session. Switching is rejected while a turn is running; the chosen model is saved with the filesystem checkpoint and recorded on subsequent turns.
+| Guide | Contents |
+| --- | --- |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Module map, state ownership, session/turn lifecycle, retention, limits |
+| [API.md](API.md) | Authenticated routes, task states, stored records |
+| [ACCOUNTS.md](ACCOUNTS.md) | BYOK encryption, providers, account prompts, skills, MCP, GitHub access |
+| [WEB-RESEARCH.md](WEB-RESEARCH.md) | Search/retrieval, citation provenance, budgets, real validation |
+| [DESIGN.md](DESIGN.md) | Responsive layout, typography, accessibility, interaction choices |
+| [SECURITY.md](SECURITY.md) | Credential boundaries, untrusted code/content, publication controls |
+| [OPERATIONS.md](OPERATIONS.md) | Development, deployment, troubleshooting, secret handling |
+| [UI-VALIDATION.md](UI-VALIDATION.md) | Automated browser checks and measured live coding/provider tests |
+| [PROFESSIONAL-HOSTING.md](PROFESSIONAL-HOSTING.md) | Current database hosting and commercial-launch requirements |
+| [brand/UPSTREAM.md](brand/UPSTREAM.md) | Original logo/mascot provenance and license |
 
-## Development
+## Development and verification
 
-Run `npm test`. Required Worker secrets: `OLLAMA_API_KEY`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`. Never commit secret values. GitHub callback: `/auth/callback`.
+Run npm test for backend, protocol, encryption, rendering, context, and publication regression tests.
 
-`node browser-test.cjs` tests the served HTML with mocked API responses in Chromium. It covers search beyond page 1, session reopening after reload, and overflow at portrait, landscape, and keyboard-sized viewports. Install Playwright and set `CHROMIUM_PATH` if Chromium is elsewhere. This does not replace an authenticated GitHub/Ollama recovery test or physical iPhone keyboard testing.
+Run node design-test.cjs with Playwright and Chromium for the current local UI. Run node browser-test.cjs for the same suite against deployed HTML. Set CHROMIUM_PATH if Chromium is not /usr/bin/chromium.
 
-Deployment keeps the existing `ArnoProbe` Durable Object class and `PROBE` binding for compatibility. Configure its container with the pinned runner image and the `durable_object` scheduling policy. See `deployment.json`.
+Browser API fixtures test interaction contracts; they are not evidence of real OAuth or GitHub publication. Real Ollama, multi-turn context, warm/restored containers, regular chat, MCP, and research were tested separately and documented.
+
+## Important boundaries
+
+This is a private deployment restricted to ldiaz94 while it uses shared provider credentials. It is not a publicly enrolled commercial service.
+
+Coding workspaces use the pinned runner image in deployment.json. Completed turns checkpoint files and retain up to 20 recent turns, with bounded model context. Snapshot retention follows Cloudflare's 30-day window. Arbitrary dependency downloads, a live terminal, MCP OAuth/stdio installation, and unlimited context are not implemented.
+
+OpenAI/Anthropic adapters and key handling have protocol tests; real calls to those providers require the user's keys. No blanket claim of perfect security or complete Claude Code feature parity is made.

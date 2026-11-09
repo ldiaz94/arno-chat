@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>arno: a river otter</title>
+  <rect width="128" height="128" rx="20" fill="#0f172a"/>
+  <g>
+    <!-- the otter: ears, head, cream muzzle, eyes, nose, smile, whiskers, teal bandana -->
+    <circle cx="28" cy="40" r="8" fill="#7c3f24"/>
+    <circle cx="100" cy="40" r="8" fill="#7c3f24"/>
+    <circle cx="28" cy="40" r="3.5" fill="#4a2414"/>
+    <circle cx="100" cy="40" r="3.5" fill="#4a2414"/>
+    <ellipse cx="64" cy="60" rx="44" ry="33" fill="#b5532d"/>
+    <ellipse cx="64" cy="76" rx="28" ry="20" fill="#f6dcb4"/>
+    <circle cx="48" cy="54" r="5" fill="#0f172a"/>
+    <circle cx="80" cy="54" r="5" fill="#0f172a"/>
+    <circle cx="49.6" cy="52.2" r="1.6" fill="#fff"/>
+    <circle cx="81.6" cy="52.2" r="1.6" fill="#fff"/>
+    <path d="M56 66 h16 q0 9 -8 9 q-8 0 -8 -9 z" fill="#4a2414"/>
+    <path d="M52 82 q12 9 24 0" fill="none" stroke="#4a2414" stroke-width="2.5" stroke-linecap="round"/>
+    <g stroke="#fdf3e0" stroke-width="1.5" stroke-linecap="round" fill="none">
+      <path d="M44 74 l-22 -4 M44 79 l-22 3 M84 74 l22 -4 M84 79 l22 3"/>
+    </g>
+    <path d="M30 100 q34 18 68 0 l-6 14 q-28 12 -56 0 z" fill="#14b8a6"/>
+    <circle cx="64" cy="106" r="5" fill="#0f766e"/>
+  </g>
+</svg>

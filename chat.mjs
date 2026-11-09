@@ -1,0 +1,68 @@
+import {WEB_TOOLS} from './web.mjs';
+
+/** Decode text, native tool calls, and reported usage from either provider's
+ * streaming dialect. Credential-bearing headers never enter these results. */
+async function readReply(response){
+ const reader=response.body.getReader(),decoder=new TextDecoder(),calls=new Map();
+ let buffer='',summary='',usage=null,size=0;
+ const line=s=>{
+  if(!s.startsWith('data:'))return;let v;try{v=JSON.parse(s.slice(5).trim())}catch{return}
+  const u=v.message?.usage||v.usage;if(u)usage={...(usage||{}),...u};
+  summary+=v.choices?.[0]?.delta?.content||v.delta?.text||'';
+  for(const c of v.choices?.[0]?.delta?.tool_calls||[]){
+   const old=calls.get(c.index)||{id:'',name:'',arguments:''};
+   if(c.id)old.id=c.id;if(c.function?.name)old.name=c.function.name;
+   old.arguments+=c.function?.arguments||'';calls.set(c.index,old);
+  }
+  if(v.type==='content_block_start'&&v.content_block?.type==='tool_use')calls.set(v.index,{id:v.content_block.id,name:v.content_block.name,arguments:'',input:v.content_block.input});
+  if(v.type==='content_block_delta'&&v.delta?.partial_json){const c=calls.get(v.index);if(c)c.arguments+=v.delta.partial_json}
+  if(summary.length>60000)throw Error('Chat response exceeded its display limit');
+ };
+ try{
+  for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>2000000)throw Error('Oversized provider response');buffer+=decoder.decode(value,{stream:true});const lines=buffer.split('\n');buffer=lines.pop();for(const s of lines)line(s)}
+  line(buffer);
+ }finally{reader.releaseLock()}
+ return {summary,calls:[...calls.values()],usage};
+}
+
+/** Plain chat is a host-side bounded tool loop, never a coding VM. The same
+ * provider adapter supports Ollama/OpenAI function calls and Anthropic tools. */
+export async function plainChat({model,history,prompt,key,provider='ollama',instructions='',signal,runTool,onRound=async()=>{},upstream=fetch}){
+ const messages=[];let size=0;
+ for(const t of history.slice(-20).reverse()){
+  const sourceContext=t.sources?.length?'\nSources for this earlier answer: '+t.sources.map(s=>'['+s.id+'] '+s.title+' '+s.url).join('; '):'';
+  const pair=[{role:'user',content:t.prompt},{role:'assistant',content:t.summary+sourceContext}];
+  const length=pair.reduce((n,m)=>n+m.content.length,0);if(size+length>32000)break;messages.unshift(...pair);size+=length;
+ }
+ messages.push({role:'user',content:prompt});
+ if(instructions&&provider!=='anthropic')messages.unshift({role:'system',content:instructions});
+ if(!key)throw Error('Save an API key for '+provider+' in Account settings');
+ const endpoint=provider==='anthropic'?'https://api.anthropic.com/v1/messages':provider==='openai'?'https://api.openai.com/v1/chat/completions':'https://ollama.com/v1/chat/completions';
+ const total={calls:0,measuredCalls:0,inputTokens:0,outputTokens:0};
+ for(let round=0;round<8;round++){
+  await onRound();
+  const tools=runTool&&round<7?(provider==='anthropic'?WEB_TOOLS.map(t=>({name:t.name,description:t.description,input_schema:t.inputSchema})):WEB_TOOLS.map(t=>({type:'function',function:{name:t.name,description:t.description,parameters:t.inputSchema}}))):undefined;
+  const response=await upstream(endpoint,{method:'POST',redirect:'manual',signal,headers:provider==='anthropic'?{'x-api-key':key,'anthropic-version':'2023-06-01','Content-Type':'application/json'}:{Authorization:'Bearer '+key,'Content-Type':'application/json'},
+   body:JSON.stringify({model,messages,stream:true,tools,...(provider==='anthropic'?{system:instructions||'You are a helpful assistant.'}:{stream_options:{include_usage:true}}),...(provider==='openai'?{max_completion_tokens:4096}:{max_tokens:4096})})});
+  total.calls++;
+  if(!response.ok){await response.body?.cancel();throw Error(provider+' could not complete this chat ('+response.status+')')}
+  const reply=await readReply(response);
+  if(reply.usage){total.measuredCalls++;total.inputTokens+=reply.usage.prompt_tokens??reply.usage.input_tokens??0;total.outputTokens+=reply.usage.completion_tokens??reply.usage.output_tokens??0}
+  if(!reply.calls.length){
+   if(!reply.summary.trim())throw Error('The model returned no text. Try another model or a shorter request.');
+   return {exitCode:0,model,summary:reply.summary.trim(),diff:'',usage:{...total,inputTokens:total.measuredCalls?total.inputTokens:null,outputTokens:total.measuredCalls?total.outputTokens:null}};
+  }
+  if(!runTool)throw Error('This response requested unavailable tools');
+  const parsed=reply.calls.map(c=>{try{return {...c,args:c.arguments?JSON.parse(c.arguments):c.input||{}}}catch{return {...c,args:null}}});
+  if(provider==='anthropic')messages.push({role:'assistant',content:[...(reply.summary?[{type:'text',text:reply.summary}]:[]),...parsed.map(c=>({type:'tool_use',id:c.id,name:c.name,input:c.args||{}}))]});
+  else messages.push({role:'assistant',content:reply.summary||null,tool_calls:reply.calls.map(c=>({id:c.id,type:'function',function:{name:c.name,arguments:c.arguments||JSON.stringify(c.input||{})}}))});
+  const results=[];
+  for(const c of parsed){
+   let result;try{if(!c.args)throw Error('Invalid tool arguments');result=await runTool(c.name,c.args)}catch(e){result={error:e.message}}
+   results.push({id:c.id,result:JSON.stringify(result)});
+  }
+  if(provider==='anthropic')messages.push({role:'user',content:results.map(r=>({type:'tool_result',tool_use_id:r.id,content:r.result}))});
+  else for(const r of results)messages.push({role:'tool',tool_call_id:r.id,content:r.result});
+ }
+ throw Error('Research reached its model-call limit. Narrow the question and try again.');
+}
