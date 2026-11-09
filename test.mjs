@@ -293,3 +293,13 @@ test('prices parse provider tables and count cached tokens once',async()=>{
  assert.deepEqual(tokens({input_tokens:60,cache_read_input_tokens:40,output_tokens:5}),{input:60,cached:40,write:0,output:5});
  assert.equal(cost({inp:1,cached:0.1,out:10},{measuredCalls:1,inputTokens:1e6,cachedTokens:5e5,outputTokens:1e5}).toFixed(2),'1.55');
 });
+test('the wrangler bundle adds no helpers the page script cannot see',async()=>{
+ // ui-v2.mjs ships render functions to the browser via toString(); a bundler
+ // helper such as esbuild's __name() inside them is undefined there.
+ const {execFileSync}=await import('node:child_process'),{mkdtempSync,readFileSync,rmSync}=await import('node:fs'),{tmpdir}=await import('node:os');
+ const out=mkdtempSync(tmpdir()+'/arno-bundle-');
+ try{
+  execFileSync(new URL('./node_modules/.bin/wrangler',import.meta.url).pathname,['deploy','--dry-run','--outdir',out],{cwd:new URL('.',import.meta.url).pathname,stdio:'pipe',env:{...process.env,WRANGLER_SEND_METRICS:'false'}});
+  assert.doesNotMatch(readFileSync(out+'/worker.js','utf8'),/\b__name\(/);
+ }finally{rmSync(out,{recursive:true,force:true})}
+});
