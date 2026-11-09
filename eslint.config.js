@@ -6,10 +6,16 @@ import globals from 'globals';
 export default [
   { ignores: ['node_modules/'] },
   js.configs.recommended,
+  // An empty catch is how this code says "ignore a malformed line or frame".
+  { rules: { 'no-empty': ['error', { allowEmptyCatch: true }] } },
   { files: ['web/**'], languageOptions: { globals: globals.browser } },
   {
     files: ['*.js', '*.mjs'],
     languageOptions: { globals: { ...globals.serviceworker, ...globals.node } },
   },
-  { files: ['*.cjs'], languageOptions: { sourceType: 'commonjs', globals: globals.node } },
+  // The design test's page.evaluate() callbacks run in the browser.
+  {
+    files: ['*.cjs'],
+    languageOptions: { sourceType: 'commonjs', globals: { ...globals.node, ...globals.browser } },
+  },
 ];

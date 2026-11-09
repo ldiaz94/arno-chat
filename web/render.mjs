@@ -75,6 +75,8 @@ export function markdown(source, sources = []) {
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
       .replace(/\*([^*]+)\*/g, '<em>$1</em>')
       .replace(/~~([^~]+)~~/g, '<del>$1</del>');
+    // NUL brackets the index of a code span or citation set aside above.
+    // eslint-disable-next-line no-control-regex
     return text.replace(/\u0000(\d+)\u0000/g, (_, n) => code[Number(n)]);
   };
   const lines = String(source || '').split('\n');
@@ -186,16 +188,19 @@ export function markdown(source, sources = []) {
 }
 /** Hide the CLI's implementation banner from prose while retaining raw logs. */
 export function cleanOutput(text) {
-  return String(text || '')
-    .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
-    .split('\n')
-    .filter(
-      line =>
-        !/^\s*safety:.*working on a copy/.test(line) &&
-        !/^applied to \d+ file\(s\) in \/workspace\/repo/.test(line),
-    )
-    .join('\n')
-    .trim();
+  return (
+    String(text || '')
+      // eslint-disable-next-line no-control-regex -- ANSI escape sequences
+      .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+      .split('\n')
+      .filter(
+        line =>
+          !/^\s*safety:.*working on a copy/.test(line) &&
+          !/^applied to \d+ file\(s\) in \/workspace\/repo/.test(line),
+      )
+      .join('\n')
+      .trim()
+  );
 }
 export function diffHtml(diff) {
   const escape = s =>

@@ -16,7 +16,7 @@ import {
   validMcpUrl,
   accountRoute,
 } from './account.mjs';
-import { proxyMcp, testMcp } from './mcp.mjs';
+import { testMcp } from './mcp.mjs';
 import { research, citedSources } from './web.mjs';
 import { ArnoProbe, default as worker } from './worker.js';
 test('browser script parses', () => {
@@ -644,7 +644,7 @@ test('plain chat executes a web tool then returns a cited final answer', async (
     history: [],
     prompt: 'Research this',
     key: 'test',
-    runTool: async (name, args) => {
+    runTool: async name => {
       executed = true;
       assert.equal(name, 'web_search');
       return { sources: [{ id: 1, title: 'Official', url: 'https://example.com/docs' }] };

@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --import ./test-hooks.mjs --test test.mjs"
+    "test": "eslint . && prettier --check . && node --import ./test-hooks.mjs --test test.mjs",
+    "fmt": "prettier --write ."
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

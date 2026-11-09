@@ -649,7 +649,7 @@ async function home() {
   $('#code-dialog').close();
   $('#code').hidden = false;
   $('#publish').hidden = false;
-  const gen = ++state.generation;
+  ++state.generation;
   state.search++;
   state.session = null;
   state.job = null;
