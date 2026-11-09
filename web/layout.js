@@ -4,10 +4,18 @@
 import { $, state, esc, icon, date, avatar, shell } from './core.js';
 import { controls } from './offline.js';
 import { waiting, chatFailure } from './outbox.js';
+/** Pin the shell to the visible area only while the keyboard may be up;
+ * otherwise the CSS height (100dvh) fills the screen. An installed iPhone
+ * app's visual viewport leaves out the status-bar strip, which left a gap. */
+function fitHeight() {
+  const v = window.visualViewport,
+    typing = !!document.activeElement?.matches('input, textarea, select, [contenteditable]');
+  shell.style.height = typing && v ? v.height + 'px' : '';
+  shell.style.top = typing && v ? v.offsetTop + 'px' : '';
+}
 export function fit() {
   const v = window.visualViewport;
-  shell.style.height = (v ? v.height : innerHeight) + 'px';
-  shell.style.top = (v ? v.offsetTop : 0) + 'px';
+  fitHeight();
   const d = $('#account-dialog');
   if (d) {
     d.style.height = d.open && innerWidth <= 800 ? (v ? v.height : innerHeight) + 'px' : '';
@@ -25,6 +33,9 @@ export function fit() {
   }
 }
 window.visualViewport?.addEventListener('resize', fit);
+// Focus only moves the height: fit() itself can move focus (re-docking dialogs).
+document.addEventListener('focusin', fitHeight);
+document.addEventListener('focusout', () => setTimeout(fitHeight, 50));
 window.visualViewport?.addEventListener('scroll', fit);
 window.addEventListener('resize', fit);
 fit();

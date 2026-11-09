@@ -748,6 +748,7 @@ table.sized th {
   background: #172439;
 }
 .composer-wrap {
+  position: relative;
   flex-shrink: 0;
   padding: 10px 32px max(14px, env(safe-area-inset-bottom));
   background: var(--bg);
@@ -1080,10 +1081,12 @@ body.light {
     background: #0009;
     z-index: 30;
   }
+  /* An installed iPhone app blurs what sits just under the status bar, so the
+     bar's content starts a little below the safe area. */
   .topbar {
-    height: calc(56px + max(10px, env(safe-area-inset-top)));
+    height: calc(56px + max(10px, env(safe-area-inset-top) + 10px));
     padding: 10px 12px;
-    padding-top: max(10px, env(safe-area-inset-top));
+    padding-top: max(10px, calc(env(safe-area-inset-top) + 10px));
   }
   .topbar .pill {
     display: none;
@@ -2353,4 +2356,23 @@ details.setting-card.collapsible[open] > summary {
 /* A chat made offline that the server refused to create. */
 .failed-mark {
   color: var(--red);
+}
+
+/* Scroll to the bottom: floats above the composer while you're not at the end. */
+.jump-bottom {
+  position: absolute;
+  top: -48px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 38px;
+  height: 38px;
+  min-height: 0;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--raised);
+  color: var(--text);
+  font-size: 18px;
+  box-shadow: var(--shadow);
+  z-index: 5;
 }

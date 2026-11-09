@@ -412,6 +412,20 @@ const { chromium } = require('playwright'),
   await page.locator('.panel-diff .add').waitFor();
   await page.getByRole('button', { name: 'Close code' }).click();
   await page.screenshot({ path: '/tmp/arno-chat-mobile.png', fullPage: true });
+  // Scrolled up, a button jumps back to the bottom and resumes following.
+  await page.evaluate(() =>
+    document.querySelector('#main').scrollTo({ top: 0, behavior: 'instant' }),
+  );
+  await page.locator('#jump-bottom').waitFor();
+  await page.screenshot({ path: '/tmp/arno-jump-mobile.png' });
+  await page.locator('#jump-bottom').click();
+  await page.locator('#jump-bottom').waitFor({ state: 'hidden' });
+  assert.ok(
+    await page.evaluate(() => {
+      const m = document.querySelector('#main');
+      return m.scrollHeight - m.scrollTop - m.clientHeight < 80;
+    }),
+  );
   await page.getByRole('button', { name: 'Session actions' }).click();
   await page.getByRole('button', { name: 'Review and publish' }).click();
   await page.locator('#publish-title').fill('Improve example');

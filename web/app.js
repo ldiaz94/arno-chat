@@ -20,7 +20,7 @@ import {
 } from './core.js';
 import { drawer, title, sidebar, theme } from './layout.js';
 import { loadModels, openModels, renderModels, chooseModel } from './models.js';
-import { openSources } from './thread.js';
+import { openSources, scrollDown } from './thread.js';
 import { openInfo } from './info.js';
 import { openUsage } from './usage.js';
 import { artifactClick } from './artifacts.js';
@@ -57,6 +57,7 @@ $('#export').onclick = exportChat;
 $('#model-button').onclick = () => openModels('session');
 $('#model-search').oninput = renderModels;
 $('#composer').onsubmit = submit;
+$('#jump-bottom').onclick = () => scrollDown(true);
 $('#publish').onclick = reviewPublish;
 $('#new-chat').onclick = newChat;
 $('#rename-conversation').onclick = () => renameConversation();

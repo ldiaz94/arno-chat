@@ -153,6 +153,7 @@ main.addEventListener(
   'scroll',
   () => {
     following = main.scrollHeight - main.scrollTop - main.clientHeight < 80;
+    $('#jump-bottom').hidden = following || !$('#thread');
   },
   { passive: true },
 );
@@ -176,6 +177,7 @@ export function failure(text, error, at, attachments = []) {
 }
 export function scrollDown(force = false) {
   if (force) following = true;
+  $('#jump-bottom').hidden = following || !$('#thread');
   if (following) main.scrollTo({ top: main.scrollHeight, behavior: 'instant' });
 }
 function sourceDomain(url) {
