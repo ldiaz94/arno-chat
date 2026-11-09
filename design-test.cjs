@@ -534,6 +534,23 @@ const { chromium } = require('playwright'),
     await page.getByRole('button', { name: 'Close usage' }).click();
     await page.getByRole('button', { name: /^Conversation details/ }).press('Enter');
     await info.getByRole('heading', { name: 'Context' }).waitFor();
+    // Artifacts come first; sections fold, and the device remembers which.
+    await info.locator('[data-section="Artifacts"]').waitFor();
+    assert.equal(
+      await info.locator('.info-section').first().getAttribute('data-section'),
+      'Artifacts',
+    );
+    const sourcesFold = info.locator('[data-section="Sources"]');
+    assert.equal(await sourcesFold.getAttribute('open'), null);
+    await sourcesFold.locator('summary').click();
+    await info.locator('[data-info-source]').first().waitFor();
+    await info.locator('[data-section="Usage"] > summary').click();
+    await page.getByRole('button', { name: 'Close usage' }).click();
+    await page.getByRole('button', { name: /^Conversation details/ }).press('Enter');
+    await info.locator('[data-section="Artifacts"]').waitFor();
+    assert.equal(await sourcesFold.getAttribute('open'), '');
+    assert.equal(await info.locator('[data-section="Usage"]').getAttribute('open'), null);
+    await page.screenshot({ path: '/tmp/arno-details-folded.png' });
     await page.getByRole('button', { name: 'Close usage' }).click();
     await page.getByRole('button', { name: 'Browse code and changes' }).click();
     await page.locator('[data-file="README.md"]').click();

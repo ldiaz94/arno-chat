@@ -1,5 +1,7 @@
-/** The "Conversation details" panel: context fill, usage, sources, shared links, images and
- * repository identity of the open conversation, in the `#usage-dialog`. Depends on core and
+/** The "Conversation details" panel: the conversation's artifacts first, then context
+ * fill, usage, sources, shared links, images and repository identity, in the
+ * `#usage-dialog`. Each is a section that folds; which are folded is remembered on
+ * this device. Depends on core and
  * thread (source preview) and attach. Artifacts are listed from the server and open in the artifact dialog.
  */
 import { $, state, esc, num, duration, money, api } from './core.js';
@@ -23,9 +25,42 @@ function sessionStats() {
     }
   );
 }
-// A titled block of the panel.
-function section(heading, body) {
-  return body ? '<div class="section-title"><h2>' + heading + '</h2></div>' + body : '';
+// Sections folded until opened, unless this device remembers otherwise.
+const Folded = ['Sources', 'Links shared', 'Images', 'Attachments', 'Repository identity'];
+function folded() {
+  try {
+    return JSON.parse(localStorage.getItem('info:folded')) || Folded;
+  } catch {
+    return Folded;
+  }
+}
+// A titled block of the panel that folds, with a count beside its title when given.
+function section(heading, body, count) {
+  if (!body) return '';
+  return (
+    '<details class="info-section" data-section="' +
+    heading +
+    '"' +
+    (folded().includes(heading) ? '' : ' open') +
+    '><summary><h2>' +
+    heading +
+    '</h2>' +
+    (count ? '<span class="tag">' + num(count) + '</span>' : '') +
+    '</summary><div class="info-section-body">' +
+    body +
+    '</div></details>'
+  );
+}
+// Remembers a section folded or opened.
+function remember(e) {
+  const d = e.target;
+  if (!d.matches?.('.info-section')) return;
+  const set = new Set(folded());
+  if (d.open) set.delete(d.dataset.section);
+  else set.add(d.dataset.section);
+  try {
+    localStorage.setItem('info:folded', JSON.stringify([...set]));
+  } catch {}
 }
 function domain(url) {
   try {
@@ -178,6 +213,7 @@ function sourcesSection(sources) {
           '</small></button>',
       )
       .join(''),
+    sources.length,
   );
 }
 function linksSection(history, sources) {
@@ -256,7 +292,11 @@ async function loadArtifacts(sessionId) {
   try {
     const { artifacts } = await api('/api/sessions/' + sessionId + '/artifacts');
     if (artifacts.length && state.session?.id === sessionId)
-      $('#info-artifacts').innerHTML = section('Artifacts', artifactRows(artifacts));
+      $('#info-artifacts').innerHTML = section(
+        'Artifacts',
+        artifactRows(artifacts),
+        artifacts.length,
+      );
   } catch {
     // The panel works without it.
   }
@@ -281,13 +321,13 @@ export function openInfo() {
     sources = allSources(history);
   $('#usage-heading').textContent = s?.title || s?.repo || 'Conversation details';
   $('#usage-body').innerHTML =
+    '<div id="info-artifacts"></div>' +
     contextSection(history) +
     usageSection(history) +
     sourcesSection(sources) +
     linksSection(history, sources) +
     imagesSection(history) +
     attachmentsSection(history) +
-    '<div id="info-artifacts"></div>' +
     repositorySection(s);
   $('#usage-body').onclick = e => {
     const row = e.target.closest('[data-info-source]');
@@ -296,3 +336,6 @@ export function openInfo() {
   $('#usage-dialog').showModal();
   if (s?.id) loadArtifacts(s.id);
 }
+// A section folded or opened is remembered; toggle doesn't bubble, so this
+// listens in the capture phase.
+$('#usage-body').addEventListener('toggle', remember, true);

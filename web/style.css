@@ -2987,3 +2987,43 @@ details.setting-card.collapsible[open] > summary {
   color: var(--muted);
   font-size: 11px;
 }
+
+/* Conversation details: each section folds (info.js). */
+.info-section {
+  border-top: 1px solid var(--line);
+}
+.info-section:first-child {
+  border-top: 0;
+}
+.info-section > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  cursor: pointer;
+  list-style: none;
+}
+.info-section > summary::-webkit-details-marker {
+  display: none;
+}
+.info-section > summary::after {
+  content: '';
+  margin-left: auto;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+.info-section[open] > summary::after {
+  transform: rotate(45deg);
+}
+.info-section > summary h2 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+}
+.info-section-body {
+  padding-bottom: 16px;
+}
