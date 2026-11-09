@@ -44,7 +44,7 @@ If GitHub shows only 17 repositories, check the connection permissions rather th
 
 Run npm test for backend, protocol, encryption, rendering, context, and publication regression tests.
 
-Run node design-test.cjs with Playwright and Chromium for the current local UI. Run node browser-test.cjs for the same suite against deployed HTML. Set CHROMIUM_PATH if Chromium is not /usr/bin/chromium.
+Run node design-test.cjs (Playwright is a dev dependency; it drives the system Chromium) for the local web/ files. Run node browser-test.cjs for the same suite against the deployed files. Set CHROMIUM_PATH if Chromium is not /usr/bin/chromium.
 
 Browser API fixtures test interaction contracts; they are not evidence of real OAuth or GitHub publication. Real Ollama, multi-turn context, warm/restored containers, regular chat, MCP, and research were tested separately and documented.
 

@@ -4,7 +4,7 @@
 
 Run npm test for backend, renderer, context, publishing, and streaming-usage tests. Run node design-test.cjs with Playwright installed and Chromium available. Set CHROMIUM_PATH if it is not /usr/bin/chromium.
 
-The design test uses current local HTML and mocked API responses. It exercises search through page three, the session drawer, Markdown/code/tables, model selection, usage, reviewed publishing, a dropped submission response, theme switching, and viewport overflow. It writes screenshots to /tmp/arno-*.png.
+The design test uses the local web/ files and mocked API responses. It exercises search through page three, the session drawer, Markdown/code/tables, model selection, usage, reviewed publishing, a dropped submission response, theme switching, and viewport overflow. It writes screenshots to /tmp/arno-*.png.
 
 browser-test.cjs runs the same design suite against HTML downloaded from the deployed endpoint. design-test.cjs runs against current local modules. Both keep API responses mocked; real provider validation is recorded separately.
 

@@ -6,7 +6,7 @@ All API routes require the opaque GitHub-authenticated session cookie except GET
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| GET | / | Self-contained application HTML |
+| GET | / and static files | web/ served as static assets (not the worker) |
 | GET | /auth/github | Begin GitHub OAuth |
 | GET | /auth/callback | Consume state and exchange code |
 | GET | /auth/logout | Delete the authentication record and clear cookie |

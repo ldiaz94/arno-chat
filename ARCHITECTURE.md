@@ -16,17 +16,17 @@ Arno Chat turns a GitHub repository snapshot into a resumable remote coding work
 | web.mjs | Multi-result search, page reading, host-assigned citations, built-in research MCP |
 | mcp.mjs | Account-approved HTTPS MCP proxy and initialization test |
 | files.mjs | Read-only directory and UTF-8 code navigation |
-| settings-client.mjs | Provider, instruction, skill, and connection settings interface |
 | publish.mjs | Worktree export, host-side validation, cumulative diff including new files |
-| ui-v2.mjs | Self-contained HTML document assembly |
-| client.mjs | Browser state machine, responsive workspace, search, dialogs, task polling |
-| theme.mjs | Responsive dark/light design tokens, layout, typography, reduced-motion rules |
-| render.mjs | Escaping Markdown renderer, CLI-banner cleanup, safe diff rendering |
+| web/index.html | The page's static markup; DOM IDs form the contract with app.js |
+| web/app.js | Browser state machine, responsive workspace, search, dialogs, task polling, then account settings |
+| web/style.css | Responsive dark/light design tokens, layout, typography, reduced-motion rules |
+| web/render.mjs | Escaping Markdown renderer, table sizing, CLI-banner cleanup, safe diff rendering (shared by browser and tests) |
+| web/_headers | Security headers for the static files, including the page's CSP |
 | wrangler.jsonc | Worker config, durable namespace, pinned container image, observability; `npx wrangler deploy` |
-| test.mjs | Backend and rendering regression tests |
-| design-test.cjs | Browser workflow and viewport tests against current local HTML |
+| test.mjs | Backend and rendering regression tests; test-hooks.mjs stubs cloudflare:workers for Node |
+| design-test.cjs | Browser workflow and viewport tests against the local web/ files |
 
-The legacy ui-v2 filename is retained to avoid unnecessary deployment/import churn. It now assembles the redesigned interface from separate presentation modules.
+Everything in web/ is served by Cloudflare as static files, before the worker runs; the worker handles /api/ and /auth/ only.
 
 ## A session's lifecycle
 
@@ -60,7 +60,7 @@ After execution, the host collects the cumulative diff, model request count, pro
 
 The browser stores drafts and the last selected session ID in sessionStorage. Repository and conversation state remain server-owned.
 
-client.mjs increments a generation when navigation changes. Async results and job polls check that generation before repainting. Repository search has a separate generation so a response for an old query cannot overwrite a new query.
+web/app.js increments a generation when navigation changes. Async results and job polls check that generation before repainting. Repository search has a separate generation so a response for an old query cannot overwrite a new query.
 
 The desktop sidebar becomes an off-canvas drawer on phones. The main transcript is the scrolling element; the composer stays in the surrounding flex layout. The shell follows visualViewport height/offset so mobile keyboard changes reduce available transcript height. Inputs use a 16px font to avoid Safari focus zoom. Code, tables, and diffs scroll within their own containers.
 

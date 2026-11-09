@@ -1,13 +1,10 @@
-import {CSS} from './theme.mjs';
-import {CLIENT} from './client.mjs';
-import {markdown,cleanOutput,diffHtml,tableResize} from './render.mjs';
-import {SETTINGS_CLIENT} from './settings-client.mjs';
-
-/** Static application shell. DOM IDs form the browser/controller contract.
- * No repository, model, or account text is interpolated into this document.
- * All untrusted content goes through the renderer or explicit escaping later.
- */
-const BODY=String.raw`<div id="shell">
+<!doctype html><html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0d1117"><link rel="icon" href="/brand/logo.svg"><title>Arno · Chat & coding</title><link rel="stylesheet" href="/style.css">
+<script type="module" src="/app.js"></script>
+</head>
+<body>
+<div id="shell">
 <div id="overlay" class="overlay">
 </div>
 <aside class="sidebar" aria-label="Sessions">
@@ -154,11 +151,6 @@ const BODY=String.raw`<div id="shell">
 </div>
 </dialog>
 <div id="toast" class="toast" role="status" hidden>
-</div>`;
-
-/** Ship a self-contained document without third-party fonts or script CDNs.
- * Serializing the tested renderer functions keeps browser and Node behavior
- * identical. Upstream logo/mascot resources are served from our own origin.
- */
-export const HTML='<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0d1117"><link rel="icon" href="/brand/logo.svg"><title>Arno · Chat & coding</title><style>'+CSS+'</style></head><body>'+BODY+
- '<script type="module">const markdown='+markdown.toString()+';const cleanOutput='+cleanOutput.toString()+';const diffHtml='+diffHtml.toString()+';const tableResize='+tableResize.toString()+';tableResize(document);'+CLIENT+SETTINGS_CLIENT+'</script></body></html>';
+</div>
+</body>
+</html>

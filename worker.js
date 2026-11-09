@@ -1,13 +1,10 @@
 import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers';
 import { modelRequest } from './gateway.mjs';
-import { HTML } from './ui-v2.mjs';
 import { catalog, modelAllowed } from './models.mjs';
 import { EXPORT_FILES,validateFiles,WORKTREE_DIFF } from './publish.mjs';
 import { buildPrompt } from './context.mjs';
 import { plainChat } from './chat.mjs';
 import { READ_FILE,validPath } from './files.mjs';
-import { LOGO } from './branding.mjs';
-import MASCOT from './brand/mascot.webp';
 import {profile,credential,instructions,providerModel,providerModels,accountRoute,unseal} from './account.mjs';
 import {proxyMcp,testMcp} from './mcp.mjs';
 import {WEB_INSTRUCTIONS,research,citedSources,webMcp} from './web.mjs';
@@ -614,9 +611,6 @@ export default {
         const response = await handleOAuth(request, env, url);
         if (response) return response;
       }
-      if (url.pathname === '/' && request.method === 'GET') return new Response(HTML, { headers: { 'Content-Type': 'text/html; charset=utf-8', ...SECURITY } });
-      if(url.pathname==='/brand/logo.svg')return new Response(LOGO,{headers:{'Content-Type':'image/svg+xml','Cache-Control':'public,max-age=86400','X-Content-Type-Options':'nosniff'}});
-      if(url.pathname==='/brand/mascot.webp')return new Response(MASCOT,{headers:{'Content-Type':'image/webp','Cache-Control':'public,max-age=86400','X-Content-Type-Options':'nosniff'}});
       if (!url.pathname.startsWith('/api/')) return new Response('Not found', { status: 404, headers: SECURITY });
       if (!sameOrigin(request)) return json({ error: 'Cross-origin request denied' }, 403);
       const auth = await currentAuth(request, env);

@@ -1,9 +1,10 @@
-/** Run against locally rendered HTML with API fixtures. This tests the browser
+/** Run against the local web/ files (or, with ARNO_TEST_LIVE=1, the deployed
+ * ones) with API fixtures. This tests the browser
  * contract, including responses that fail after a task has been accepted. */
 const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=require('node:fs');
 (async()=>{
- let {HTML}=await import('./ui-v2.mjs');
- if(process.env.ARNO_TEST_LIVE==='1')HTML=require('node:child_process').execFileSync('curl',['-fsSL','--max-time','30','https://arno-compat-probe.lucelad.workers.dev/'],{encoding:'utf8'});
+ const live=process.env.ARNO_TEST_LIVE==='1'?'https://arno-compat-probe.lucelad.workers.dev':null;
+ const types={'.html':'text/html','.js':'text/javascript','.mjs':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.webp':'image/webp'};
  const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium'});
  const page=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
  const errors=[];page.on('pageerror',e=>errors.push(String(e)));
@@ -13,9 +14,12 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
  const diff='diff --git a/src/demo.raz b/src/demo.raz\n--- a/src/demo.raz\n+++ b/src/demo.raz\n@@ -1 +1 @@\n-old\n+new';
  const turn={prompt:'What does this repo do?',summary:'safety: auto, working on a copy at /cache\n'+answer+'\n\nSee the original specification [1].',sources:[{id:1,title:'Language Server Protocol specification',url:'https://microsoft.github.io/language-server-protocol/',excerpt:'The protocol specifies communication between editors and language servers.',retrievedAt:Date.now()}],model,at:Date.now(),diff,usage:{calls:2,measuredCalls:2,inputTokens:4200,outputTokens:350},timing:{startupMs:150,executionMs:5600,checkpointMs:900,totalMs:6650,workspace:'warm'}};
  const session={repo:'ldiaz94/rlsp',remoteUrl:'https://github.com/ldiaz94/rlsp',ref:'main',sourceSha:'a'.repeat(40),model,workspaceState:'warm',history:[turn],stats:{turns:1,calls:2,inputTokens:4200,outputTokens:350,measuredCalls:2,totalMs:6650}};
- await page.route('https://arno.test/',r=>r.fulfill({contentType:'text/html',body:HTML}));
- await page.route('**/brand/logo.svg',r=>r.fulfill({contentType:'image/svg+xml',body:fs.readFileSync(__dirname+'/brand/logo.svg')}));
- await page.route('**/brand/mascot.webp',r=>r.fulfill({contentType:'image/webp',body:fs.readFileSync(__dirname+'/brand/mascot.webp')}));
+ // Static files come from web/ as Cloudflare would serve them; /api/ is mocked below.
+ await page.route(u=>u.origin==='https://arno.test'&&!u.pathname.startsWith('/api/'),async r=>{
+  const p=new URL(r.request().url()).pathname,file=p==='/'?'/index.html':p;
+  if(live)return r.fulfill({response:await r.fetch({url:live+p})});
+  r.fulfill({contentType:types[require('node:path').extname(file)],body:fs.readFileSync(__dirname+'/web'+file)});
+ });
  let preferences={systemPrompt:'',skills:[],mcp:[],models:[],providers:{ollama:{label:'Ollama Cloud',available:true,saved:false},openai:{label:'OpenAI',available:false,saved:false},anthropic:{label:'Anthropic',available:false,saved:false}}};
  await page.route('**/api/**',async route=>{
   const u=new URL(route.request().url());let d;

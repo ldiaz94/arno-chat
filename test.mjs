@@ -1,10 +1,8 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync} from 'node:fs';
-import {Script} from 'node:vm';
-import {HTML} from './ui-v2.mjs';
+import {execFileSync} from 'node:child_process';
 import {catalog} from './models.mjs';
-import {markdown,cleanOutput} from './render.mjs';
+import {markdown,cleanOutput} from './web/render.mjs';
 import {buildPrompt} from './context.mjs';
 import {validateFiles} from './publish.mjs';
 import {usageStream,modelRequest,displayDelta} from './gateway.mjs';
@@ -13,25 +11,9 @@ import {validPath} from './files.mjs';
 import {seal,unseal,publicProfile,instructions,validMcpUrl,accountRoute} from './account.mjs';
 import {proxyMcp,testMcp} from './mcp.mjs';
 import {research,citedSources} from './web.mjs';
-const source=readFileSync(new URL('./worker.js',import.meta.url),'utf8')
- .replace("import { DurableObject, WorkerEntrypoint } from 'cloudflare:workers';","class DurableObject {constructor(ctx,env){this.ctx=ctx;this.env=env}}; class WorkerEntrypoint {}")
- .replace("import { modelRequest } from './gateway.mjs';",'')
- .replace("import { HTML } from './ui-v2.mjs';",'const HTML="";')
- .replace("import MASCOT from './brand/mascot.webp';",'const MASCOT=new Uint8Array();')
- .replace("from './models.mjs'", "from '"+new URL('./models.mjs',import.meta.url).href+"'")
- .replace("from './publish.mjs'", "from '"+new URL('./publish.mjs',import.meta.url).href+"'")
- .replace("from './context.mjs'", "from '"+new URL('./context.mjs',import.meta.url).href+"'")
- .replace("from './chat.mjs'", "from '"+new URL('./chat.mjs',import.meta.url).href+"'")
- .replace("from './files.mjs'", "from '"+new URL('./files.mjs',import.meta.url).href+"'")
- .replace("from './account.mjs'", "from '"+new URL('./account.mjs',import.meta.url).href+"'")
- .replace("from './mcp.mjs'", "from '"+new URL('./mcp.mjs',import.meta.url).href+"'")
- .replace("from './branding.mjs'", "from '"+new URL('./branding.mjs',import.meta.url).href+"'")
- .replace("from './web.mjs'", "from '"+new URL('./web.mjs',import.meta.url).href+"'")
- .replace("from './prices.mjs'", "from '"+new URL('./prices.mjs',import.meta.url).href+"'");
-const {ArnoProbe,default:worker}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
-test('served browser script parses, including escaped message strings',()=>{
- const client=HTML.split('<script type="module">')[1].split('</script>')[0];
- new Script(client);
+import {ArnoProbe,default as worker} from './worker.js';
+test('browser script parses',()=>{
+ execFileSync(process.execPath,['--check',new URL('./web/app.js',import.meta.url).pathname]);
 });
 function fixture(values={}){
  const map=new Map(Object.entries(values)),starts=[];
@@ -293,13 +275,9 @@ test('prices parse provider tables and count cached tokens once',async()=>{
  assert.deepEqual(tokens({input_tokens:60,cache_read_input_tokens:40,output_tokens:5}),{input:60,cached:40,write:0,output:5});
  assert.equal(cost({inp:1,cached:0.1,out:10},{measuredCalls:1,inputTokens:1e6,cachedTokens:5e5,outputTokens:1e5}).toFixed(2),'1.55');
 });
-test('the wrangler bundle adds no helpers the page script cannot see',async()=>{
- // ui-v2.mjs ships render functions to the browser via toString(); a bundler
- // helper such as esbuild's __name() inside them is undefined there.
- const {execFileSync}=await import('node:child_process'),{mkdtempSync,readFileSync,rmSync}=await import('node:fs'),{tmpdir}=await import('node:os');
+test('wrangler builds the worker bundle',async()=>{
+ const {mkdtempSync,rmSync}=await import('node:fs'),{tmpdir}=await import('node:os');
  const out=mkdtempSync(tmpdir()+'/arno-bundle-');
- try{
-  execFileSync(new URL('./node_modules/.bin/wrangler',import.meta.url).pathname,['deploy','--dry-run','--outdir',out],{cwd:new URL('.',import.meta.url).pathname,stdio:'pipe',env:{...process.env,WRANGLER_SEND_METRICS:'false'}});
-  assert.doesNotMatch(readFileSync(out+'/worker.js','utf8'),/\b__name\(/);
- }finally{rmSync(out,{recursive:true,force:true})}
+ try{execFileSync(new URL('./node_modules/.bin/wrangler',import.meta.url).pathname,['deploy','--dry-run','--outdir',out],{cwd:new URL('.',import.meta.url).pathname,stdio:'pipe',env:{...process.env,WRANGLER_SEND_METRICS:'false'}})}
+ finally{rmSync(out,{recursive:true,force:true})}
 });

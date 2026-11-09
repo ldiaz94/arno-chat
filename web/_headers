@@ -1,0 +1,10 @@
+# Headers for the static files Cloudflare serves from web/ (the worker sets
+# its own on API responses). The page loads no inline or third-party script.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+
+/
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://github.com
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
