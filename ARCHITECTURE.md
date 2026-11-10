@@ -26,6 +26,7 @@ Arno Chat turns a GitHub repository clone into a resumable remote coding workspa
 | web.mjs | Multi-result search, page reading, host-assigned citations, built-in research MCP |
 | plan.mjs | What a turn's composer options change: web tools, effort, instructions, output, rounds, research budgets, time limit; for coding, Arno's settings (`codeSettings`) and request and time limits (`codeLimits`) |
 | mcp.mjs | Account-approved HTTPS MCP proxy and initialization test |
+| sandbox.mjs | Coding sessions' network: read-only npm and PyPI proxies, the Cloudflare API gateway (owner's token), full-internet setting, the turn's environment |
 | mcp-oauth.mjs | MCP OAuth sign-in: discovery (RFC 9728, RFC 8414), registration (RFC 7591), PKCE, /auth/mcp/callback, refresh |
 | files.mjs | Read-only directory and UTF-8 code navigation |
 | publish.mjs | Worktree export, host-side validation, cumulative diff including new files |

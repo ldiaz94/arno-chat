@@ -55,6 +55,12 @@ export const gatewayRoutes = {
       return json({ error: 'No running turn' }, 403);
     return json({ repo: session.repo, ownerId: session.ownerId, token: github?.token || null });
   },
+  /** The owner, while a turn runs: for the Cloudflare gateway. */
+  async '* /turn-owner'() {
+    const q = await this.ctx.storage.get('modelQuota');
+    if (!q || q.deadline < Date.now()) return json({ error: 'No running turn' }, 403);
+    return json({ ownerId: (await this.ctx.storage.get('session'))?.ownerId || null });
+  },
   async 'POST /mcp-permit'() {
     const allowed = await this.ctx.storage.transaction(async txn => {
       const q = await txn.get('modelQuota');

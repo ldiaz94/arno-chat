@@ -29,6 +29,7 @@ import {
 } from './account.mjs';
 import { testMcp } from './mcp.mjs';
 import { startSignIn, mcpCallback, mcpBearer } from './mcp-oauth.mjs';
+import { registryProxy, cloudflareProxy, sandboxEnv } from './sandbox.mjs';
 import { research, citedSources } from './web.mjs';
 import { ArnoProbe, default as worker } from './worker.js';
 test('browser scripts parse', () => {
@@ -72,7 +73,13 @@ function fixture(values = {}) {
       interceptOutboundHttp: async () => {},
       setInactivityTimeout: async () => {},
     },
-    exports: { ModelGateway: () => ({}), McpGateway: () => ({}), GitGateway: () => ({}) },
+    exports: {
+      ModelGateway: () => ({}),
+      McpGateway: () => ({}),
+      GitGateway: () => ({}),
+      RegistryGateway: () => ({}),
+      CloudflareGateway: () => ({}),
+    },
     id: { toString: () => 'id' },
   };
   ctx.storage.transaction = async fn => fn(ctx.storage);
@@ -2622,4 +2629,57 @@ test('MCP OAuth: discovery, registration, PKCE sign-in, callback and refresh', a
   } finally {
     globalThis.fetch = realFetch;
   }
+});
+test('sandbox: registries read only, PyPI files rewritten, Cloudflare token added here', async () => {
+  const seen = [];
+  const upstream = async (url, init) => {
+    seen.push({ url, auth: init.headers.get('Authorization'), method: init.method });
+    return url.startsWith('https://pypi.org')
+      ? new Response('<a href="https://files.pythonhosted.org/packages/x.whl#sha256=1">x</a>', {
+          headers: { 'Content-Type': 'text/html' },
+        })
+      : Response.json({ ok: true });
+  };
+  const pypi = await registryProxy(new Request('http://pypi.internal/simple/x/'), upstream);
+  assert.match(await pypi.text(), /http:\/\/pyfiles\.internal\/packages\/x\.whl#sha256=1/);
+  assert.equal(seen[0].url, 'https://pypi.org/simple/x/');
+  const npm = await registryProxy(new Request('http://npm.internal/left-pad'), upstream);
+  assert.equal(npm.status, 200);
+  assert.equal(seen[1].url, 'https://registry.npmjs.org/left-pad');
+  // No publishing, and nothing but the registries.
+  assert.equal(
+    (
+      await registryProxy(
+        new Request('http://npm.internal/x', { method: 'PUT', body: '{}' }),
+        upstream,
+      )
+    ).status,
+    403,
+  );
+  assert.equal((await registryProxy(new Request('http://evil.internal/x'), upstream)).status, 403);
+  const cf = await cloudflareProxy(
+    new Request('http://cf.internal/client/v4/accounts', {
+      headers: { Authorization: 'Bearer added-by-the-host' },
+    }),
+    'real-token',
+    upstream,
+  );
+  assert.equal(cf.status, 200);
+  assert.equal(seen.at(-1).url, 'https://api.cloudflare.com/client/v4/accounts');
+  assert.equal(seen.at(-1).auth, 'Bearer real-token');
+  assert.equal(
+    (await cloudflareProxy(new Request('http://cf.internal/other'), 'real-token', upstream)).status,
+    403,
+  );
+  assert.equal(
+    (await cloudflareProxy(new Request('http://cf.internal/client/v4/x'), '')).status,
+    401,
+  );
+  // The turn's environment: registries always; wrangler only with a saved token.
+  assert.equal(sandboxEnv(null).NPM_CONFIG_REGISTRY, 'http://npm.internal/');
+  assert.equal(sandboxEnv(null).CLOUDFLARE_API_BASE_URL, undefined);
+  assert.equal(
+    sandboxEnv({ saved: true, accountId: 'a'.repeat(32) }).CLOUDFLARE_API_BASE_URL,
+    'http://cf.internal/client/v4',
+  );
 });

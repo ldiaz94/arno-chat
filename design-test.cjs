@@ -873,6 +873,11 @@ const { chromium } = require('playwright'),
       'Mobile account settings should use the full viewport',
     );
     await page.screenshot({ path: '/tmp/arno-account-mobile.png', fullPage: true });
+    await page.locator('[data-account-tab="connections"]').click();
+    await page.locator('#sandbox-internet').waitFor();
+    await page.locator('#cf-token').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: '/tmp/arno-connections-mobile.png' });
+    await page.locator('[data-account-tab="you"]').click();
     await page.getByRole('button', { name: 'Close account settings' }).click();
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.locator('[data-mode="code"]').click();

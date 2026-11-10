@@ -16,6 +16,7 @@ import {
 } from './account.mjs';
 import { testMcp } from './mcp.mjs';
 import { startSignIn, mcpBearer } from './mcp-oauth.mjs';
+import { sandboxRoute } from './sandbox.mjs';
 import { publicWebUrl } from './web.mjs';
 import { pushApiRoutes } from './push.mjs';
 import { LIMITS } from './attachments.mjs';
@@ -112,6 +113,9 @@ export const apiRoutes = {
     } catch (e) {
       return json({ error: e.message }, 400);
     }
+  },
+  async 'POST /api/account/sandbox'(request, env, url, auth) {
+    return sandboxRoute(request, env, auth.user.id);
   },
   '* /api/account': account,
   '* /api/account/key': account,

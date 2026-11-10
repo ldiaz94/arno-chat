@@ -8,6 +8,7 @@ import { listArtifacts } from './artifacts.mjs';
 import { EXPORT_FILES, validateFiles, WORKTREE_DIFF } from './publish.mjs';
 import { buildPrompt, sessionPrompt } from './context.mjs';
 import { serveTurn, replyOf, transcriptOf, activityOf } from './serve.mjs';
+import { sandboxEnv } from './sandbox.mjs';
 import { READ_FILE, validPath } from './files.mjs';
 import { citedSources } from './web.mjs';
 import { checkOptions } from './web/options.mjs';
@@ -501,6 +502,7 @@ export const sessionRoutes = {
             XDG_CONFIG_HOME: '/workspace/config',
             XDG_DATA_HOME: '/workspace/data',
             PYTHONDONTWRITEBYTECODE: '1',
+            ...sandboxEnv((await this.sandbox(session.ownerId)).cloudflare),
           },
           stdin: 'pipe',
         },
@@ -516,7 +518,7 @@ export const sessionRoutes = {
       let turn;
       try {
         turn = await serveTurn(process, {
-          hello: { prompt: sessionPrompt(session) },
+          hello: { prompt: sessionPrompt(session, await this.sandbox(session.ownerId)) },
           conversation: session.arnoConversation,
           // A conversation arno no longer has (or a session from before it kept
           // them) starts again with the earlier turns as context.

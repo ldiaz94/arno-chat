@@ -124,6 +124,64 @@ function mcpCard(c = {}) {
   };
   return node;
 }
+/** The Connections tab's cards for coding sessions' network: the package
+ * registries (always), full internet (a switch) and Cloudflare (a token
+ * wrangler uses through the host). */
+function sandboxCards() {
+  const sb = account.sandbox || {},
+    cf = sb.cloudflare;
+  return (
+    '<section class="setting-card"><strong>Coding sessions’ network</strong><p class="caption">Sessions always reach npm and PyPI, read only, so installs work. Everything else they reach goes through the app: models, MCP servers, and git for the session’s own repository.</p><label class="check-label"><input type="checkbox" id="sandbox-internet"' +
+    (sb.internet ? ' checked' : '') +
+    '> Full internet access</label><p class="caption">Lets sessions reach any site: other installers, documentation, APIs. A misled agent could then send repository contents anywhere, so turn it on only when you need it. Applies when a workspace next starts (after 30 idle minutes, or in a new session).</p><p class="caption" id="sandbox-status" role="status"></p></section>' +
+    '<section class="setting-card"><div class="setting-row"><strong>Cloudflare</strong><span class="tag">' +
+    (cf?.saved ? 'Token saved' : 'Not connected') +
+    '</span></div><p class="caption">With a Cloudflare API token, <code>npx wrangler deploy</code> works in coding sessions. The token stays in the app: wrangler talks to a gateway that adds it, and only while a turn runs. Use a token limited to what sessions should do, such as Workers Scripts: Edit for one account.</p><label>API token<input id="cf-token" class="field" type="password" autocomplete="new-password" placeholder="' +
+    (cf?.saved ? 'Saved · paste a new one to replace it' : 'Cloudflare API token') +
+    '"></label><label>Account ID (optional)<input id="cf-account" class="field" maxlength="32" placeholder="32 hexadecimal characters" value="' +
+    esc(cf?.accountId || '') +
+    '"></label><div class="setting-row"><button id="cf-save" type="button">Save</button><button id="cf-test" type="button" class="ghost"' +
+    (cf?.saved ? '' : ' hidden') +
+    '>Test</button><button id="cf-remove" type="button" class="ghost"' +
+    (cf?.saved ? '' : ' hidden') +
+    '>Remove</button></div><p class="caption" id="cf-status" role="status"></p></section>'
+  );
+}
+/** Sends a sandbox setting and says how it went in the status line at. */
+async function sandboxSave(body, at) {
+  try {
+    const d = await api('/api/account/sandbox', { method: 'POST', body: JSON.stringify(body) });
+    if (!body.test) account.sandbox = d;
+    $(at).textContent = body.test ? 'The token works (' + d.status + ')' : 'Saved';
+    return d;
+  } catch (e) {
+    $(at).textContent = e.message;
+  }
+}
+function wireSandbox() {
+  $('#sandbox-internet').onchange = e =>
+    sandboxSave({ internet: e.target.checked }, '#sandbox-status');
+  $('#cf-save').onclick = async () => {
+    const d = await sandboxSave(
+      {
+        cloudflare: {
+          token: $('#cf-token').value.trim(),
+          accountId: $('#cf-account').value.trim(),
+        },
+      },
+      '#cf-status',
+    );
+    if (d) {
+      $('#cf-token').value = '';
+      $('#cf-test').hidden = $('#cf-remove').hidden = !d.cloudflare?.saved;
+    }
+  };
+  $('#cf-test').onclick = () => sandboxSave({ test: true }, '#cf-status');
+  $('#cf-remove').onclick = async () => {
+    if (await sandboxSave({ cloudflare: null }, '#cf-status'))
+      $('#cf-test').hidden = $('#cf-remove').hidden = true;
+  };
+}
 function customModelCard(m = {}) {
   const node = document.createElement('section');
   node.className = 'setting-row custom-model';
@@ -372,13 +430,16 @@ async function openAccount() {
       '<section data-account-panel="mcp" hidden><p class="caption">Connect trusted public HTTPS Streamable HTTP MCP servers. Enabled tools are available to Arno coding sessions. Regular chats have built-in web research; custom MCP tools are currently for coding sessions. MCP servers can perform remote actions; enable only servers you trust.</p><div id="mcp-cards"></div><button id="add-mcp" type="button" class="ghost">＋ Add MCP connection</button></section>' +
       '<section data-account-panel="connections" hidden><section class="setting-card"><div class="setting-row"><strong>GitHub</strong><span class="tag">Signed in as ' +
       esc(state.user.login) +
-      '</span></div><p class="caption">Signing in does not require repository access. Coding sessions request repo scope separately.</p><a href="/auth/github?repos=1">Connect or refresh repository access ↗</a><p><a href="https://github.com/settings/applications" target="_blank" rel="noopener noreferrer">Review GitHub app and organization authorization ↗</a></p><p class="caption">If only 17 repositories are visible, reconnect with repo scope and approve organization SSO/access. The app can only list repositories GitHub authorizes for this token.</p></section><section class="setting-card"><div class="setting-row"><strong>Notifications</strong><span class="tag" id="push-state"></span></div><label class="check-label"><input id="push-toggle" type="checkbox"> Notify me when a reply is ready</label><p class="caption" id="push-hint"></p></section><section class="setting-card"><strong>Storage & privacy</strong><p class="caption">Chats and account preferences use persistent Cloudflare Durable Objects SQLite storage. API keys and MCP tokens use per-account AES-GCM encryption. This is a private deployment using the owner’s configured providers.</p></section></section>' +
+      '</span></div><p class="caption">Signing in does not require repository access. Coding sessions request repo scope separately.</p><a href="/auth/github?repos=1">Connect or refresh repository access ↗</a><p><a href="https://github.com/settings/applications" target="_blank" rel="noopener noreferrer">Review GitHub app and organization authorization ↗</a></p><p class="caption">Coding sessions reach the repositories the Arno GitHub App is installed on; the Code home says how to add more.</p></section>' +
+      sandboxCards() +
+      '<section class="setting-card"><div class="setting-row"><strong>Notifications</strong><span class="tag" id="push-state"></span></div><label class="check-label"><input id="push-toggle" type="checkbox"> Notify me when a reply is ready</label><p class="caption" id="push-hint"></p></section><section class="setting-card"><strong>Storage & privacy</strong><p class="caption">Chats and account preferences use persistent Cloudflare Durable Objects SQLite storage. API keys and MCP tokens use per-account AES-GCM encryption. This is a private deployment using the owner’s configured providers.</p></section></section>' +
       '<div class="account-save"><span class="caption" id="account-save-status">Provider keys save separately. Save instructions, skills, MCP, and custom models below.</span><button id="save-account" class="primary" type="button">Save preferences</button></div>';
     for (const s of account.skills) $('#skill-cards').append(skillCard(s));
     for (const m of account.mcp) $('#mcp-cards').append(mcpCard(m));
     for (const m of account.models || []) $('#custom-models').append(customModelCard(m));
     $('#add-skill').onclick = () => $('#skill-cards').append(skillCard());
     $('#add-mcp').onclick = () => $('#mcp-cards').append(mcpCard());
+    wireSandbox();
     $('#add-custom-model').onclick = () => $('#custom-models').append(customModelCard());
     $('#save-account').onclick = saveAccount;
     $('#account-body')

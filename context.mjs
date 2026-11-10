@@ -3,8 +3,9 @@
  * The host keeps 20 turns; 32k characters bound prompt growth for small models.
  */
 /** The host's section of arno's system prompt for a coding session: where it
- * runs, and that git can reach GitHub. */
-export function sessionPrompt(session) {
+ * runs, what git can do, and what the network reaches (sandbox.mjs): net is
+ * {internet, cloudflare}, the owner's public sandbox settings. */
+export function sessionPrompt(session, net = {}) {
   return (
     'You run in Arno Chat, in a cloud sandbox the user reaches from a phone or browser; nobody watches a terminal. ' +
     'The project is a clone of github.com/' +
@@ -14,7 +15,13 @@ export function sessionPrompt(session) {
     '). ' +
     'Its origin goes through the host, which adds the user’s GitHub credentials: git fetch, pull and push work from the shell, and commits are made under the user’s name. ' +
     'Deleting a branch or tag on GitHub is refused. Your edits are applied to the project when the turn ends, so commit and push at the end of a step, after its changes are in the project, ' +
-    'or say what to push and the user will ask in the next message. When you push, say the branch and the commit.'
+    'or say what to push and the user will ask in the next message. When you push, say the branch and the commit. ' +
+    (net.internet
+      ? 'The internet is open to your commands. '
+      : 'Your commands have no internet, but npm, npx and pip install from npm and PyPI through the host; other sites and installers are out of reach. ') +
+    (net.cloudflare?.saved
+      ? 'Cloudflare’s API is reachable through the host with the user’s token, so npx wrangler commands (such as wrangler deploy) work; the token is added by the host, so never ask for it.'
+      : 'Cloudflare deploys need the user to save a Cloudflare API token in Settings, Connections.')
   );
 }
 export function buildPrompt(session, history, prompt) {

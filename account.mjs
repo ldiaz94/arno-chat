@@ -3,6 +3,7 @@
  * Only masked connection metadata is ever returned by public GET routes.
  */
 import { publicWebUrl, searxngSearch } from './web.mjs';
+import { publicSandbox } from './sandbox.mjs';
 import { modelAllowed } from './models.mjs';
 /** Each provider's API: where models are listed and where chat requests go,
  * and how a streamed chat request differs between them:
@@ -283,6 +284,7 @@ export function publicProfile(env, p) {
       ]),
     ),
     mcp: (p.mcp || []).map(({ token, ...m }) => ({ ...m, hasToken: !!token, oauth: !!m.oauth })),
+    sandbox: publicSandbox(p),
     search: p.search
       ? {
           url: p.search.url,

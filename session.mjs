@@ -15,6 +15,7 @@ import {
   seal,
 } from './account.mjs';
 import { gitRemote } from './git.mjs';
+import { SANDBOX_HOSTS, publicSandbox } from './sandbox.mjs';
 import { codeSettings } from './plan.mjs';
 import { WEB_INSTRUCTIONS, WEB_TOOLS, research, citedSources } from './web.mjs';
 import { turnPlan } from './plan.mjs';
@@ -461,6 +462,11 @@ export class ArnoProbe extends DurableObject {
     await this.start(session.model);
     return null;
   }
+  /** The owner's sandbox settings, as the browser sees them (sandbox.mjs):
+   * whether the internet is open and whether a Cloudflare token is saved. */
+  async sandbox(ownerId) {
+    return publicSandbox(ownerId ? await profile(this.env, ownerId) : {});
+  }
   /** The branches on GitHub as the clone last saw them, to tell after a turn
    * which the model pushed. */
   async remoteRefs() {
@@ -546,10 +552,14 @@ export class ArnoProbe extends DurableObject {
     if (!container.running) {
       const snapshot = await this.ctx.storage.get('snapshot');
       mode = snapshot ? 'restored' : 'new';
+      // The internet only when the owner turned it on (sandbox.mjs); else the
+      // gateways below are all the container reaches.
+      const session = await this.ctx.storage.get('session'),
+        internet = !!session?.ownerId && !!(await profile(this.env, session.ownerId)).internet;
       container.start({
         ...(snapshot ? { containerSnapshot: snapshot } : { image: container.images.runner }),
         entrypoint: ['sleep', 'infinity'],
-        enableInternet: false,
+        enableInternet: internet,
         instance: 'standard-1',
       });
     }
@@ -561,6 +571,13 @@ export class ArnoProbe extends DurableObject {
       'git.internal',
       this.ctx.exports.GitGateway({ props: { task: this.ctx.id.toString() } }),
     );
+    for (const host of SANDBOX_HOSTS)
+      await container.interceptOutboundHttp(
+        host,
+        host === 'cf.internal'
+          ? this.ctx.exports.CloudflareGateway({ props: { task: this.ctx.id.toString() } })
+          : this.ctx.exports.RegistryGateway({}),
+      );
     await container.interceptOutboundHttp(
       'mcp.internal',
       this.ctx.exports.McpGateway({ props: { task: this.ctx.id.toString() } }),

@@ -18,6 +18,7 @@ import { turnPlan } from './plan.mjs';
 import { effortSupported } from './models.mjs';
 import { gitProxy } from './git.mjs';
 import { mcpBearer } from './mcp-oauth.mjs';
+import { registryProxy, cloudflareProxy, cloudflareToken } from './sandbox.mjs';
 
 export class ModelGateway extends WorkerEntrypoint {
   async fetch(request) {
@@ -107,5 +108,22 @@ export class GitGateway extends WorkerEntrypoint {
       repo,
       token: token ? await unseal(this.env, ownerId, 'github', token) : '',
     });
+  }
+}
+/** Reading packages from npm and PyPI (sandbox.mjs). */
+export class RegistryGateway extends WorkerEntrypoint {
+  async fetch(request) {
+    return registryProxy(request);
+  }
+}
+/** Cloudflare's API with the owner's token, while a turn runs (sandbox.mjs). */
+export class CloudflareGateway extends WorkerEntrypoint {
+  async fetch(request) {
+    const task = this.env.PROBE.get(this.env.PROBE.idFromString(this.ctx.props.task)),
+      r = await task.fetch('https://internal/turn-owner');
+    if (!r.ok)
+      return new Response('Cloudflare is reached only while a turn runs\n', { status: 403 });
+    const { ownerId } = await r.json();
+    return cloudflareProxy(request, await cloudflareToken(this.env, ownerId));
   }
 }

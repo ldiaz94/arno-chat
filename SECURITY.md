@@ -30,6 +30,10 @@ The container has no general Internet access and no GitHub or Ollama token. Repo
 
 The container is the isolation layer. Arno runs with `jail = no` (containers may hide /proc, which its namespace jail needs) and answers every approval with yes, so anything the model runs is limited only by the container. Arno's `safety = auto` stages edits in a copy and applies them at the end of the turn; that is for tidiness, not security. No claim of perfect security is made.
 
+## Network boundary
+
+A coding container has no internet by default. It reaches, over plain HTTP intercepted by the Worker, only the gateways: model.internal, mcp.internal, git.internal, the read-only package registries (npm.internal → registry.npmjs.org, pypi.internal → pypi.org, pyfiles.internal → files.pythonhosted.org; GET and HEAD only, so nothing can be published) and, when the owner saved a Cloudflare API token, cf.internal → api.cloudflare.com/client/v4, which adds that token and answers only while a turn runs. The token never enters the container: wrangler is given a placeholder and the gateway replaces it. Anything the token allows, a session may do, so a narrowly scoped token is advised. An owner may turn on full internet access (Settings → Connections), which starts later workspaces with the container's internet on: then a misled agent could send repository contents anywhere. Credentials still stay outside, since every credential is added by a gateway.
+
 ## Git boundary
 
 The container's git origin is `http://git.internal/OWNER/REPO.git`. The Worker's git gateway (git.mjs) forwards git's smart-HTTP requests (info/refs, git-upload-pack, git-receive-pack) to `https://github.com/OWNER/REPO.git` with the owner's GitHub token as Basic `x-access-token`. The token never enters the container, so the model can fetch and push but cannot read the token. The session object hands the gateway the token only while a turn or a clone runs.
