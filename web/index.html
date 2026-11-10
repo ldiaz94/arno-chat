@@ -69,7 +69,15 @@
               <small>Account & connections</small>
             </span>
           </button>
-          <button id="theme" class="ghost icon" aria-label="Toggle color theme">◐</button>
+          <button
+            id="theme"
+            class="ghost icon"
+            type="button"
+            popovertarget="theme-menu"
+            aria-label="Theme"
+          >
+            ◐
+          </button>
           <a href="/auth/logout" aria-label="Sign out" class="caption">Exit</a>
         </div>
       </aside>
@@ -378,6 +386,13 @@
       </div>
       <div id="gallery-grid" class="gallery-grid"></div>
     </dialog>
+    <div id="theme-menu" class="theme-menu" popover aria-label="Theme">
+      <div class="theme-modes" role="group" aria-label="Brightness">
+        <button type="button" data-light="0">Dark</button>
+        <button type="button" data-light="1">Light</button>
+      </div>
+      <div id="theme-list" class="theme-list" role="group" aria-label="Palette"></div>
+    </div>
     <dialog id="conversation-dialog" class="modal" aria-labelledby="conversation-menu-heading">
       <div class="modal-head">
         <h2 id="conversation-menu-heading">Conversation</h2>

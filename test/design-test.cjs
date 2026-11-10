@@ -844,8 +844,28 @@ const { chromium } = require('playwright'),
     await page.setViewportSize({ width: 3440, height: 1440 });
     await page.waitForTimeout(100);
     await page.getByRole('button', { name: 'Close code' }).click();
-    await page.getByRole('button', { name: 'Toggle color theme' }).click();
+    await page.getByRole('button', { name: 'Theme', exact: true }).click();
+    await page.locator('.theme-modes [data-light="1"]').click();
+    await page.keyboard.press('Escape');
     await page.screenshot({ path: '/tmp/arno-chat-light.png', fullPage: true });
+    // Each palette, light and dark: the page and the status bar take its colours.
+    for (const light of ['0', '1'])
+      for (const palette of ['duck', 'catppuccin', 'cyberpunk', 'phosphor', 'gruvbox', 'arno']) {
+        await page.getByRole('button', { name: 'Theme', exact: true }).click();
+        await page.locator('.theme-modes [data-light="' + light + '"]').click();
+        await page.locator('[data-pick="' + palette + '"]').click();
+        const [bg, bar] = await page.evaluate(() => [
+          getComputedStyle(document.body).backgroundColor,
+          document.querySelector('meta[name="theme-color"]').content,
+        ]);
+        assert.ok(bar.startsWith('#'), palette + ' sets the status bar colour');
+        await page.waitForTimeout(300); // the colours ease in
+        await page.screenshot({ path: '/tmp/arno-theme-' + palette + '-' + light + '.png' });
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(300);
+        await page.screenshot({ path: '/tmp/arno-theme-' + palette + '-' + light + '-closed.png' });
+        assert.ok(bg, palette);
+      }
     // Settings: Enter adds a new line, and new chats start with Kimi.
     await page.getByRole('button', { name: 'Account settings', exact: true }).click();
     await page.locator('#enter-line').check();

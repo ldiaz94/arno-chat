@@ -204,17 +204,57 @@ function themeColor() {
     .getPropertyValue('--bg')
     .trim();
 }
-// Switches between the light and dark theme and remembers it.
-export function theme() {
-  document.body.classList.toggle('light');
-  localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
-  themeColor();
+/** The palettes the theme menu offers; Arno's own is the default. */
+const PALETTES = ['arno', 'duck', 'catppuccin', 'cyberpunk', 'phosphor', 'gruvbox'];
+/** Paints the theme menu: the brightness and the palette now in use, each
+ * palette as a small card in its own colours. */
+function themeMenu() {
+  const light = document.body.classList.contains('light'),
+    now = document.body.dataset.palette || 'arno';
+  for (const b of document.querySelectorAll('.theme-modes button'))
+    b.setAttribute('aria-pressed', String((b.dataset.light === '1') === light));
+  $('#theme-list').innerHTML = PALETTES.map(
+    p =>
+      '<button type="button" class="theme-option" data-pick="' +
+      p +
+      '" aria-pressed="' +
+      (p === now) +
+      '"><span class="swatch" data-palette="' +
+      p +
+      '"><i></i><i></i><i></i></span>' +
+      p[0].toUpperCase() +
+      p.slice(1) +
+      '</button>',
+  ).join('');
 }
+/** Sets the theme (a palette and light or dark) and remembers it on this device. */
+function setTheme(palette, light) {
+  if (palette === 'arno') delete document.body.dataset.palette;
+  else document.body.dataset.palette = palette;
+  document.body.classList.toggle('light', light);
+  localStorage.setItem('palette', palette);
+  localStorage.setItem('theme', light ? 'light' : 'dark');
+  themeColor();
+  themeMenu();
+}
+$('#theme-menu').addEventListener('toggle', e => e.newState === 'open' && themeMenu());
+$('#theme-menu').onclick = e => {
+  const pick = e.target.closest('[data-pick]')?.dataset.pick,
+    mode = e.target.closest('[data-light]')?.dataset.light;
+  const light = document.body.classList.contains('light');
+  if (pick) setTheme(pick, light);
+  else if (mode) setTheme(document.body.dataset.palette || 'arno', mode === '1');
+};
 /** Soft wrap for code (chat code blocks, the file view), remembered on this device. */
 export function toggleWrap() {
   document.body.classList.toggle('code-wrap');
   localStorage.setItem('codeWrap', document.body.classList.contains('code-wrap') ? '1' : '');
 }
 if (localStorage.getItem('theme') === 'light') document.body.classList.add('light');
+if (
+  PALETTES.includes(localStorage.getItem('palette')) &&
+  localStorage.getItem('palette') !== 'arno'
+)
+  document.body.dataset.palette = localStorage.getItem('palette');
 if (localStorage.getItem('codeWrap')) document.body.classList.add('code-wrap');
 themeColor();

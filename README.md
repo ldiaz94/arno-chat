@@ -66,6 +66,7 @@ the most recently active first.
 | --- | --- |
 | Chat home, **New chat** | A conversation with web research, artifacts and your connected MCP tools; no container |
 | Code home, a repository's **Open** | A new coding session: a clone of the repository in a container of its own |
+| ◐ | Theme: dark or light, and a palette (Arno, Duck, Catppuccin, Cyberpunk, Phosphor, Gruvbox), kept on this device |
 | ⋯ | The repository's actions (changes and pull request, pull, a new session on it) and the conversation's (rename, export, delete) |
 | ⋯ → **New session on this repository** | Another session on the same repository, from its current branch |
 | The title | Conversation details: artifacts, context, usage and cost, sources, links, images |

@@ -19,7 +19,7 @@ import {
   loadAvatar,
   sendKey,
 } from './core.js';
-import { drawer, title, sidebar, theme, toggleWrap } from './layout.js';
+import { drawer, title, sidebar, toggleWrap } from './layout.js';
 import { loadModels, openModels, renderModels, chooseModel } from './models.js';
 import { openSources, scrollDown } from './thread.js';
 import { startDiagnostics } from './diag.js';
@@ -51,7 +51,6 @@ tableResize(document);
 $('#menu').onclick = () => drawer(true);
 $('#overlay').onclick = () => drawer(false);
 $('#new-session').onclick = home;
-$('#theme').onclick = theme;
 $('#usage').onclick = openInfo;
 $('#usage-view').onclick = openUsage;
 $('#title').onclick = () => state.session && openInfo();
@@ -213,6 +212,8 @@ for (const [id, name] of [
   ['actions', 'dots'],
 ])
   $('#' + id).innerHTML = icon(name);
+$('#gallery-view').innerHTML = icon('page') + ' Artifacts';
+$('#usage-view').innerHTML = icon('chart') + ' Usage';
 $('#new-session').innerHTML = icon('plus') + ' New session';
 document.addEventListener('click', e => {
   if (e.target.id === 'reload') location.reload();
