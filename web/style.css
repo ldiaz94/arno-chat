@@ -1856,7 +1856,10 @@ body.light {
   line-height: 1;
   display: grid;
   place-items: center;
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
 }
 .session-pick.on {
   background: var(--accent);

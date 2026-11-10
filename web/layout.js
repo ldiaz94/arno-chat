@@ -113,12 +113,11 @@ export function sidebar() {
   const row = s => {
     const name = esc(s.title || s.repo),
       picked = state.selected.has(s.id),
-      marks =
-        (chatFailure(s.id)
-          ? ' · <span class="failed-mark">Not created</span>'
-          : waiting(s.id)
-            ? ' · <span class="queued-mark">Queued</span>'
-            : '');
+      marks = chatFailure(s.id)
+        ? ' · <span class="failed-mark">Not created</span>'
+        : waiting(s.id)
+          ? ' · <span class="queued-mark">Queued</span>'
+          : '';
     return (
       '<div class="session-row' +
       (edit && picked ? ' picked' : '') +
