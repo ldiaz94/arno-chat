@@ -221,7 +221,7 @@ const { chromium } = require('playwright'),
             .catch(() => {});
         r.fulfill({
           contentType: types[require('node:path').extname(file)],
-          body: fs.readFileSync(__dirname + '/web' + file),
+          body: fs.readFileSync(__dirname + '/../web' + file),
         });
       },
     );

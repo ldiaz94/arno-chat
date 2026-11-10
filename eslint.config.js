@@ -11,12 +11,12 @@ export default [
   { files: ['web/**'], languageOptions: { globals: globals.browser } },
   { files: ['web/sw.js'], languageOptions: { globals: globals.serviceworker } },
   {
-    files: ['*.js', '*.mjs'],
+    files: ['*.js', 'server/**', 'test/*.mjs'],
     languageOptions: { globals: { ...globals.serviceworker, ...globals.node } },
   },
   // The design test's page.evaluate() callbacks run in the browser.
   {
-    files: ['*.cjs'],
+    files: ['test/*.cjs'],
     languageOptions: { sourceType: 'commonjs', globals: { ...globals.node, ...globals.browser } },
   },
 ];

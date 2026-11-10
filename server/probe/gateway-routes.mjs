@@ -1,7 +1,7 @@
 /** Durable Object routes for a session ('code:<user>:<id>') called back by the
  * model and MCP gateways and the container's web tools: per-turn quotas,
  * progress, usage and research state. Called with this = the ArnoProbe instance. */
-import { json } from './http.mjs';
+import { json } from '../http.mjs';
 
 export const gatewayRoutes = {
   async '* /web-state'(request) {

@@ -3,7 +3,7 @@
  * through ctx.exports, so worker.js re-exports the classes. Git goes through
  * GitGateway (git.mjs). */
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import { modelRequest } from './gateway.mjs';
+import { modelRequest } from './model.mjs';
 import {
   profile,
   credential,
@@ -11,14 +11,14 @@ import {
   providerModel,
   unseal,
   searchConnection,
-} from './account.mjs';
+} from '../account.mjs';
 import { proxyMcp } from './mcp.mjs';
-import { WEB_INSTRUCTIONS, webMcp } from './web.mjs';
-import { turnPlan } from './plan.mjs';
-import { effortSupported } from './models.mjs';
-import { gitProxy } from './git.mjs';
+import { WEB_INSTRUCTIONS, webMcp } from '../chat/research.mjs';
+import { turnPlan } from '../chat/plan.mjs';
+import { effortSupported } from '../models.mjs';
+import { gitProxy } from '../code/git.mjs';
 import { mcpBearer } from './mcp-oauth.mjs';
-import { registryProxy, cloudflareProxy, cloudflareToken } from './sandbox.mjs';
+import { registryProxy, cloudflareProxy, cloudflareToken } from '../code/sandbox.mjs';
 
 export class ModelGateway extends WorkerEntrypoint {
   async fetch(request) {

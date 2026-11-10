@@ -1,5 +1,5 @@
-import { tokens } from './prices.mjs';
-import { PROVIDERS, requestFields } from './account.mjs';
+import { tokens } from '../prices.mjs';
+import { PROVIDERS, requestFields } from '../account.mjs';
 // A long coding conversation, sent whole each step, with its tools: arno's
 // prune keeps history near 200 KB, so this is a ceiling, not a working size.
 const MAX_BODY = 8 * 1024 * 1024;

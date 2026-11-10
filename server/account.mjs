@@ -2,8 +2,8 @@
  * Provider/MCP secrets are encrypted with AES-GCM and user/field-bound AAD.
  * Only masked connection metadata is ever returned by public GET routes.
  */
-import { publicWebUrl, searxngSearch } from './web.mjs';
-import { publicSandbox } from './sandbox.mjs';
+import { publicWebUrl, searxngSearch } from './chat/research.mjs';
+import { publicSandbox } from './code/sandbox.mjs';
 import { modelAllowed } from './models.mjs';
 /** Each provider's API: where models are listed and where chat requests go,
  * and how a streamed chat request differs between them:

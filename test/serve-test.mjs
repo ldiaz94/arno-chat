@@ -8,7 +8,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { Readable, Writable } from 'node:stream';
 import assert from 'node:assert/strict';
-import { serveTurn, replyOf, transcriptOf } from './serve.mjs';
+import { serveTurn, replyOf, transcriptOf } from '../server/code/serve.mjs';
 
 const ARNO = process.env.ARNO || process.env.HOME + '/r/arno/build/arno',
   STUB = process.env.STUB || process.env.HOME + '/r/arno/build/stub';

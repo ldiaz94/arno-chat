@@ -3,8 +3,8 @@
  * record ('auth:<id>'). Requests dispatch by "METHOD /path" (or "* /path" for any
  * method) to the role route tables; turns run from alarm(). */
 import { DurableObject } from 'cloudflare:workers';
-import { SECURITY, json } from './http.mjs';
-import { plainChat } from './chat.mjs';
+import { SECURITY, json } from '../http.mjs';
+import { plainChat } from '../chat/chat.mjs';
 import { modelInput } from './attachments.mjs';
 import {
   profile,
@@ -13,20 +13,20 @@ import {
   providerModel,
   searchConnection,
   seal,
-} from './account.mjs';
-import { gitRemote } from './git.mjs';
-import { chatMcpTools, callChatMcp } from './chat-mcp.mjs';
-import { SANDBOX_HOSTS, publicSandbox } from './sandbox.mjs';
-import { codeSettings } from './plan.mjs';
-import { WEB_INSTRUCTIONS, WEB_TOOLS, research, citedSources } from './web.mjs';
-import { turnPlan } from './plan.mjs';
-import { effortSupported } from './models.mjs';
+} from '../account.mjs';
+import { gitRemote } from '../code/git.mjs';
+import { chatMcpTools, callChatMcp } from '../chat/chat-mcp.mjs';
+import { SANDBOX_HOSTS, publicSandbox } from '../code/sandbox.mjs';
+import { codeSettings } from '../chat/plan.mjs';
+import { WEB_INSTRUCTIONS, WEB_TOOLS, research, citedSources } from '../chat/research.mjs';
+import { turnPlan } from '../chat/plan.mjs';
+import { effortSupported } from '../models.mjs';
 import { ARTIFACT_INSTRUCTIONS, ARTIFACT_TOOLS, artifactTool } from './artifacts.mjs';
-import { prices, priceOf, cost, costParts, webRates, WEB_RATES } from './prices.mjs';
+import { prices, priceOf, cost, costParts, webRates, WEB_RATES } from '../prices.mjs';
 import { storeRoutes } from './store-routes.mjs';
 import { gatewayRoutes } from './gateway-routes.mjs';
 import { sessionRoutes } from './session-routes.mjs';
-import { pushRoutes, notifyOwner, turnNotice } from './push.mjs';
+import { pushRoutes, notifyOwner, turnNotice } from '../push.mjs';
 
 const ROUTES = { ...storeRoutes, ...pushRoutes, ...gatewayRoutes, ...sessionRoutes };
 

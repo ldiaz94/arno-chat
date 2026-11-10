@@ -5,14 +5,14 @@ import { SECURITY, json, sameOrigin } from './http.mjs';
 import { currentAuth, handleOAuth, repoAccess } from './auth.mjs';
 import { apiRoutes, sessionPaths } from './api.mjs';
 
-export { ArnoProbe } from './session.mjs';
+export { ArnoProbe } from './probe/probe.mjs';
 export {
   ModelGateway,
   McpGateway,
   GitGateway,
   RegistryGateway,
   CloudflareGateway,
-} from './gateways.mjs';
+} from './gateways/gateways.mjs';
 
 export default {
   async fetch(request, env) {

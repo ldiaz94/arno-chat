@@ -1,19 +1,19 @@
 /** Durable Object routes for a conversation session ('code:<user>:<id>'): its
  * lifecycle, turns, live events, file preview and publishable changes.
  * Called with this = the ArnoProbe instance. */
-import { SECURITY, json } from './http.mjs';
-import { modelAllowed, contextWindow, acceptsImages } from './models.mjs';
+import { SECURITY, json } from '../http.mjs';
+import { modelAllowed, contextWindow, acceptsImages } from '../models.mjs';
 import { attachmentsFor, saveAttachment, readAttachment } from './attachments.mjs';
 import { listArtifacts } from './artifacts.mjs';
-import { EXPORT_FILES, validateFiles, WORKTREE_DIFF } from './publish.mjs';
-import { buildPrompt, sessionPrompt } from './context.mjs';
-import { serveTurn, replyOf, transcriptOf, activityOf } from './serve.mjs';
-import { sandboxEnv } from './sandbox.mjs';
-import { READ_FILE, validPath } from './files.mjs';
-import { citedSources } from './web.mjs';
-import { checkOptions } from './web/options.mjs';
-import { turnPlan, codeLimits } from './plan.mjs';
-import { gitRemote } from './git.mjs';
+import { EXPORT_FILES, validateFiles, WORKTREE_DIFF } from '../code/publish.mjs';
+import { buildPrompt, sessionPrompt } from '../code/context.mjs';
+import { serveTurn, replyOf, transcriptOf, activityOf } from '../code/serve.mjs';
+import { sandboxEnv } from '../code/sandbox.mjs';
+import { READ_FILE, validPath } from '../code/files.mjs';
+import { citedSources } from '../chat/research.mjs';
+import { checkOptions } from '../../web/options.mjs';
+import { turnPlan, codeLimits } from '../chat/plan.mjs';
+import { gitRemote } from '../code/git.mjs';
 
 /** Why a coding session's line can't go to arno, or '': the commands that
  * would undo what the host set up (its model, safety and process), or need a

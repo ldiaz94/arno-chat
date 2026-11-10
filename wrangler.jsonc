@@ -2,7 +2,7 @@
 // deploys and never live here (see OPERATIONS.md).
 {
   "name": "arno-compat-probe",
-  "main": "worker.js",
+  "main": "server/worker.js",
   "compatibility_date": "2026-10-30",
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,

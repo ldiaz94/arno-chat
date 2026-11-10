@@ -15,8 +15,8 @@
  * npm does the same for its own tarballs (replace-registry-host). Depends on
  * account.mjs. Leaves out other registries (crates, Go, Maven, RubyGems) and
  * publishing to any of them. */
-import { seal, unseal, profile } from './account.mjs';
-import { json } from './http.mjs';
+import { seal, unseal, profile } from '../account.mjs';
+import { json } from '../http.mjs';
 
 const REGISTRIES = {
   'npm.internal': 'https://registry.npmjs.org',

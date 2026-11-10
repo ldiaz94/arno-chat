@@ -1,7 +1,7 @@
 /** Durable Object routes for the per-user and sign-in roles: the session index
  * and profile ('index:<user>'), the auth record and the pending OAuth state
  * ('auth:<id>'). Called with this = the ArnoProbe instance. */
-import { json } from './http.mjs';
+import { json } from '../http.mjs';
 
 async function patchProfile(request, url) {
   const patch = await request.json();

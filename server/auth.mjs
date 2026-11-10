@@ -1,7 +1,7 @@
 /** Sign-in: the GitHub OAuth flow (/auth/*), the cookie-bound auth record kept
  * in its own Durable Object, and an authenticated GitHub API client. */
 import { COOKIE, SECURITY, json, cookie, sessionCookie } from './http.mjs';
-import { mcpCallback } from './mcp-oauth.mjs';
+import { mcpCallback } from './gateways/mcp-oauth.mjs';
 
 export function authObject(env, id) {
   return env.PROBE.getByName(`auth:${id}`);

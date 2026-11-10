@@ -8,8 +8,8 @@
  *   fast      off unless set  chosen   4,096    8       3 / 6           4 min
  *   deep      at least medium on       16,384   16      10 / 20         12 min
  */
-import { MAX_OUTPUT } from './account.mjs';
-import { DEFAULTS } from './web/options.mjs';
+import { MAX_OUTPUT } from '../account.mjs';
+import { DEFAULTS } from '../../web/options.mjs';
 
 const STYLE = {
   normal: '',

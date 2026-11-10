@@ -2,22 +2,22 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { catalog } from './models.mjs';
-import { markdown, cleanOutput, diffHtml } from './web/render.mjs';
-import { highlight, detect } from './web/highlight.mjs';
-import { Outbox, conflicted, isLocal } from './web/queue.mjs';
-import { moon, byRecent, ago, daily, weatherText } from './web/today.mjs';
-import { QUOTES, FACTS } from './web/home-content.js';
-import { buildPrompt } from './context.mjs';
-import { validateFiles } from './publish.mjs';
-import { usageStream, modelRequest, displayDelta } from './gateway.mjs';
-import { checkOptions, optionTags, DEFAULTS } from './web/options.mjs';
-import { turnPlan, codeSettings, codeLimits } from './plan.mjs';
-import { gitProxy, refUpdates } from './git.mjs';
-import { hostCommand } from './session-routes.mjs';
-import { encode, decoderOf } from './serve.mjs';
-import { plainChat } from './chat.mjs';
-import { validPath } from './files.mjs';
+import { catalog } from '../server/models.mjs';
+import { markdown, cleanOutput, diffHtml } from '../web/render.mjs';
+import { highlight, detect } from '../web/highlight.mjs';
+import { Outbox, conflicted, isLocal } from '../web/queue.mjs';
+import { moon, byRecent, ago, daily, weatherText } from '../web/today.mjs';
+import { QUOTES, FACTS } from '../web/home-content.js';
+import { buildPrompt } from '../server/code/context.mjs';
+import { validateFiles } from '../server/code/publish.mjs';
+import { usageStream, modelRequest, displayDelta } from '../server/gateways/model.mjs';
+import { checkOptions, optionTags, DEFAULTS } from '../web/options.mjs';
+import { turnPlan, codeSettings, codeLimits } from '../server/chat/plan.mjs';
+import { gitProxy, refUpdates } from '../server/code/git.mjs';
+import { hostCommand } from '../server/probe/session-routes.mjs';
+import { encode, decoderOf } from '../server/code/serve.mjs';
+import { plainChat } from '../server/chat/chat.mjs';
+import { validPath } from '../server/code/files.mjs';
 import {
   seal,
   unseal,
@@ -26,21 +26,21 @@ import {
   validMcpUrl,
   accountRoute,
   requestFields,
-} from './account.mjs';
-import { testMcp } from './mcp.mjs';
-import { startSignIn, mcpCallback, mcpBearer } from './mcp-oauth.mjs';
-import { registryProxy, cloudflareProxy, sandboxEnv } from './sandbox.mjs';
-import { chatMcpTools, callChatMcp } from './chat-mcp.mjs';
-import { COMMANDS, suggest } from './web/commands.mjs';
-import { research, citedSources } from './web.mjs';
-import { ArnoProbe, default as worker } from './worker.js';
+} from '../server/account.mjs';
+import { testMcp } from '../server/gateways/mcp.mjs';
+import { startSignIn, mcpCallback, mcpBearer } from '../server/gateways/mcp-oauth.mjs';
+import { registryProxy, cloudflareProxy, sandboxEnv } from '../server/code/sandbox.mjs';
+import { chatMcpTools, callChatMcp } from '../server/chat/chat-mcp.mjs';
+import { COMMANDS, suggest } from '../web/commands.mjs';
+import { research, citedSources } from '../server/chat/research.mjs';
+import { ArnoProbe, default as worker } from '../server/worker.js';
 test('browser scripts parse', () => {
-  const dir = new URL('./web/', import.meta.url).pathname;
+  const dir = new URL('../web/', import.meta.url).pathname;
   for (const f of readdirSync(dir).filter(f => f.endsWith('.js')))
     execFileSync(process.execPath, ['--check', dir + f]);
 });
 test('the service worker precaches every static file the app needs', () => {
-  const dir = new URL('./web/', import.meta.url).pathname,
+  const dir = new URL('../web/', import.meta.url).pathname,
     sw = readFileSync(dir + 'sw.js', 'utf8'),
     shell = JSON.parse(
       sw
@@ -1003,7 +1003,8 @@ test('conversation rename preserves repository identity and delete rejects activ
   );
 });
 test('prices parse provider tables and count cached tokens once', async () => {
-  const { parseOllama, parseOpenRouter, priceOf, tokens, cost } = await import('./prices.mjs');
+  const { parseOllama, parseOpenRouter, priceOf, tokens, cost } =
+    await import('../server/prices.mjs');
   const ollama = parseOllama(
     '<table><tr><td>Model</td><td>Input</td><td>Cached input</td><td>Output</td></tr><tr><td><a href="/library/glm-5.3">glm-5.3</a></td><td>$1.40</td><td>$0.26</td><td>$4.40</td></tr><tr><td>glm-5.3 (Off-Peak)</td><td>$0.70</td><td>$0.13</td><td>$2.20</td></tr></table><p>Off-peak pricing apply outside 12:00 and 18:00 UTC on weekdays</p>',
   );
@@ -1048,10 +1049,10 @@ test('wrangler builds the worker bundle', async () => {
   const out = mkdtempSync(tmpdir() + '/arno-bundle-');
   try {
     execFileSync(
-      new URL('./node_modules/.bin/wrangler', import.meta.url).pathname,
+      new URL('../node_modules/.bin/wrangler', import.meta.url).pathname,
       ['deploy', '--dry-run', '--outdir', out],
       {
-        cwd: new URL('.', import.meta.url).pathname,
+        cwd: new URL('..', import.meta.url).pathname,
         stdio: 'pipe',
         env: { ...process.env, WRANGLER_SEND_METRICS: 'false' },
       },
@@ -1115,7 +1116,7 @@ test('Gemini: index-less tool calls keep their thought signature; thoughts leave
   assert.equal(r.usage.outputTokens, 30 + 10); // thinking counted from total_tokens
 });
 test('Gemini prices: first tier, dated changes resolved at the turn time', async () => {
-  const { parseGemini, priceOf } = await import('./prices.mjs');
+  const { parseGemini, priceOf } = await import('../server/prices.mjs');
   const page = `## Gemini 9 Flash  {% id="gemini-9-flash" %}
 {% tabs %}
   {% tab title="Standard" %}
@@ -1403,7 +1404,7 @@ test('coding gateway: Mistral gets no stream_options and its thinking chunks bec
   });
 });
 test('model discovery keeps chat models of DeepSeek, Kimi, Mistral and Meta', async () => {
-  const { providerModels } = await import('./account.mjs');
+  const { providerModels } = await import('../server/account.mjs');
   const lists = {
     'https://api.deepseek.com/models': [
       { id: 'deepseek-flash', object: 'model', owned_by: 'deepseek', name: 'DeepSeek-V4.1-Flash' },
@@ -1468,7 +1469,7 @@ test('model discovery keeps chat models of DeepSeek, Kimi, Mistral and Meta', as
 });
 test('DeepSeek, Mistral and Meta prices from their pages; Kimi via OpenRouter; each kept apart', async () => {
   const { parseDeepSeek, parseMistral, parseMeta, parseOpenRouter, parseOllama, priceOf } =
-    await import('./prices.mjs');
+    await import('../server/prices.mjs');
   const deepseek = parseDeepSeek(`| MODEL | MODEL | MODEL | deepseek-flash(1) | deepseek-v4-pro |
 | --- | --- | --- | --- | --- |
 | BASE URL (OpenAI Format) | BASE URL (OpenAI Format) | BASE URL (OpenAI Format) | <https://api.deepseek.com> | <https://api.deepseek.com> |
@@ -1580,7 +1581,7 @@ test('markdown images load through the proxy and only over HTTP(S)', () => {
 });
 
 test('image proxy refuses private hosts, non-images, SVG and private redirects, and passes PNG', async () => {
-  const { proxyImage } = await import('./api.mjs');
+  const { proxyImage } = await import('../server/api.mjs');
   const reply =
     (body, type, status = 200, headers = {}) =>
     async () =>
@@ -1638,7 +1639,7 @@ function pushIndex(env) {
   return f;
 }
 test('VAPID JWT is ES256 over the claims and verifies with the served public key', async () => {
-  const { vapidJwt, publicKey, pushApiRoutes } = await import('./push.mjs');
+  const { vapidJwt, publicKey, pushApiRoutes } = await import('../server/push.mjs');
   const env = { VAPID_KEY: await vapidKey() },
     jwk = JSON.parse(env.VAPID_KEY);
   const served = await (await pushApiRoutes['GET /api/push/key'](null, env)).json();
@@ -1669,7 +1670,7 @@ test('VAPID JWT is ES256 over the claims and verifies with the served public key
   );
 });
 test('push subscribe accepts only known push services', async () => {
-  const { pushApiRoutes } = await import('./push.mjs');
+  const { pushApiRoutes } = await import('../server/push.mjs');
   const env = {},
     f = pushIndex(env),
     auth = { user: { id: 7 } };
@@ -1699,7 +1700,7 @@ test('push subscribe accepts only known push services', async () => {
   assert.equal(push.subscriptions.length, 2);
 });
 test('a push service 410 deletes the subscription; no subscriptions, no push', async () => {
-  const { notifyOwner } = await import('./push.mjs');
+  const { notifyOwner } = await import('../server/push.mjs');
   const env = { VAPID_KEY: await vapidKey() },
     f = pushIndex(env),
     sent = [];
@@ -1729,7 +1730,7 @@ test('a push service 410 deletes the subscription; no subscriptions, no push', a
   assert.deepEqual(await f.ctx.storage.get('notice'), notice);
 });
 test('turn notice: plain title and body, and a link that reopens the session', async () => {
-  const { turnNotice } = await import('./push.mjs');
+  const { turnNotice } = await import('../server/push.mjs');
   const n = turnNotice({ title: 'Fix the **build**' }, 'abc', {
     summary: '## Done\n\nSee [the log](https://x.example) and `make`.',
   });
@@ -1740,7 +1741,7 @@ test('turn notice: plain title and body, and a link that reopens the session', a
 });
 test('attachments: chunked round trip, kind and size checks, model input per provider', async () => {
   const { saveAttachment, readAttachment, attachmentsFor, modelInput } =
-    await import('./attachments.mjs');
+    await import('../server/probe/attachments.mjs');
   const map = new Map();
   const storage = {
     get: async k => (Array.isArray(k) ? new Map(k.map(x => [x, map.get(x)])) : map.get(k)),
@@ -1804,7 +1805,7 @@ test('attachments: chunked round trip, kind and size checks, model input per pro
   }
 });
 test('artifacts: create, update keeps earlier versions, bad input refused', async () => {
-  const { artifactTool, listArtifacts } = await import('./artifacts.mjs');
+  const { artifactTool, listArtifacts } = await import('../server/probe/artifacts.mjs');
   const map = new Map();
   const storage = {
     get: async k => map.get(k),
@@ -1846,7 +1847,7 @@ test('artifact links render as buttons only for a uuid', () => {
   assert.match(html, /\[x\]\(artifact:nope\)/);
 });
 test('cost parts: model tokens by kind plus searches; unpriced models still count searches', async () => {
-  const { costParts } = await import('./prices.mjs');
+  const { costParts } = await import('../server/prices.mjs');
   const parts = costParts(
     { inp: 1, cached: 0.1, out: 10 },
     { measuredCalls: 1, inputTokens: 2e6, cachedTokens: 1e6, outputTokens: 1e5 },
@@ -2005,7 +2006,7 @@ test('account saves a SearXNG connection sealed and refuses private or plain-HTT
   assert.equal((await save({ remove: true })).status, 200);
 });
 test('deleting the account wipes the index, every session and every recorded sign-in', async () => {
-  const { apiRoutes } = await import('./api.mjs');
+  const { apiRoutes } = await import('../server/api.mjs');
   const objects = new Map();
   const env = {
     PROBE: {
@@ -2056,8 +2057,8 @@ test('deleting the account wipes the index, every session and every recorded sig
     assert.equal((await objects.get(name).ctx.storage.list({})).size, 0, name + ' emptied');
 });
 test('models that let the provider train on your data are never offered or run', async () => {
-  const { TRAINS_ON_DATA } = await import('./account.mjs');
-  const { modelAllowed } = await import('./models.mjs');
+  const { TRAINS_ON_DATA } = await import('../server/account.mjs');
+  const { modelAllowed } = await import('../server/models.mjs');
   assert.ok(TRAINS_ON_DATA.test('meta/muse-spark-1.3-contributor'));
   assert.equal(await modelAllowed('meta/muse-spark-1.3-contributor'), false);
   assert.equal(await modelAllowed('meta/muse-spark-1.3'), true);
@@ -2452,7 +2453,7 @@ test('coding: search off leaves the web MCP server out of the runner config', as
   assert.doesNotMatch(await configFor(turnPlan({ search: false })), /mcp = web /);
 });
 test('repository access: GitHub App installations decide what is reachable', async () => {
-  const { repoAccess } = await import('./auth.mjs');
+  const { repoAccess } = await import('../server/auth.mjs');
   const realFetch = globalThis.fetch;
   const reply = installations => (globalThis.fetch = async () => Response.json({ installations }));
   const auth = { token: 'ghu_x', user: { login: 'me' } };

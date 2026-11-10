@@ -1,4 +1,4 @@
-import { validMcpUrl } from './account.mjs';
+import { validMcpUrl } from '../account.mjs';
 /** Forward only MCP protocol traffic to an account-approved HTTPS endpoint.
  * Authorization and session headers are rebuilt outside the coding container.
  */

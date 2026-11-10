@@ -10,8 +10,8 @@
  * Tool names are the connection's ID, two underscores and the tool's name,
  * kept to what every provider accepts (letters, digits, _ and -, 64 at most).
  * Depends on mcp.mjs and mcp-oauth.mjs. Leaves out resources and prompts. */
-import { proxyMcp } from './mcp.mjs';
-import { mcpBearer } from './mcp-oauth.mjs';
+import { proxyMcp } from '../gateways/mcp.mjs';
+import { mcpBearer } from '../gateways/mcp-oauth.mjs';
 
 const LIST_FOR = 10 * 60 * 1000; // how long a connection's tool list is kept
 const MAX_TOOLS = 40; // tools offered from all connections, at most

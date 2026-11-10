@@ -4,7 +4,7 @@
 import { COOKIE, SECURITY, json, boundedJson, cookie, sessionCookie } from './http.mjs';
 import { github, authObject } from './auth.mjs';
 import { catalog, modelAllowed } from './models.mjs';
-import { validateFiles } from './publish.mjs';
+import { validateFiles } from './code/publish.mjs';
 import {
   PROVIDERS,
   profile,
@@ -14,12 +14,12 @@ import {
   effortModel,
   accountRoute,
 } from './account.mjs';
-import { testMcp } from './mcp.mjs';
-import { startSignIn, mcpBearer } from './mcp-oauth.mjs';
-import { sandboxRoute } from './sandbox.mjs';
-import { publicWebUrl } from './web.mjs';
+import { testMcp } from './gateways/mcp.mjs';
+import { startSignIn, mcpBearer } from './gateways/mcp-oauth.mjs';
+import { sandboxRoute } from './code/sandbox.mjs';
+import { publicWebUrl } from './chat/research.mjs';
 import { pushApiRoutes } from './push.mjs';
-import { LIMITS } from './attachments.mjs';
+import { LIMITS } from './probe/attachments.mjs';
 
 const IMAGE_TYPE = /^image\/(png|jpeg|gif|webp|avif)$/;
 const IMAGE_LIMIT = 8 * 1024 * 1024;

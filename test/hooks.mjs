@@ -1,6 +1,6 @@
 /** Node loader hook for the tests: `cloudflare:workers` exists only inside the
  * Workers runtime, so the tests get minimal stand-ins for its two base classes.
- * Run as `node --import ./test-hooks.mjs --test test.mjs` (npm test). */
+ * Run as `node --import ./test/hooks.mjs --test test/test.mjs` (npm test). */
 import { register } from 'node:module';
 const stub =
   'export class DurableObject{constructor(ctx,env){this.ctx=ctx;this.env=env}}export class WorkerEntrypoint{}';

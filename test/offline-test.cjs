@@ -164,8 +164,8 @@ async function handle(req, res) {
     res.writeHead(d ? 200 : 404, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify(d || { error: 'Not found' }));
   }
-  const file = path.join(__dirname, 'web', p === '/' ? 'index.html' : p);
-  if (!file.startsWith(path.join(__dirname, 'web')) || !fs.existsSync(file)) {
+  const file = path.join(__dirname, '..', 'web', p === '/' ? 'index.html' : p);
+  if (!file.startsWith(path.join(__dirname, '..', 'web')) || !fs.existsSync(file)) {
     res.writeHead(404);
     return res.end();
   }
@@ -365,7 +365,7 @@ function serve(port) {
     assert.equal(await page.isDisabled('#send'), false);
     // The device asks its worker which version it runs (the About card).
     const version = fs
-      .readFileSync(__dirname + '/web/sw.js', 'utf8')
+      .readFileSync(__dirname + '/../web/sw.js', 'utf8')
       .match(/const VERSION = '(v\d+)'/)[1];
     assert.equal(
       await page.evaluate(() => import('/update.js').then(m => m.appVersion())),
