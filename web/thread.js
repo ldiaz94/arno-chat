@@ -159,20 +159,35 @@ main.addEventListener(
 /** A failed or stopped turn, shown after its message, with Retry. at is the
  * saved failure's time (known once the session is refreshed), which the retry
  * names so the server replaces the failed record. attachments are resent with it. */
-export function failure(text, error, at, attachments = []) {
+export function failure(text, error, at, attachments = [], usage) {
   const node = document.createElement('div');
   node.className = 'failure';
   node.setAttribute('role', 'alert');
   node.innerHTML =
     '<p>' +
     esc(error || 'This turn failed.') +
-    '</p><div class="failure-actions"><button type="button" class="primary">Retry</button></div>';
+    '</p>' +
+    spent(usage) +
+    '<div class="failure-actions"><button type="button" class="primary">Retry</button></div>';
   if (at) node.dataset.at = at;
   node._attachments = attachments;
   node.querySelector('button').onclick = () => retry(node, text);
   place(node);
   scrollDown();
   return node;
+}
+/** What a failed turn had spent before it failed, as a caption: its model
+ * calls and their cost, or that the provider reported none. '' with no usage. */
+export function spent(usage) {
+  if (!usage?.calls) return '';
+  return (
+    '<p class="caption failure-cost">Spent before it failed: ' +
+    num(usage.calls) +
+    (usage.calls === 1 ? ' model call' : ' model calls') +
+    ' · ' +
+    (usage.cost == null ? 'cost not reported by the provider' : money(usage.cost)) +
+    '</p>'
+  );
 }
 // Scrolls to the bottom if the reader is following the stream, or always with `force`.
 export function scrollDown(force = false) {

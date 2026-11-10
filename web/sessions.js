@@ -89,7 +89,7 @@ function show(s, gen) {
   else
     for (const t of s.history) {
       message('You', t.prompt, { at: t.at, attachments: t.attachments });
-      if (t.failed) failure(t.prompt, t.error, t.at, t.attachments);
+      if (t.failed) failure(t.prompt, t.error, t.at, t.attachments, t.usage);
       else message('Arno', t.summary, t);
     }
   showQueued();

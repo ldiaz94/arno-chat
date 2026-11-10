@@ -7,7 +7,7 @@ import { markdown } from './render.mjs';
 import { $, state, esc, duration, api, toast, showError, prompt, sendKey } from './core.js';
 import { openNamed } from './artifacts.js';
 import { busy, title, bump } from './layout.js';
-import { message, failure, scrollDown, place } from './thread.js';
+import { message, failure, scrollDown, place, spent } from './thread.js';
 import { resume, persist } from './sessions.js';
 import { uploading, takeReady, restore } from './attach.js';
 import { warm } from './offline.js';
@@ -247,6 +247,7 @@ export async function watchJob(id, gen, expected) {
           if (gen === state.generation && saved?.failed) {
             state.session = { id, ...updated };
             card.dataset.at = saved.at;
+            card.querySelector('p').insertAdjacentHTML('afterend', spent(saved.usage));
             const asked = card.previousElementSibling;
             if (asked?.classList.contains('user')) asked.dataset.at = saved.at;
           }

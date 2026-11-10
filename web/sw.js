@@ -16,8 +16,8 @@
  * fetch the new shell. A new worker waits until the page's Update button
  * (update.js) sends SKIP_WAITING (test/test.mjs checks SHELL lists every web/ file).
  */
-// Shell digest: fefb97595790 (test/test.mjs: the shell this VERSION was bumped for)
-const VERSION = 'v40';
+// Shell digest: 6985c5a60bb1 (test/test.mjs: the shell this VERSION was bumped for)
+const VERSION = 'v41';
 // The name of this version's shell cache; a new VERSION makes a new cache.
 const SHELL_CACHE = 'arno-shell-' + VERSION;
 const DATA_CACHE = 'arno-data'; // cleared by offline.js on sign-out

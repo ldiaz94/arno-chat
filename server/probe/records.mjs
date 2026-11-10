@@ -109,12 +109,20 @@ export const records = {
   },
   /** Charges what a turn that failed or was stopped had already spent (the
    * `spent` a chat turn's error carries): its model calls and web calls go
-   * to the totals and the request log like a finished turn's. Best effort. */
+   * to the totals and the request log like a finished turn's, and its usage
+   * onto the failed turn's record (the newest), for its card. Best effort. */
   async chargeFailed(spent) {
     try {
       const stats = await this.stats();
       await this.charge(spent, stats);
       await this.ctx.storage.put('stats', stats);
+      const [[key, turn] = []] = await this.ctx.storage.list({
+        prefix: 'turn:',
+        reverse: true,
+        limit: 1,
+      });
+      if (turn?.failed && !turn.usage)
+        await this.ctx.storage.put(key, { ...turn, usage: spent.usage });
       console.log(
         JSON.stringify({
           event: 'failed_turn_cost',

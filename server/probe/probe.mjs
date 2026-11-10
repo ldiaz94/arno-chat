@@ -76,10 +76,10 @@ export class ArnoProbe extends DurableObject {
           await this.notify(result);
         }
       } catch (e) {
-        if (e.spent) await this.chargeFailed(e.spent);
         const current = await this.ctx.storage.get('job');
         if (current?.status === 'cancelled') {
           if (this.ctx.container?.running) await this.ctx.container.destroy();
+          if (e.spent) await this.chargeFailed(e.spent); // onto the stopped turn's record
         } else {
           // A chat's errors are written for the user (chat.mjs); a coding task's may not be.
           const chat = (await this.ctx.storage.get('session'))?.kind === 'chat',
@@ -87,6 +87,8 @@ export class ArnoProbe extends DurableObject {
               ? e.message || 'This chat turn failed.'
               : 'The coding task failed. Your last checkpoint is preserved.';
           await this.recordFailure(job, error, e);
+          // Charged before the job says failed, so the browser finds the cost on the card.
+          if (e.spent) await this.chargeFailed(e.spent);
           await this.ctx.storage.put('job', { ...job, status: 'failed', result: { error } });
           await this.notify({ error });
         }
