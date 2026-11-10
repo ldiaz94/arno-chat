@@ -7,15 +7,21 @@
  *
  * The model creates and revises them with two tools; each turn records which
  * artifacts it touched. Left out: public share links (artifacts stay inside
- * the signed-in app), and kinds other than Markdown.
+ * the signed-in app), and kinds other than Markdown. Depends on no other app
+ * module; session-routes.mjs lists them and the chat turn runs the tools.
  */
+/** Longest artifact, in characters. */
 const MAX_CONTENT = 100000;
+/** Artifacts one conversation may hold. */
 const MAX_ARTIFACTS = 50;
+/** Earlier versions kept per artifact. */
 const KEEP_VERSIONS = 10;
 
+/** Text added to the system prompt telling the model when and how to use the artifact tools. */
 export const ARTIFACT_INSTRUCTIONS =
   'You can make artifacts with create_artifact and revise them with update_artifact: standalone Markdown the user may want to keep, copy, download or share, such as lists, checklists, tables, plans, itineraries, specs and documents. Use one for substantial structured content (roughly more than 15 lines) or when asked; keep the chat reply short and refer to the artifact by title. Update an existing artifact rather than creating a near-duplicate.';
 
+/** The two tool definitions offered to the model (name, description, JSON schema). */
 export const ARTIFACT_TOOLS = [
   {
     name: 'create_artifact',

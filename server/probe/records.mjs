@@ -1,12 +1,15 @@
 /** A conversation's records, part of ArnoProbe (probe.mjs): its turns (saved
  * with their usage and cost, the newest 20 kept), failed and stopped turns, the
- * owner's request log, the job's phase, and the notice when a turn ends. */
+ * owner's request log, the job's phase, and the notice when a turn ends. Depends
+ * on ../account.mjs (keys), ../prices.mjs (cost) and ../push.mjs (notices).
+ * Leaves out running turns (../chat/turn.mjs, ../code/turn.mjs). */
 import { profile, credential } from '../account.mjs';
 import { prices, priceOf, cost, costParts, webRates, WEB_RATES } from '../prices.mjs';
 import { notifyOwner, turnNotice } from '../push.mjs';
 
 export const records = {
-  /** Shared persistent transcript/statistics path for plain and coding turns. */
+  /** Save a finished turn (plain or coding) with its usage and cost, and update the totals. editAt
+   * drops the turns an edited message replaces; oversized fields are clipped. */
   async saveTurn(result, prompt, snapshot, sourceRegistry, editAt) {
     await this.dropReplaced(await this.ctx.storage.get('job'));
     if (editAt) {

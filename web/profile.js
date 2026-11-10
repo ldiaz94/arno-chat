@@ -10,6 +10,7 @@ import { diagnostics, diagnosticsOn, developerOn, setDeveloper, debugReport } fr
 import { appVersion, checkForUpdate } from './update.js';
 const PICTURE_SIDE = 256; // pictures are shrunk to this many pixels square before upload
 const PICTURE_MAX = 256 * 1024; // the server's size limit, in bytes
+// Two capital letters for the profile picture when there is none.
 const initials = () => (state.user?.login || 'A').slice(0, 2).toUpperCase();
 /** The panel's markup. `account` is the profile from GET /api/account. */
 export function profilePanel(account) {
@@ -31,6 +32,7 @@ export function profilePanel(account) {
     '</section>'
   );
 }
+// The composer settings: default model and send key.
 function composerCard(account) {
   const current = account.defaultModel || '',
     models =
@@ -62,6 +64,7 @@ function composerCard(account) {
   );
 }
 let spot = null; // the weather's place as rounded coordinates, from "Use my location"
+// The home page settings: which widgets show and where the weather is.
 function homeCard(home) {
   spot = home.lat != null ? { lat: home.lat, lon: home.lon } : null;
   const box = (id, label, on) =>
@@ -83,6 +86,7 @@ function homeCard(home) {
     '"></label><div class="setting-row"><button id="home-locate" class="ghost" type="button" data-online="Reconnect to find your location">Use my location</button><span class="caption" id="home-where" role="status"></span></div></div></section>'
   );
 }
+// Shows or hides the weather's place line and describes the chosen place.
 function showWhere() {
   $('#weather-where').hidden = !$('#home-weather').checked;
   $('#home-where').textContent = spot ? 'Your location, about ' + spot.lat + ', ' + spot.lon : '';
@@ -124,8 +128,10 @@ export async function profilePrefs() {
     },
   };
 }
+// A link to the GitHub applications page, where access is revoked.
 const ghub =
   '<a href="https://github.com/settings/applications" target="_blank" rel="noopener noreferrer">github.com/settings/applications</a>';
+// The privacy notice, as markup.
 const PRIVACY =
   '<section class="setting-card privacy" id="privacy"><h3>Privacy &amp; data</h3>' +
   '<p><strong>Your data.</strong> We don’t train on your chats, and we don’t sell or share your data. It’s used only to run the app for you.</p>' +
@@ -134,12 +140,14 @@ const PRIVACY =
   '<p><strong>Deleting your account</strong> removes all of it at once. Two copies outside our direct control disappear on their own schedule: Cloudflare deletes coding-workspace snapshots within 30 days and error logs within 7 days; data already sent to providers follows their retention. You can also revoke GitHub access at ' +
   ghub +
   '.</p><p><strong>On this device.</strong> To work offline, this device keeps a copy of your conversations; signing out or deleting your account clears it.</p><p><strong>Weather.</strong> If you turn on weather, your browser asks Open-Meteo for your area’s forecast. Only the place you type, or your location rounded to about 10 km, is saved.</p></section>';
+// The account deletion card, with its confirmation, as markup.
 const DANGER =
   '<section class="setting-card danger-zone"><h3>Danger zone</h3><button id="delete-start" class="danger" type="button">Delete account</button>' +
   '<div id="delete-confirm" hidden><p>This permanently deletes your conversations, files, artifacts, settings, keys and history. Type your GitHub username to confirm.</p>' +
   '<input id="delete-login" class="field" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="GitHub username">' +
   '<div class="setting-row"><button id="delete-go" class="danger" type="button" disabled>Delete everything</button><button id="delete-cancel" class="ghost" type="button">Cancel</button></div></div>' +
   '<p class="caption" id="delete-status" role="status"></p></section>';
+// Shows the profile picture (or initials) and its Remove button.
 function showPicture() {
   $('#picture').innerHTML = avatar(initials());
   $('#picture-remove').hidden = !state.avatar;
@@ -170,6 +178,7 @@ async function shrink(file) {
   }
   throw Error('That picture is too large');
 }
+// Shrinks a picked picture, uploads it and shows it.
 async function upload(file) {
   const status = $('#picture-status');
   status.textContent = 'Uploading…';
@@ -188,6 +197,7 @@ async function upload(file) {
     status.textContent = e.message || 'Could not read that image';
   }
 }
+// Deletes the profile picture on the server.
 async function removePicture() {
   const r = await fetch('/api/account/avatar', { method: 'DELETE' });
   if (!r.ok) return toast('Could not remove the picture');
@@ -195,6 +205,7 @@ async function removePicture() {
   showPicture();
   $('#picture-status').textContent = 'Picture removed.';
 }
+// Deletes the account after the typed confirmation, then reloads.
 async function deleteAccount() {
   const status = $('#delete-status');
   $('#delete-go').disabled = true;

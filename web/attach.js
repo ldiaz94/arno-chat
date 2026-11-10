@@ -7,15 +7,18 @@
 import { $, state, esc, icon, toast, showError, unreachable } from './core.js';
 import { isLocal } from './queue.mjs';
 
+// Most files that may be attached to one message.
 const MaxFiles = 8;
+// Bytes in a megabyte.
 const MB = 1024 * 1024;
-// The server's size limits (attachments.mjs), checked here for files kept offline.
+// The server's size limits (server/probe/attachments.mjs), checked here for files kept offline.
 const LIMITS = { image: 5 * MB, text: MB };
 // Chips of the composer: { key, sid, name, size, kind, type, id?, file?, preview?, status }.
 // status is 'uploading' or 'ready'; preview is an object URL for a picked image; file is
 // the picked file while it is not uploaded (offline).
 let chips = [];
 
+// A byte count as text: "312 B", "4.2 KB" or "1.1 MB".
 export function bytes(n) {
   return n < 1024
     ? n + ' B'
@@ -23,6 +26,7 @@ export function bytes(n) {
       ? (n / 1024).toFixed(1) + ' KB'
       : (n / 1048576).toFixed(1) + ' MB';
 }
+// The address of a saved attachment.
 const url = (sid, id) => '/api/sessions/' + sid + '/attachments/' + id;
 
 /** HTML for the attachments of a saved message: image thumbnails that open full size,
@@ -51,6 +55,7 @@ export function attachmentsHtml(sid, list) {
     .join('');
 }
 
+// Redraws the chips above the prompt.
 function render() {
   const box = $('#attach-chips');
   box.hidden = !chips.length;
@@ -80,6 +85,7 @@ function render() {
     .join('');
 }
 
+// Forgets a chip and frees its image preview.
 function drop(c) {
   if (c.preview) URL.revokeObjectURL(c.preview);
   chips = chips.filter(x => x !== c);
@@ -106,6 +112,8 @@ export async function uploadFile(sid, file) {
   return { id: d.id, name: d.name, size: d.size, kind: d.kind, type: file.type };
 }
 
+// Uploads one picked file to the open session (or keeps it for the outbox when offline) and
+// shows its chip.
 async function upload(file) {
   const sid = state.session.id,
     kind = file.type.startsWith('image/') ? 'image' : 'text',
@@ -155,6 +163,7 @@ export function addFiles(files) {
   }
 }
 
+// Whether any file is still being uploaded.
 export const uploading = () => chips.some(c => c.status === 'uploading');
 
 /** Take the ready attachments for sending: returns their metadata and empties the chips. */
@@ -178,6 +187,7 @@ export function restore(list) {
   render();
 }
 
+// Empties the chips, for example when the conversation changes.
 export function clearAttachments() {
   for (const c of chips) if (c.preview) URL.revokeObjectURL(c.preview);
   chips = [];
@@ -187,6 +197,7 @@ export function clearAttachments() {
 // Files carried by a paste or drop event, if any.
 const filesOf = data => [...(data?.files || [])];
 
+// The paperclip button and the hidden file input behind it.
 const attachButton = $('#attach'),
   input = $('#attach-input');
 attachButton.innerHTML = icon('clip');
@@ -211,6 +222,7 @@ $('#prompt').addEventListener('paste', e => {
 });
 // Drag and drop onto the page; the depth counter copes with enter/leave of children.
 let depth = 0;
+// Whether a drag carries files, as opposed to text or a link.
 const hasFiles = e => e.dataTransfer?.types?.includes('Files');
 document.addEventListener('dragenter', e => {
   if (!hasFiles(e) || !state.session) return;

@@ -1,6 +1,9 @@
 /** Durable Object routes for a conversation session ('code:<user>:<id>'): its
  * lifecycle, turns, live events, file preview and publishable changes.
- * Called with this = the ArnoProbe instance. */
+ * Called with this = the ArnoProbe instance. Depends on attachments.mjs,
+ * artifacts.mjs, ../models.mjs, ../code/code-routes.mjs (hostCommand) and
+ * ../../web/options.mjs (message options). Leaves out the coding routes
+ * (../code/code-routes.mjs). */
 import { SECURITY, json } from '../http.mjs';
 import { hostCommand } from '../code/code-routes.mjs';
 import { modelAllowed, contextWindow, acceptsImages } from '../models.mjs';
@@ -9,6 +12,7 @@ import { listArtifacts } from './artifacts.mjs';
 import { checkOptions } from '../../web/options.mjs';
 
 export const sessionRoutes = {
+  /** Give the conversation a name of 1 to 100 characters. */
   async 'POST /session/rename'(request) {
     const { title } = await request.json();
     if (typeof title !== 'string' || !title.trim() || title.length > 100)
@@ -29,6 +33,7 @@ export const sessionRoutes = {
     await this.ctx.storage.deleteAll();
     return json({ deleted: true });
   },
+  /** Delete the conversation; refused while a turn is queued or running. */
   async 'POST /session/delete'() {
     const job = await this.ctx.storage.get('job');
     if (this.inFlight || (job && ['queued', 'running'].includes(job.status)))
@@ -49,6 +54,8 @@ export const sessionRoutes = {
     if (github?.token && session.kind !== 'chat') await this.keepGithub(ownerId, github);
     return new Response(null, { status: 204 });
   },
+  /** Create a general chat for the owner (or return the existing one); the model must be
+   * allowed. */
   async 'POST /session/chat-init'(request) {
     const { model, ownerId, id } = await request.json();
     const existing = await this.ctx.storage.get('session');
@@ -78,6 +85,8 @@ export const sessionRoutes = {
       return json({ ok: true });
     });
   },
+  /** Stop the queued or running turn and keep it in the transcript as stopped; refused while it
+   * is being saved. */
   async 'POST /session/cancel'() {
     const job = await this.ctx.storage.get('job');
     if (!job || !['queued', 'running'].includes(job.status))
@@ -91,6 +100,7 @@ export const sessionRoutes = {
     if (this.ctx.container?.running) await this.ctx.container.destroy();
     return json({ status: 'cancelled' });
   },
+  /** Stop the idle workspace container; refused while a turn runs. */
   async 'POST /session/suspend'() {
     const job = await this.ctx.storage.get('job');
     if (this.inFlight || (job && ['queued', 'running'].includes(job.status)))
@@ -99,6 +109,7 @@ export const sessionRoutes = {
     await this.ctx.storage.deleteAlarm();
     return json({ stopped: true });
   },
+  /** The current job, with its live preview, or {status: "idle"}. */
   async 'GET /session/job'() {
     const job = await this.ctx.storage.get('job');
     const live = this.live || (await this.ctx.storage.get('live'));
@@ -106,9 +117,11 @@ export const sessionRoutes = {
       job ? { ...job, preview: live?.jobId === job.id ? live : undefined } : { status: 'idle' },
     );
   },
+  /** The live SSE stream (see events in live.mjs). */
   async 'GET /session/events'() {
     return this.events();
   },
+  /** Store an uploaded file (name in X-Filename); 400 with the reason if it cannot be attached. */
   async 'POST /attachments'(request) {
     try {
       const meta = await saveAttachment(
@@ -139,13 +152,17 @@ export const sessionRoutes = {
       },
     });
   },
+  /** The session's artifacts, without contents. */
   async 'GET /artifacts'() {
     return json({ artifacts: await listArtifacts(this.ctx.storage) });
   },
+  /** One artifact with its content and earlier versions. */
   async 'GET /artifacts/get'(request, url) {
     const artifact = await this.ctx.storage.get('artifact:' + (url.searchParams.get('id') || ''));
     return artifact ? json(artifact) : json({ error: 'Artifact not found' }, 404);
   },
+  /** Validate a message and queue it as the session's job, to be run by alarm() (probe.mjs).
+   * Repeating the same id returns the existing job. */
   async 'POST /session/enqueue'(request) {
     const body = await request.json();
     if (
@@ -201,6 +218,7 @@ export const sessionRoutes = {
       return json(job, 202);
     });
   },
+  /** Change the session's model; refused while a turn runs. */
   async 'POST /session/model'(request) {
     const job = await this.ctx.storage.get('job');
     if (job && ['queued', 'running'].includes(job.status))
@@ -218,6 +236,7 @@ export const sessionRoutes = {
       this.inFlight = false;
     }
   },
+  /** The session with its stats, transcript, workspace state and context window. */
   async '* /session/get'() {
     const meta = await this.ctx.storage.get('session');
     if (!meta) return json({ error: 'Session not found' }, 404);
@@ -230,6 +249,7 @@ export const sessionRoutes = {
       contextWindow: await contextWindow(meta.model),
     });
   },
+  /** Run the turn now (called by alarm()): a plain chat turn or a coding turn, by session kind. */
   async 'POST /session/run'(request) {
     if (this.inFlight) return json({ error: 'Arno is already working' }, 409);
     const session = await this.ctx.storage.get('session');

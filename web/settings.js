@@ -12,6 +12,7 @@ import { profilePanel, wireProfile, profilePrefs } from './profile.js';
 import { pushState, enablePush, disablePush } from './push.js';
 import { controls } from './offline.js';
 import { queueProfile } from './outbox.js';
+// The account as last loaded from GET /api/account.
 let account = null;
 // What in the dialog needs the network, with the tooltip it shows while offline
 // (offline.js's controls() disables what is marked data-online).
@@ -28,11 +29,13 @@ const ONLINE_ONLY = [
   ['#picture-upload, #picture-remove', 'Reconnect to change your picture'],
   ['#delete-start', 'Reconnect to delete your account'],
 ];
+// Marks what needs the network, so offline.js can disable it.
 function onlineOnly() {
   for (const [selector, why] of ONLINE_ONLY)
     for (const n of $('#account-body').querySelectorAll(selector)) n.dataset.online = why;
   controls();
 }
+// Shows one tab of the account dialog and hides the others.
 function settingsTabs(tab) {
   document
     .querySelectorAll('[data-account-panel]')
@@ -41,6 +44,7 @@ function settingsTabs(tab) {
     .querySelectorAll('[data-account-tab]')
     .forEach(b => b.classList.toggle('selected', b.dataset.accountTab === tab));
 }
+// One skill's fields (name, description, instructions) as a removable card.
 function skillCard(skill = {}) {
   const node = document.createElement('section');
   node.className = 'setting-card skill-card';
@@ -55,6 +59,7 @@ function skillCard(skill = {}) {
   node.querySelector('.remove-setting').onclick = () => node.remove();
   return node;
 }
+// One MCP connection's fields as a removable card.
 function mcpCard(c = {}) {
   const node = document.createElement('section');
   node.className = 'setting-card mcp-card';
@@ -160,6 +165,7 @@ async function sandboxSave(body, at) {
     $(at).textContent = e.message;
   }
 }
+// Wires the sandbox settings (internet access, Cloudflare token) to the server.
 function wireSandbox() {
   $('#sandbox-internet').onchange = e =>
     sandboxSave({ internet: e.target.checked }, '#sandbox-status');
@@ -184,6 +190,7 @@ function wireSandbox() {
       $('#cf-test').hidden = $('#cf-remove').hidden = true;
   };
 }
+// One custom model's fields as a removable row.
 function customModelCard(m = {}) {
   const node = document.createElement('section');
   node.className = 'setting-row custom-model';
@@ -206,18 +213,22 @@ function customModelCard(m = {}) {
 /** Setup guides: collapsed step lists written for someone doing this the first time. */
 const link = (url, text) =>
   '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + text + ' ↗</a>';
+// A code block with a copy button, as markup.
 const code = (text, lang = 'shell') =>
   '<div class="codeblock"><div class="codehead"><span>' +
   lang +
   '</span><button type="button" class="copy-code">Copy</button></div><pre><code>' +
   esc(text) +
   '</code></pre></div>';
+// A folding step-by-step guide, as markup.
 const guide = (title, steps) =>
   '<details class="guide"><summary>' +
   title +
   '</summary><ol class="guide-steps">' +
   steps.map(step => '<li>' + step + '</li>').join('') +
   '</ol></details>';
+// The steps shared by the providers' key guides: sign in at `where`, create a key, then any
+// extra steps.
 const keySteps = (where, extra = []) => [
   'Sign in at ' + where + '.',
   'Create a new API key. Give it a name you will recognise, such as “Arno”.',
@@ -226,6 +237,7 @@ const keySteps = (where, extra = []) => [
   ...extra,
   'Press <b>Test connection</b>. It should report how many models your key can use.',
 ];
+// How to get an API key, per provider.
 const PROVIDER_GUIDES = {
   ollama: keySteps(link('https://ollama.com/settings/keys', 'ollama.com › Settings › Keys')),
   openai: keySteps(link('https://platform.openai.com/api-keys', 'platform.openai.com › API keys'), [
@@ -270,6 +282,7 @@ const PROVIDER_GUIDES = {
       '). Meta’s cheaper “-contributor” models let Meta train on your prompts, so they are not offered here.',
   ]),
 };
+// How to run your own SearXNG search engine, step by step.
 const SEARCH_GUIDE = guide('How to set up your own SearXNG, step by step', [
   '<b>Run SearXNG with Docker.</b> SearXNG is a free search engine you run yourself; it asks Google, Bing, DuckDuckGo and others for you. Install ' +
     link('https://docs.docker.com/get-started/get-docker/', 'Docker') +
@@ -315,7 +328,9 @@ const SEARCH_GUIDE = guide('How to set up your own SearXNG, step by step', [
     ' and copy its Client ID and Client Secret (the secret is shown only once). Give the application a policy with action <b>Service Auth</b> that includes that token. Choose “Cloudflare Access service token” above and paste both.',
   '<b>Save and Test.</b> Test runs one search and shows how many results came back and how long it took. If your SearXNG is unreachable, errors or finds nothing, Arno falls back to Ollama web search, which is billed per search. Result quality depends on the engines your SearXNG uses (set under <code>engines:</code> in settings.yml).',
 ]);
+// The names of the SearXNG authentication choices.
 const AUTH_LABELS = { access: 'Client Secret', bearer: 'Bearer token' };
+// The SearXNG web search card: address, authentication and its buttons.
 function searchCard() {
   return (
     '<details class="setting-card collapsible" id="search-card"><summary class="setting-row"><strong class="provider-name">' +
@@ -339,6 +354,7 @@ function showSearch(search) {
   $('#search-test').hidden = !search;
   showAuth();
 }
+// Shows only the credential field the chosen authentication needs.
 function showAuth() {
   const auth = $('#search-auth').value;
   document
@@ -346,6 +362,7 @@ function showAuth() {
     .forEach(n => (n.hidden = !n.dataset.auth.split(' ').includes(auth)));
   $('#search-secret-label').textContent = AUTH_LABELS[auth] || '';
 }
+// Saves the SearXNG connection, or removes it with `remove`.
 async function saveSearch(remove = false) {
   const status = $('#search-status');
   if (remove && !confirm('Remove your SearXNG connection? Searches go back to Ollama.')) return;
@@ -372,6 +389,7 @@ async function saveSearch(remove = false) {
     status.textContent = e.message;
   }
 }
+// Runs a test search through the saved connection and reports the result.
 async function testSearch() {
   const status = $('#search-status');
   status.textContent = 'Searching…';
@@ -382,6 +400,7 @@ async function testSearch() {
     status.textContent = e.message;
   }
 }
+// Opens the account dialog: loads the account and draws every tab.
 async function openAccount() {
   $('#account-body').innerHTML = '<p class="muted">Loading account settings…</p>';
   $('#account-dialog').showModal();
@@ -470,6 +489,7 @@ async function openAccount() {
     $('#account-body').innerHTML = '<p class="banner">' + esc(e.message) + '</p>';
   }
 }
+// For each push state: its label and the hint under it.
 const PUSH_STATES = {
   on: ['On', 'This browser is notified when a reply is ready or a turn fails.'],
   off: ['Off', 'Get a notification when a reply finishes while Arno is not on screen.'],
@@ -483,6 +503,7 @@ const PUSH_STATES = {
     'On iPhone and iPad, add Arno to the Home Screen (Share › Add to Home Screen) and open it from there.',
   ],
 };
+// Shows whether notifications are on, off, blocked or unsupported.
 async function showPush() {
   const current = await pushState(),
     [tag, hint] = PUSH_STATES[current];
@@ -491,6 +512,7 @@ async function showPush() {
   $('#push-toggle').checked = current === 'on';
   $('#push-toggle').disabled = !['on', 'off'].includes(current);
 }
+// Turns notifications on or off when the switch is flipped.
 async function togglePush(e) {
   e.target.disabled = true;
   $('#push-hint').textContent = e.target.checked ? 'Turning on…' : 'Turning off…';
@@ -502,6 +524,7 @@ async function togglePush(e) {
     $('#push-hint').textContent = error.message;
   }
 }
+// Saves a provider's API key, or removes it with `remove`.
 async function providerKey(provider, remove = false) {
   const input = document.querySelector('[data-provider-input="' + provider + '"]'),
     status = document.querySelector('[data-provider-status="' + provider + '"]');
@@ -525,6 +548,7 @@ async function providerKey(provider, remove = false) {
     status.textContent = e.message;
   }
 }
+// Tests that a provider's saved key works and reports the result.
 async function testProvider(provider) {
   const status = document.querySelector('[data-provider-status="' + provider + '"]');
   status.textContent = 'Testing provider access…';
@@ -538,6 +562,7 @@ async function testProvider(provider) {
     status.textContent = e.message;
   }
 }
+// Saves the whole account form; offline it goes to the outbox.
 async function saveAccount() {
   const status = $('#account-save-status'),
     button = $('#save-account');

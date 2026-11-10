@@ -1,6 +1,6 @@
 /** Composer options: the choices a message is sent with, their defaults, the
  * server's strict check, and the tags a turn's footer shows. DOM-free, shared
- * by the browser (web/options.js), the worker (session-routes.mjs) and tests.
+ * by the browser (web/options.js), the worker (server/probe/session-routes.mjs) and tests.
  *
  *   search  true | false                          web tools on or off
  *   effort  auto | off | low | medium | high      thinking; auto sends nothing
@@ -24,6 +24,7 @@ export const CHOICES = {
   workers: ['off', '1', '2', '3', '4'],
   budget: ['auto', '1', '3', '10'],
 };
+// What each option is when nothing was chosen.
 export const DEFAULTS = {
   search: true,
   effort: 'auto',

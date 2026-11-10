@@ -77,6 +77,8 @@ export const codeRoutes = {
       this.gitOpen = null;
     }
   },
+  /** A file's text or a directory's entries from the checkout, read in the
+   * container by READ_FILE (files.mjs). ?path= is relative to the repository. */
   async 'GET /session/files'(request, url) {
     const name = url.searchParams.get('path') || '';
     if (!validPath(name)) return json({ error: 'Invalid file path' }, 400);
@@ -97,6 +99,8 @@ export const codeRoutes = {
     if (result.stdout.byteLength > 1500000) return json({ error: 'Preview too large' }, 413);
     return json(JSON.parse(new TextDecoder().decode(result.stdout)));
   },
+  /** Every file changed since the pinned source commit, with its content, for
+   * review before publishing (publish.mjs). Refused while a task runs. */
   async 'GET /session/changes'() {
     const job = await this.ctx.storage.get('job');
     if (this.inFlight || (job && ['queued', 'running'].includes(job.status)))
@@ -138,7 +142,7 @@ export const codeRoutes = {
     }
   },
   /** A new coding session: the workspace's container starts, the repository
-   * is cloned into it through the git gateway (git.mjs), and the first
+   * is cloned into it through the git gateway (GitGateway in ../gateways/gateways.mjs), and the first
    * checkpoint is taken. */
   async 'POST /session/init'(request) {
     const model = request.headers.get('X-Arno-Model');

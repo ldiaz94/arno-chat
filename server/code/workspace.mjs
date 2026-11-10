@@ -133,6 +133,8 @@ export const workspace = {
     await writer.close();
     if ((await p.exitCode) !== 0) throw Error('Could not update model config');
   },
+  /** Runs argv in the container under timeout(1) after `seconds`: {exitCode,
+   * stdout, stderr}, with the outputs cut to their last 50 KB and 12 KB. */
   async exec(argv, options = {}, seconds = 180) {
     const process = await this.ctx.container.exec(
       ['timeout', '--kill-after=5', String(seconds), ...argv],
@@ -147,7 +149,9 @@ export const workspace = {
     };
   },
   /** Reuse a live VM. Restore only when it has stopped; callers can report this
-   * mode independently of the model's own latency. No repository is reimported. */
+   * mode independently of the model's own latency. No repository is reimported.
+   * Also routes the container's .internal hosts to their gateways
+   * (gateways.mjs). Returns 'warm', 'restored' or 'new'. */
   async start(model) {
     const container = this.ctx.container;
     let mode = 'warm';

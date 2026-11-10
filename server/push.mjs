@@ -9,7 +9,9 @@
  *   browser push ─► sw.js ─► GET /api/notifications/latest ─► showNotification
  *
  * The VAPID key is env.VAPID_KEY, a P-256 private JWK (x, y, d). Subscriptions
- * and the latest notice live in the user's index object ('index:<user>'). */
+ * and the latest notice live in the user's index object ('index:<user>').
+ *
+ * Depends on http.mjs. Leaves out payload encryption, and web/sw.js. */
 import { json, boundedJson } from './http.mjs';
 
 /** Push services a subscription may point at; anything else is refused, so a
@@ -20,15 +22,19 @@ const PUSH_HOSTS = [
   'push.apple.com',
   'notify.windows.com',
 ];
+/** Devices kept per user; a newer subscription pushes out the oldest. */
 const MAX_SUBSCRIPTIONS = 10;
 
+/** Bytes as unpadded base64url, the encoding VAPID and push keys use. */
 const b64url = bytes =>
   btoa(String.fromCharCode(...new Uint8Array(bytes)))
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=+$/, '');
+/** The bytes of an unpadded base64url string. */
 const unb64url = text =>
   Uint8Array.from(atob(text.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+/** Text as UTF-8 bytes. */
 const utf8 = text => new TextEncoder().encode(text);
 
 /** True for an HTTPS URL on a known push service, without credentials or port. */
@@ -148,6 +154,7 @@ export async function notifyOwner(env, ownerId, notice, upstream = fetch) {
 /** Internal routes of the per-user index object ('index:<user>'). Stored as
  * 'push' = {origin, subscriptions: [{endpoint, at}]} and 'notice'. */
 export const pushRoutes = {
+  /** Remembers a device's endpoint (newest last, at most MAX_SUBSCRIPTIONS) and the app's origin. */
   async 'POST /push/subscribe'(request) {
     const { endpoint, origin } = await request.json();
     await this.ctx.storage.transaction(async txn => {
@@ -158,6 +165,7 @@ export const pushRoutes = {
     });
     return new Response(null, { status: 204 });
   },
+  /** Forgets a device's endpoint. */
   async 'POST /push/unsubscribe'(request) {
     const { endpoint } = await request.json();
     await this.ctx.storage.transaction(async txn => {
@@ -168,13 +176,16 @@ export const pushRoutes = {
     });
     return new Response(null, { status: 204 });
   },
+  /** The origin and subscriptions, for notifyOwner. */
   async 'GET /push/list'() {
     return json((await this.ctx.storage.get('push')) || { subscriptions: [] });
   },
+  /** Keeps the latest notice for the service worker to fetch. */
   async 'POST /push/latest-put'(request) {
     await this.ctx.storage.put('notice', await request.json());
     return new Response(null, { status: 204 });
   },
+  /** The latest notice, or 404 when there is none. */
   async 'GET /push/latest'() {
     const notice = await this.ctx.storage.get('notice');
     return notice ? json(notice) : json({ error: 'No notification' }, 404);
@@ -183,10 +194,12 @@ export const pushRoutes = {
 
 /** The signed-in /api/ routes, merged into api.mjs's table. */
 export const pushApiRoutes = {
+  /** The public VAPID key the browser subscribes with (404 when unset). */
   async 'GET /api/push/key'(request, env) {
     if (!env.VAPID_KEY) return json({ error: 'Notifications are not configured' }, 404);
     return json({ key: publicKey(JSON.parse(env.VAPID_KEY)) });
   },
+  /** Saves a browser's push subscription, if it is on a known push service. */
   async 'POST /api/push/subscribe'(request, env, url, auth) {
     const { endpoint } = await boundedJson(request, 4000);
     if (!pushEndpoint(endpoint)) return json({ error: 'Unsupported push service' }, 400);
@@ -196,6 +209,7 @@ export const pushApiRoutes = {
     });
     return json({ subscribed: true });
   },
+  /** Removes a browser's push subscription. */
   async 'POST /api/push/unsubscribe'(request, env, url, auth) {
     const { endpoint } = await boundedJson(request, 4000);
     if (typeof endpoint !== 'string') return json({ error: 'Missing endpoint' }, 400);
@@ -204,6 +218,7 @@ export const pushApiRoutes = {
     });
     return json({ subscribed: false });
   },
+  /** The notice the service worker shows after an empty push. */
   async 'GET /api/notifications/latest'(request, env, url, auth) {
     return internal(env.PROBE.getByName('index:' + auth.user.id), '/push/latest');
   },

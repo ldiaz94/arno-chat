@@ -35,6 +35,8 @@ export function conflicted(entry, current) {
   return false;
 }
 
+// The outbox's entries in memory, in step with the storage. Methods keep each line's order and
+// merge repeated edits.
 export class Outbox {
   /** storage: { all(), put(entry), delete(key), clear() }, all async. */
   constructor(storage) {

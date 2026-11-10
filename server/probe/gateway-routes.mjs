@@ -1,9 +1,12 @@
 /** Durable Object routes for a session ('code:<user>:<id>') called back by the
  * model and MCP gateways and the container's web tools: per-turn quotas,
- * progress, usage and research state. Called with this = the ArnoProbe instance. */
+ * progress, usage and research state. Called with this = the ArnoProbe instance.
+ * Depends on ../http.mjs. The quota they check is made by the turn (../chat/plan.mjs). */
 import { json } from '../http.mjs';
 
 export const gatewayRoutes = {
+  /** The turn's web sources and search/read counts: GET reads them, POST replaces them. Only
+   * while a turn's quota is live. */
   async '* /web-state'(request) {
     const q = await this.ctx.storage.get('modelQuota');
     if (!q || q.deadline < Date.now()) return json({ error: 'No active research task' }, 403);
@@ -23,7 +26,7 @@ export const gatewayRoutes = {
     return json({ sources: q.sources || [], counts: q.webCounts || { searches: 0, reads: 0 } });
   },
   /** Claude's thinking blocks from the turn's latest reply that called tools,
-   * for the gateway to put back in the next request (gateway.mjs). Only the
+   * for the model gateway to put back in the next request (../gateways/model.mjs). Only the
    * latest is kept, under a key of its own (a value may hold 128 KB). */
   async '* /model-thinking'(request) {
     const q = await this.ctx.storage.get('modelQuota');
@@ -45,7 +48,7 @@ export const gatewayRoutes = {
     });
   },
   /** The session's repository and its owner's sealed GitHub token, for the
-   * git gateway (git.mjs); only while a turn runs or the workspace is made. */
+   * git gateway (GitGateway in ../gateways/gateways.mjs); only while a turn runs or the workspace is made. */
   async '* /git-account'() {
     const session = this.gitOpen || (await this.ctx.storage.get('session')),
       github = await this.ctx.storage.get('github'),
@@ -61,6 +64,7 @@ export const gatewayRoutes = {
     if (!q || q.deadline < Date.now()) return json({ error: 'No running turn' }, 403);
     return json({ ownerId: (await this.ctx.storage.get('session'))?.ownerId || null });
   },
+  /** Count one MCP request against the turn (at most 50); returns the owner, or 429. */
   async 'POST /mcp-permit'() {
     const allowed = await this.ctx.storage.transaction(async txn => {
       const q = await txn.get('modelQuota');
@@ -73,6 +77,8 @@ export const gatewayRoutes = {
       ? json({ ownerId: (await this.ctx.storage.get('session'))?.ownerId || null })
       : new Response('Denied', { status: 429 });
   },
+  /** Count one model round against the turn's quota (default 16); 204 with the turn id and
+   * round, or 429. */
   async 'POST /model-permit'() {
     let turnId = '',
       round = 0;
@@ -90,6 +96,7 @@ export const gatewayRoutes = {
       headers: { 'X-Turn-Id': turnId, 'X-Model-Round': String(round) },
     });
   },
+  /** Pass a streamed preview to the live view; 409 if it is not the current turn and round. */
   async 'POST /model-progress'(request) {
     const preview = await request.json(),
       q = await this.ctx.storage.get('modelQuota');
@@ -98,6 +105,7 @@ export const gatewayRoutes = {
     await this.progress(preview);
     return new Response(null, { status: 204 });
   },
+  /** Add one model call's token counts to the turn's totals and request log. */
   async 'POST /model-usage'(request) {
     const { turnId, usage } = await request.json();
     await this.ctx.storage.transaction(async txn => {

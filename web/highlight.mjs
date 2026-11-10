@@ -18,10 +18,14 @@
  * character no rule takes is plain. This is an editor's scanner, not a parser: shell and
  * concha keep a little state (is a command's name next?) and that is all.
  */
+// Longest text, in bytes, and most lines that are coloured; anything bigger is shown plain.
 const MaxBytes = 200_000,
   MaxLines = 5000;
+// The five characters HTML needs escaped.
 const Entities = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+// HTML-escapes text.
 const escape = s => s.replace(/[&<>"']/g, c => Entities[c]);
+// A set from a string of space-separated words.
 const set = words => new Set(words.split(' '));
 
 // The HTML being built. put is ladle's Cspan.put: one span per line of text.
@@ -88,7 +92,9 @@ function token(lx, at) {
   const t = lx.src.slice(at, lx.i);
   if (t.trim()) lx.prev = t.length > 32 ? '…' : t.trim();
 }
+// Whether only blanks lie between the start of the line and position i.
 const atLineStart = (src, i) => /^[ \t]*$/.test(src.slice(src.lastIndexOf('\n', i - 1) + 1, i));
+// A rule that takes any space, plain.
 const Space = { re: /\s+/y, cls: '' };
 const Blank = { re: /[ \t\r]+/y, cls: '' }; // for languages where a line feed means something
 
@@ -173,9 +179,12 @@ function codeIn(lx, lang, open, close, cls = '') {
   }
   return true;
 }
+// Escapes a string for use inside a regular expression.
 const reEscape = s => s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+// A number: hex, binary, octal, decimal with digit separators, fractions and exponents.
 const Num =
   /(?:0[xX][\da-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|\d[\d_]*(?:\.\d[\d_]*)?(?:[eE][+-]?\d+)?|\.\d[\d_]*(?:[eE][+-]?\d+)?)(?:[a-zA-Z_]\w*)?/y;
+// An identifier.
 const Word = /[A-Za-z_$][\w$]*/y;
 
 // A word's class from a language's lists. A word after '.' is a member, plain; one after a
@@ -247,10 +256,13 @@ const jsWords = {
 const regexAfter = set(
   '( , = : [ ! & | ? { } ; + - * % < > ~ ^ => && || ?? return typeof case do else in of new delete void throw yield await',
 );
+// The regex literal rule: a slash starts one only where a value is expected, not after a name
+// or number.
 const jsRegex = {
   re: /\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\\n])*\]|[^/\\\n[])+\/[a-z]*/y,
   cls: (m, lx) => (lx.prev === '' || regexAfter.has(lx.prev) ? 's' : false),
 };
+// The JavaScript family's language, with `extra` word lists added.
 function jsLike(extra) {
   const lang = clike({
     ...jsWords,
@@ -275,7 +287,9 @@ function jsLike(extra) {
   });
   return lang;
 }
+// JavaScript.
 const js = jsLike({});
+// TypeScript: JavaScript plus its type words.
 const ts = jsLike({
   k: 'interface implements public private protected readonly declare namespace abstract as satisfies keyof infer is type',
   t: 'string number boolean any unknown never void object bigint symbol',
@@ -284,6 +298,7 @@ const ts = jsLike({
 // Python: ladle's Cpy lists; prefixed and triple-quoted strings; decorators are b; the
 // name after class or def is t.
 const pyPrefix = /[rRbBuUfF]{1,2}(?=['"])/y;
+// Python.
 const python = clike({
   k: 'and as assert async await break class continue def del elif else except finally for from global if import in is lambda nonlocal not or pass raise return try while with yield',
   n: 'True False None NotImplemented Ellipsis',
@@ -318,6 +333,7 @@ const go = clike({
   ],
   word: /[A-Za-z_]\w*/y,
 });
+// Rust's raw strings, r#"..."#, whose end depends on the number of #.
 const rustRaw = {
   fn(lx) {
     const m = /b?r(#*)"/y;
@@ -327,6 +343,7 @@ const rustRaw = {
     return quoted(lx, '"', '"' + r[1], { multi: true }, r[0].length - 1);
   },
 };
+// Rust.
 const rust = clike({
   k: 'as async await break const continue crate dyn else enum extern fn for if impl in let loop match mod move mut pub ref return self Self static struct super trait type unsafe use where while yield',
   t: 'i8 i16 i32 i64 i128 isize u8 u16 u32 u64 u128 usize f32 f64 bool char str String Vec Option Result Box HashMap',
@@ -346,6 +363,7 @@ const rust = clike({
   strings: [['"', { esc: true, multi: true, prefix: /b(?=")/y }]],
   word: /[A-Za-z_]\w*/y,
 });
+// C and C++.
 const cFamily = clike({
   k: 'break case const continue default do else enum extern for goto if inline register restrict return sizeof static struct switch typedef union volatile while alignas alignof asm catch class constexpr consteval const_cast decltype delete dynamic_cast explicit export friend mutable namespace new noexcept operator private protected public reinterpret_cast static_assert static_cast template this throw try typeid typename using virtual override final co_await co_return co_yield concept requires',
   t: 'void char short int long float double signed unsigned bool _Bool size_t ssize_t int8_t int16_t int32_t int64_t uint8_t uint16_t uint32_t uint64_t intptr_t uintptr_t ptrdiff_t wchar_t char8_t char16_t char32_t FILE auto std string vector',
@@ -367,6 +385,7 @@ const cFamily = clike({
   ],
   word: /[A-Za-z_]\w*/y,
 });
+// Java.
 const java = clike({
   k: 'abstract assert break case catch class continue default do else enum extends final finally for if implements import instanceof interface native new package private protected public return static strictfp super switch synchronized this throw throws transient try volatile while var record sealed permits yield',
   t: 'boolean byte char short int long float double void String Object Integer Long Double Boolean Character List Map Set',
@@ -383,6 +402,7 @@ const java = clike({
   ],
   word: /[A-Za-z_$][\w$]*/y,
 });
+// Kotlin.
 const kotlin = clike({
   k: 'as break class continue do else for fun if in interface is object package return super this throw try typealias typeof val var when while by catch constructor finally get import init set where abstract annotation companion const crossinline data enum expect external final infix inline inner internal lateinit noinline open operator out override private protected public reified sealed suspend tailrec vararg',
   t: 'Int Long Short Byte Double Float Boolean Char String Unit Any Nothing List Map Set Array',
@@ -413,6 +433,7 @@ const sql = clike({
   strings: [["'", { multi: true, dbl: true }]],
   word: /[A-Za-z_]\w*/y,
 });
+// JSON and JSON with comments.
 const json = clike({
   n: 'true false null',
   line: ['//'],
@@ -502,6 +523,7 @@ function markup(isHtml) {
 
 // YAML, TOML and INI: comments, keys t, [sections] k, strings, numbers and constants n.
 const scalar = { re: /(?:true|false|null|~)(?![\w-])/y, cls: 'n' };
+// A number, or a date and time, in a data file.
 const dataNumber = {
   re: /[-+]?(?:0x[\da-fA-F_]+|\d[\d_]*(?:\.\d+)?(?:[eE][+-]?\d+)?)(?:[-:T]\d[\d:.TZ+-]*)?(?![\w-])/y,
   cls: 'n',
@@ -514,6 +536,7 @@ const hashComment = mark => ({
     return (at === 0 || /\s/.test(lx.src[at - 1])) && 'c';
   },
 });
+// YAML.
 const yaml = {
   rules: [
     Space,
@@ -534,6 +557,7 @@ const yaml = {
     { re: /[\w.-]+/y, cls: '' },
   ],
 };
+// TOML and INI.
 const toml = {
   rules: [
     Space,
@@ -653,6 +677,7 @@ const lineFeed = onLine => ({
     return true;
   },
 });
+// A shell here-document's start, <<WORD; the text up to WORD is a string.
 const heredocStart = {
   fn(lx) {
     const m = /<<-?[ \t]*(['"]?)([A-Za-z_][\w-]*)\1/y;
@@ -695,6 +720,7 @@ function shExpansion(lx, lang) {
   lx.i += r[0].length;
   return true;
 }
+// sh, bash and similar shells.
 const shell = {
   init: lx => (lx.cmd = true),
   rules: [
@@ -767,6 +793,8 @@ const cnKeywords = set(
   cnGoesOn = set(
     'and or not xor div mod in to downto if while until for case := , ( [ + - * / = < > \\',
   );
+// Classifies a word in concha, which depends on whether it starts a command or sits in an
+// expression.
 function cnWord(lx) {
   const { src, out } = lx;
   const cmdWord = /[^\s;|&()<>'"`$]+/y,
@@ -808,6 +836,7 @@ function cnWord(lx) {
   lx.i += w.length;
   return true;
 }
+// concha, Luis's shell: commands and arguments, with Pascal for expressions.
 const concha = {
   init: lx => ((lx.mode = 'start'), (lx.depth = 0)),
   punct(lx, ch) {
@@ -934,6 +963,7 @@ export function diffLines(diff) {
   }
   return out;
 }
+// A unified diff: added and removed lines are coloured, and each file's code in its own language.
 const diffLang = (src, out) => {
   out.html += diffLines(src)
     .map(l => (l.kind ? '<span class="hl-' + l.kind + '">' + l.html + '</span>' : l.html))
@@ -996,9 +1026,11 @@ const Names = {
   markdown: 'md markdown mdx',
   diff: 'diff patch',
 };
+// From each file extension or fence word to its language.
 const Alias = {};
 for (const [lang, names] of Object.entries(Names))
   for (const n of names.split(' ')) Alias[n] = lang;
+// The language for a word, or '' when unknown.
 const lookup = w => (Object.hasOwn(Alias, w) ? Alias[w] : '');
 
 /** The language of a file or code block: a fence's first word decides when given; else the
@@ -1039,6 +1071,7 @@ export function highlight(lang, code) {
     return escape(src);
   }
 }
+// The number of lines in a text, counting no further than MaxLines.
 function lineCount(s) {
   let n = 1;
   for (let i = s.indexOf('\n'); i >= 0 && n <= MaxLines; i = s.indexOf('\n', i + 1)) n++;

@@ -9,7 +9,8 @@
     "test:serve": "node test/serve-test.mjs",
     "test:design": "node test/design-test.cjs",
     "test:offline": "node test/offline-test.cjs",
-    "test:live": "node test/browser-test.cjs"
+    "test:live": "node test/browser-test.cjs",
+    "screenshots": "node test/design-test.cjs && node test/screenshots.cjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -18,5 +19,6 @@
     "playwright": "^1.65.0",
     "prettier": "^3.9.10",
     "wrangler": "^4.158.0"
-  }
+  },
+  "license": "ISC"
 }

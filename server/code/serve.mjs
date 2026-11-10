@@ -16,6 +16,7 @@ const encoder = new TextEncoder(),
 function netstring(bytes) {
   return [encoder.encode(bytes.length + ':'), bytes, encoder.encode(',')];
 }
+/** The byte arrays of parts joined into one. */
 function concat(parts) {
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
   let at = 0;

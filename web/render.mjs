@@ -1,3 +1,9 @@
+/** Markdown and diff rendering for the thread: a small Markdown dialect to safe HTML
+ * (markdown), diffs to coloured HTML (diffHtml), model output cleaning (cleanOutput) and
+ * wide-table scrolling (tableResize). DOM-free except tableResize, so test/test.mjs runs the
+ * rest in Node. Depends on highlight.mjs. Leaves out raw HTML, footnotes, nested block
+ * quotes and anything that would need a full Markdown parser.
+ */
 import { highlight, detect, diffLines } from './highlight.mjs';
 /** Render a deliberately small Markdown dialect. Raw HTML is always text.
  * Links and images are restricted to HTTP(S); repository/model content never enters an

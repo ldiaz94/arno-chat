@@ -1,6 +1,13 @@
-/** The Worker entry: sign-in under /auth/, then the signed-in /api/* routes.
- * The Durable Object and gateway classes live in their own modules and are
- * re-exported here for the runtime. */
+/** The Worker entry point.
+ *
+ *   /auth/*  -> auth.mjs (GitHub sign-in, MCP OAuth callback)
+ *   /api/*   -> same-origin and sign-in checks, then api.mjs routes,
+ *               then sessions-api.mjs (per-session paths)
+ *   other    -> 404 (the page itself is served as a static asset)
+ *
+ * The Durable Object class (probe/probe.mjs) and the gateway classes
+ * (gateways/gateways.mjs) are re-exported here because the runtime looks
+ * for them in the entry module. Leaves out all route logic. */
 import { SECURITY, json, sameOrigin } from './http.mjs';
 import { currentAuth, handleOAuth, repoAccess } from './auth.mjs';
 import { apiRoutes } from './api.mjs';
@@ -15,7 +22,9 @@ export {
   CloudflareGateway,
 } from './gateways/gateways.mjs';
 
+/** The Worker's module interface: one fetch handler for every request. */
 export default {
+  /** Routes one request; any thrown error becomes a logged 500. */
   async fetch(request, env) {
     const url = new URL(request.url);
     try {

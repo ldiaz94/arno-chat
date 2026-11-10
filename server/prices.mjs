@@ -12,7 +12,9 @@
  * holidays (priced at peak), Kimi's cache-write TTL tiers; a model missing
  * from the tables has no cost rather than a guessed one.
  */
+/** A day in seconds: how long prices are cached. */
 const DAY = 86400;
+/** This isolate's copy of the price table: {at, rows}, or null before the first fetch. */
 let memo = null;
 
 /** Our provider prefix for OpenRouter's (and for our own) where other hosts
@@ -95,6 +97,7 @@ const tableRows = text =>
         .slice(1, -1)
         .map(cell => cell.trim()),
     );
+/** "$0.7" as 0.7, or null for any other cell. */
 const dollars = s => (/^\$[\d.]+$/.test(s) ? Number(s.slice(1)) : null);
 
 /** DeepSeek's pricing page as Markdown (pricing.md): a table with a column
@@ -304,14 +307,16 @@ export function tokens(u = {}) {
   return { input: Math.max(0, input), cached, write, output };
 }
 
-/** Dollars for a turn's usage, or null when the model has no listed price. */
 /** Ollama's web search and page-read fees in dollars each. They aren't on its
  * pricing page, so they are derived from what the account was actually billed:
  * ollama.com/api/usage?group_by=model (undocumented, used by its usage page)
  * lists web_search and web_fetch with request counts and dollars. Cached for a
  * day per isolate; these fallbacks are the rates observed on 2026-11-09. */
 export const WEB_RATES = { search: 0.011, fetch: 0.001 };
+/** This isolate's copy of the web rates: {at, rates}, or null. */
 let webMemo = null;
+/** Ollama's web search and page-read rates for the account whose key this is,
+ * as {search, fetch} dollars each; the fallbacks when the usage call fails. */
 export async function webRates(key, upstream = fetch) {
   if (webMemo && Date.now() - webMemo.at < DAY * 1000) return webMemo.rates;
   const rates = { ...WEB_RATES };

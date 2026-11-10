@@ -6,6 +6,7 @@
  */
 const tile = (fill, stroke = 'none') =>
   `<rect x="0.5" y="0.5" width="23" height="23" rx="6" fill="${fill}" stroke="${stroke}"/>`;
+// The attributes of a round-capped outline stroke.
 const line = (colour, width = 1.8) =>
   `fill="none" stroke="${colour}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"`;
 

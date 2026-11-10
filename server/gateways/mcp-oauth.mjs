@@ -15,15 +15,19 @@
  *
  * The pending sign-in waits ten minutes in an 'auth:<state>' object; state is
  * a random UUID used once, and names the account it is for. Depends on
- * account.mjs (sealing, the profile) and web.mjs (public URLs). Leaves out
+ * account.mjs (the profile), secrets.mjs (sealing), chat/research.mjs (public
+ * URL check) and http.mjs (security headers). Leaves out
  * servers that need a pre-registered client: those take a pasted token. */
 import { profile } from '../account.mjs';
 import { seal, unseal } from '../secrets.mjs';
 import { publicWebUrl } from '../chat/research.mjs';
 import { SECURITY } from '../http.mjs';
 
+/** Where the authorization server sends the browser back. */
 const CALLBACK = '/auth/mcp/callback';
+/** Text to bytes, for hashing. */
 const enc = new TextEncoder();
+/** Bytes as unpadded URL-safe base64, as PKCE and state values need. */
 const b64url = bytes =>
   btoa(String.fromCharCode(...new Uint8Array(bytes)))
     .replace(/\+/g, '-')

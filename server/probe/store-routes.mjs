@@ -1,8 +1,11 @@
 /** Durable Object routes for the per-user and sign-in roles: the session index
  * and profile ('index:<user>'), the auth record and the pending OAuth state
- * ('auth:<id>'). Called with this = the ArnoProbe instance. */
+ * ('auth:<id>'). Called with this = the ArnoProbe instance. Depends on
+ * ../http.mjs. Leaves out the session routes (session-routes.mjs). */
 import { json } from '../http.mjs';
 
+/** Merge a JSON patch into the profile, or set one provider key (/profile/key), in one
+ * transaction. */
 async function patchProfile(request, url) {
   const patch = await request.json();
   await this.ctx.storage.transaction(async txn => {
@@ -20,6 +23,8 @@ async function patchProfile(request, url) {
 const LOG_KEEP = 1000;
 
 export const storeRoutes = {
+  /** Add request-log records sent by a session (at most 200 at a time), then drop the oldest
+   * beyond LOG_KEEP. */
   async 'POST /usage/log'(request) {
     const { requests } = await request.json();
     if (!Array.isArray(requests) || requests.length > 200)
@@ -40,15 +45,18 @@ export const storeRoutes = {
       await this.ctx.storage.delete([...all.keys()].slice(0, all.size - LOG_KEEP));
     return json({ logged: requests.length }, 201);
   },
+  /** The request log, newest first. */
   async 'GET /usage/list'() {
     const rows = await this.ctx.storage.list({ prefix: 'req:', reverse: true, limit: LOG_KEEP });
     return json({ requests: [...rows.values()] });
   },
+  /** Remove a session from the owner's list. */
   async 'POST /index/remove'(request) {
     const { id } = await request.json();
     await this.ctx.storage.delete('session:' + id);
     return new Response(null, { status: 204 });
   },
+  /** The profile, or an empty one for a new user. */
   async '* /profile/get'() {
     return json(
       (await this.ctx.storage.get('profile')) || {
@@ -60,6 +68,7 @@ export const storeRoutes = {
       },
     );
   },
+  /** Merge fields into the profile. */
   'POST /profile/patch': patchProfile,
   /** An MCP connection's token after an OAuth sign-in or refresh (mcp-oauth.mjs),
    * kept only if the connection still has the URL it was signed in to. */
@@ -72,7 +81,9 @@ export const storeRoutes = {
     });
     return new Response(null, { status: 204 });
   },
+  /** Set one provider's API key in the profile. */
   'POST /profile/key': patchProfile,
+  /** Store the user's avatar image (bytes and type). */
   async 'PUT /avatar'(request) {
     const type = request.headers.get('Content-Type') || '';
     await this.ctx.storage.put('avatar', {
@@ -81,10 +92,12 @@ export const storeRoutes = {
     });
     return new Response(null, { status: 204 });
   },
+  /** Remove the avatar. */
   async 'DELETE /avatar'() {
     await this.ctx.storage.delete('avatar');
     return new Response(null, { status: 204 });
   },
+  /** The avatar, served with headers that stop it running as a page. */
   async 'GET /avatar'() {
     const avatar = await this.ctx.storage.get('avatar');
     if (!avatar) return json({ error: 'No avatar' }, 404);
@@ -97,6 +110,7 @@ export const storeRoutes = {
       },
     });
   },
+  /** Remember a sign-in id for this user (the last 50), so account deletion can find them. */
   async 'POST /logins/add'(request) {
     const { id } = await request.json();
     const logins = ((await this.ctx.storage.get('logins')) || []).filter(l => l !== id);
@@ -115,22 +129,26 @@ export const storeRoutes = {
     await this.ctx.storage.deleteAll();
     return json({ sessions, logins });
   },
+  /** The owner's sessions, most recently active first. */
   async '* /index/list'() {
     const entries = await this.ctx.storage.list({ prefix: 'session:' });
     // Most recently active first: touch() stamps updatedAt after each turn.
     const active = s => s.updatedAt || s.createdAt;
     return json({ sessions: [...entries.values()].sort((a, b) => active(b) - active(a)) });
   },
+  /** Add or update a session's entry in the owner's list. */
   async '* /index/add'(request) {
     const entry = await request.json();
     await this.ctx.storage.put('session:' + entry.id, entry);
     return new Response(null, { status: 204 });
   },
+  /** Store a sign-in record (auth:<id> object). */
   async 'POST /auth/put'(request) {
     const data = await request.json();
     await this.ctx.storage.put('auth', data);
     return new Response(null, { status: 204 });
   },
+  /** The sign-in record; 404, and the record is erased, once it has expired. */
   async '* /auth/get'() {
     const auth = await this.ctx.storage.get('auth');
     if (!auth || auth.expiresAt < Date.now()) {
@@ -139,10 +157,12 @@ export const storeRoutes = {
     }
     return Response.json(auth);
   },
+  /** Sign out: erase the sign-in record. */
   async 'POST /auth/delete'() {
     await this.ctx.storage.deleteAll();
     return new Response(null, { status: 204 });
   },
+  /** Keep the pending OAuth state for 10 minutes. */
   async 'POST /oauth/put'(request) {
     await this.ctx.storage.put('oauth', {
       ...(await request.json()),
@@ -150,6 +170,7 @@ export const storeRoutes = {
     });
     return new Response(null, { status: 204 });
   },
+  /** Return the pending OAuth state and delete it, so it works once; 404 if missing or expired. */
   async 'POST /oauth/take'() {
     const value = await this.ctx.storage.get('oauth');
     await this.ctx.storage.delete('oauth');

@@ -1,7 +1,16 @@
+/** Forwarding MCP traffic to a connection's server, used by the container's
+ * gateway (gateways.mjs) and by chats (chat/chat-mcp.mjs):
+ *
+ *   caller → proxyMcp → the connection's HTTPS URL
+ *
+ * Only a few MCP methods pass, the headers are rebuilt here with the token,
+ * and redirects are refused. Depends on account.mjs (URL check). Leaves out
+ * signing in (mcp-oauth.mjs) and the tools' use (chat/chat-mcp.mjs). */
 import { validMcpUrl } from '../account.mjs';
+
 /** Forward only MCP protocol traffic to an account-approved HTTPS endpoint.
  * Authorization and session headers are rebuilt outside the coding container.
- */
+ * Answers with the server's stream as it comes, or a 4xx/5xx of our own. */
 export async function proxyMcp(request, connection, token) {
   if (!validMcpUrl(connection.url) || !['POST', 'GET', 'DELETE'].includes(request.method))
     return new Response('Denied', { status: 403 });
@@ -66,6 +75,8 @@ export async function proxyMcp(request, connection, token) {
   }
   return new Response(response.body, { status: response.status, headers: out });
 }
+/** Checks a connection from Settings: sends initialize, expects an MCP reply,
+ * and closes the session. Returns { ok, protocol, server } or throws why not. */
 export async function testMcp(connection, token) {
   const init = await proxyMcp(
     new Request('http://mcp.internal/' + connection.id, {

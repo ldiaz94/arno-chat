@@ -13,7 +13,7 @@ import { warm } from './offline.js';
 import { queueMessage, waiting } from './outbox.js';
 import { isLocal } from './queue.mjs';
 import { messageOptions, optionCommand } from './options.js';
-/** A chat's question before an MCP action (session.mjs approve): what would
+/** A chat's question before an MCP action (approve in server/chat/turn.mjs): what would
  * run, with its arguments, and Allow or Deny. Shown while the job waits. */
 function approval(job) {
   const a = job.stage === 'approval' ? job.approval : null,
@@ -52,6 +52,7 @@ function approval(job) {
   place(card);
   scrollDown();
 }
+// Shows what a running job is doing (and any MCP question) in the thread.
 function activity(job) {
   approval(job);
   let node = $('#activity');
@@ -152,6 +153,8 @@ function livePreview(preview) {
       : 'Model pass ' + preview.round + ' · workspace not yet saved';
   scrollDown();
 }
+// Opens the live event stream of a running job and shows its previews. Returns a function that
+// closes it. `gen` is the view generation it belongs to.
 function watchLive(id, gen) {
   if (!window.EventSource) return () => {};
   const stream = new EventSource('/api/sessions/' + id + '/events');
@@ -271,6 +274,8 @@ export async function watchJob(id, gen, expected) {
     }
   }
 }
+// Sends the prompt: a command is applied, a message goes to the server, or to the outbox when
+// it cannot go now. Then follows the job.
 export async function submit(e) {
   e.preventDefault();
   if (!state.session || state.busy || !prompt.value.trim()) return;
@@ -388,6 +393,7 @@ function rejected(e, asked, text, attachments, gen) {
   restore(attachments);
   showError(e);
 }
+// Grows the prompt box with its text, up to a limit.
 export function resizePrompt() {
   prompt.style.height = 'auto';
   prompt.style.height = Math.min(prompt.scrollHeight, innerWidth < 800 ? 105 : 150) + 'px';

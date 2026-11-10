@@ -1,7 +1,8 @@
 /** The live view of a running turn, part of ArnoProbe (probe.mjs): its preview
  * (text and thinking as the model streams them, and what a coding turn is
  * doing), sent to every open /events stream and kept for one that reconnects.
- * The durable job, not this, is the source of truth. */
+ * The durable job, not this, is the source of truth. Depends on ../http.mjs.
+ * Leaves out the routes (session-routes.mjs) and the model's side (../gateways). */
 import { SECURITY, json } from '../http.mjs';
 
 export const live = {
@@ -39,6 +40,9 @@ export const live = {
     };
     this.broadcast(this.live);
   },
+  /** Take a model snapshot from the gateway as the new live view: ignored unless its turn is
+   * running and its round is not older; text is clipped, and the view is saved at most once a
+   * second (at once for the final one). */
   async progress(preview) {
     const job = await this.ctx.storage.get('job');
     if (job?.status !== 'running' || (preview.jobId && preview.jobId !== job.id)) return;
@@ -62,6 +66,8 @@ export const live = {
       await this.ctx.storage.put('live', this.live);
     }
   },
+  /** GET /session/events: an SSE stream of previews. Sends the saved preview first, a heartbeat
+   * every 15 s, and allows at most 8 viewers. */
   async events() {
     const job = await this.ctx.storage.get('job');
     if (!job) return json({ error: 'No active conversation task' }, 404);

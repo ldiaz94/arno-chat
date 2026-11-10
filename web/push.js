@@ -5,6 +5,7 @@
  */
 import { api } from './core.js';
 
+// Whether this browser can do push at all.
 const supported =
   'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 
@@ -15,6 +16,7 @@ const iosBrowser =
   navigator.standalone === false &&
   !('PushManager' in window);
 
+// Decodes the server's URL-safe base64 VAPID key into the bytes subscribe() wants.
 function keyBytes(key) {
   return Uint8Array.from(atob(key.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
 }
@@ -33,6 +35,8 @@ export async function pushState() {
   return Notification.permission === 'granted' && (await subscription()) ? 'on' : 'off';
 }
 
+// Asks permission, subscribes with the server's key and tells the server. Throws with a
+// readable message on refusal.
 export async function enablePush() {
   if ((await Notification.requestPermission()) !== 'granted')
     throw Error('Notifications are blocked for this site in the browser settings.');
@@ -47,6 +51,7 @@ export async function enablePush() {
   await api('/api/push/subscribe', { method: 'POST', body: JSON.stringify(sub.toJSON()) });
 }
 
+// Unsubscribes and tells the server to forget it.
 export async function disablePush() {
   const sub = await subscription();
   if (sub) {

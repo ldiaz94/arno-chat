@@ -2,17 +2,26 @@
  * and skills, the home page, provider keys, SearXNG, MCP connections, custom
  * models and the composer's defaults. The profile lives in its own Durable
  * Object ('profile:<user>'); secrets in it are sealed (secrets.mjs), and the
- * browser only ever gets whether each is saved (publicProfile). */
+ * browser only ever gets whether each is saved (publicProfile).
+ *
+ *   browser ─► api.mjs ─► accountRoute ─► checks ─► profile:<user> object
+ *
+ * Depends on providers.mjs, secrets.mjs, models.mjs, chat/research.mjs and
+ * code/sandbox.mjs. Leaves out the routing (api.mjs) and the object's own
+ * storage (probe/). */
 import { publicWebUrl, searxngSearch } from './chat/research.mjs';
 import { publicSandbox } from './code/sandbox.mjs';
 import { modelAllowed } from './models.mjs';
 import { PROVIDERS, providerModels, MODEL_ID, TRAINS_ON_DATA } from './providers.mjs';
 import { seal, unseal } from './secrets.mjs';
+/** The user's saved profile, or an empty one when nobody is signed in. */
 export async function profile(env, userId) {
   if (!userId) return { systemPrompt: '', skills: [], mcp: [], keys: {}, models: [] };
   const r = await env.PROBE.getByName('profile:' + userId).fetch('https://internal/profile/get');
   return r.json();
 }
+/** The profile as text for the system prompt: name, about-you, the custom
+ * prompt and the enabled skills. */
 export function instructions(p) {
   return [
     p.name ? "The user's name is " + p.name + '.' : '',
@@ -23,6 +32,8 @@ export function instructions(p) {
     .filter(Boolean)
     .join('\n\n');
 }
+/** The user's API key for a provider, unsealed; Ollama falls back to the
+ * deployment's own key, other providers to none ('' when absent). */
 export async function credential(env, userId, p, provider) {
   const own = await unseal(env, userId, 'provider:' + provider, p.keys?.[provider]);
   return own || (provider === 'ollama' ? env.OLLAMA_API_KEY || '' : '');
@@ -50,6 +61,8 @@ export function homeSettings(value) {
   }
   return home;
 }
+/** The profile as the browser may see it: secrets become flags (saved,
+ * hasToken, hasSecret) and each provider says whether it is usable. */
 export function publicProfile(env, p) {
   return {
     systemPrompt: p.systemPrompt || '',
@@ -122,6 +135,10 @@ export function validMcpUrl(value) {
   const u = new URL(value);
   return u.protocol === 'https:' && !u.search && !u.hash;
 }
+/** Handles /api/account[/key|/search|/search-test|/test] for one user: GET
+ * returns the public profile; POST saves settings, stores or removes a key,
+ * or tests a key or SearXNG. Returns a Response (400 with the message when
+ * anything is invalid, 413 when the body is over 64 KB). */
 export async function accountRoute(request, env, userId) {
   const u = new URL(request.url),
     p = await profile(env, userId),

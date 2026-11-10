@@ -1,6 +1,9 @@
-/** A CLI process is started per turn, but the conversation is not a new chat.
- * Supply host-owned repository identity and a bounded transcript every time.
- * The host keeps 20 turns; 32k characters bound prompt growth for small models.
+/** What arno is told in a coding session. A CLI process is started per turn,
+ * but the conversation is not a new chat, so each turn is given the host-owned
+ * repository identity and a bounded transcript of earlier turns: the last 20
+ * turns, cut to 32k characters so small models' prompts do not grow without
+ * end. The prompt is sent by turn.mjs. Depends on nothing else; leaves out
+ * anything arno keeps for itself (its own /load of the conversation, serve.mjs).
  */
 /** The host's section of arno's system prompt for a coding session: where it
  * runs, what git can do, and what the network reaches (sandbox.mjs): net is
@@ -24,6 +27,8 @@ export function sessionPrompt(session, net = {}) {
       : 'Cloudflare deploys need the user to save a Cloudflare API token in Settings, Connections.')
   );
 }
+/** The text sent to arno for one turn: the repository's identity, the last 20
+ * turns as context only, and the user's request. */
 export function buildPrompt(session, history, prompt) {
   const context = history
     .slice(-20)

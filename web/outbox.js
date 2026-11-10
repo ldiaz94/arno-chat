@@ -58,6 +58,7 @@ function database() {
   };
 }
 
+// The queue of waiting work, kept in IndexedDB.
 const outbox = new Outbox(database());
 let loaded = false; // the stored entries are read (startOutbox)
 const lines = new Map(); // line (session id or 'profile') -> its running sender
@@ -283,12 +284,14 @@ function editEntry(node, key) {
   };
 }
 
+// Puts a failed entry back in the queue and sends again.
 async function retryEntry(key) {
   await outbox.update(key, { state: 'queued', error: undefined });
   showQueued();
   flush();
 }
 
+// Drops a waiting entry; one already being sent cannot be cancelled.
 async function cancelEntry(key) {
   if (outbox.get(key)?.state === 'sending') return toast('This message is already sending');
   await outbox.remove(key);
@@ -326,6 +329,7 @@ function sendLine(line) {
   banner();
 }
 
+// Says how the sending pass ended.
 function finished() {
   const done = pass?.done || 0;
   pass = null;
@@ -468,6 +472,7 @@ async function sendEdit(e) {
   else loadModels(); // custom models may have changed
 }
 
+// Renames a conversation in the sidebar list and the open title.
 function showTitle(id, name) {
   state.sessions = state.sessions.map(s => (s.id === id ? { ...s, title: name } : s));
   if (state.session?.id === id) {

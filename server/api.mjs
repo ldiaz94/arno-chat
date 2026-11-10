@@ -1,6 +1,14 @@
-/** The signed-in /api/* routes but one conversation's (sessions-api.mjs):
- * apiRoutes maps "METHOD /path" (or "* /path") to a handler
- * (request, env, url, auth). */
+/** The signed-in /api/* routes except those of one conversation
+ * (sessions-api.mjs): account settings and keys, MCP and sandbox set-up, the
+ * model list, GitHub repositories, usage, the image proxy, and chat and
+ * coding-session creation. apiRoutes maps "METHOD /path" (or "* /path" for
+ * any method) to a handler (request, env, url, auth); worker.js looks the
+ * request up in it after signing the user in.
+ *
+ * Depends on http.mjs, auth.mjs, models.mjs, account.mjs, providers.mjs,
+ * push.mjs, sessions-api.mjs, gateways/mcp.mjs, gateways/mcp-oauth.mjs,
+ * code/sandbox.mjs and chat/research.mjs. Leaves out sign-in itself
+ * (worker.js, auth.mjs) and everything under /api/sessions/<id>/. */
 import { COOKIE, SECURITY, json, boundedJson, cookie, sessionCookie } from './http.mjs';
 import { github, authObject } from './auth.mjs';
 import { catalog, modelAllowed } from './models.mjs';
@@ -13,7 +21,9 @@ import { publicWebUrl } from './chat/research.mjs';
 import { pushApiRoutes } from './push.mjs';
 import { githubOf } from './sessions-api.mjs';
 
+/** The raster image types the proxy passes on (never SVG, which can script). */
 const IMAGE_TYPE = /^image\/(png|jpeg|gif|webp|avif)$/;
+/** Largest image the proxy will read, in bytes. */
 const IMAGE_LIMIT = 8 * 1024 * 1024;
 
 /** Fetch a public image for the viewer so third-party hosts never see them.
@@ -72,6 +82,8 @@ export async function proxyImage(target, upstream = fetch) {
   });
 }
 
+/** Shared handler of the /api/account settings routes: GET reads, POST saves
+ * (account.mjs does the work and picks the action from the path). */
 async function account(request, env, url, auth) {
   if (!['GET', 'POST'].includes(request.method)) return json({ error: 'Unsupported method' }, 405);
   const r = await accountRoute(request, env, auth.user.id);
@@ -81,11 +93,15 @@ async function account(request, env, url, auth) {
   });
 }
 
+/** The route table: "METHOD /path" (or "* /path") to handler. */
 export const apiRoutes = {
   ...pushApiRoutes,
+  /** An image fetched for the viewer: see proxyImage. */
   async 'GET /api/image'(request, env, url) {
     return proxyImage(url.searchParams.get('url') || '');
   },
+  /** Tests a saved MCP connection (with its token or OAuth sign-in) and
+   * returns what testMcp reports. */
   async 'POST /api/account/mcp-test'(request, env, url, auth) {
     const { id } = await boundedJson(request),
       p = await profile(env, auth.user.id),
@@ -106,9 +122,11 @@ export const apiRoutes = {
       return json({ error: e.message }, 400);
     }
   },
+  /** Sandbox settings and tests (code/sandbox.mjs). */
   async 'POST /api/account/sandbox'(request, env, url, auth) {
     return sandboxRoute(request, env, auth.user.id);
   },
+  // The profile and its settings, provider keys and tests, and SearXNG.
   '* /api/account': account,
   '* /api/account/key': account,
   '* /api/account/test': account,
@@ -169,6 +187,7 @@ export const apiRoutes = {
     });
     return new Response(null, { status: 204 });
   },
+  /** Creates a chat (a conversation without a repository) and lists it. */
   async 'POST /api/chats'(request, env, url, auth) {
     // A client may name the id (a chat made offline does), which makes a retried
     // create return the same chat instead of making a second one.
@@ -188,6 +207,7 @@ export const apiRoutes = {
     });
     return json({ id, ...meta }, 201);
   },
+  /** The owner's log of inference requests, from their index object. */
   async 'GET /api/usage/requests'(request, env, url, auth) {
     return env.PROBE.getByName('index:' + auth.user.id).fetch('https://internal/usage/list');
   },
@@ -265,6 +285,8 @@ export const apiRoutes = {
         : 'not a GitHub App token (' + installs.r.status + ')',
     });
   },
+  /** The model list: the shared catalogue, models listed by each provider the
+   * user has a key for, and their custom models, without duplicates. */
   async 'GET /api/models'(request, env, url, auth) {
     const base = await catalog(),
       p = await profile(env, auth.user.id);
@@ -285,6 +307,8 @@ export const apiRoutes = {
     });
     return json({ ...base, models });
   },
+  /** One page of the user's GitHub repositories, filtered by the search text
+   * q (a pasted repository URL also works), with what the token can access. */
   async 'GET /api/repos'(request, env, url, auth) {
     const page = Math.max(1, Math.min(10000, Number(url.searchParams.get('page')) || 1));
     const query = (url.searchParams.get('q') || '')
@@ -353,9 +377,12 @@ export const apiRoutes = {
           : null,
     });
   },
+  /** The owner's list of conversations, from their index object. */
   async 'GET /api/sessions'(request, env, url, auth) {
     return env.PROBE.getByName('index:' + auth.user.id).fetch('https://internal/index/list');
   },
+  /** Creates a coding session: checks the repository, ref and model, pins the
+   * ref to a commit, starts the session's object and lists it. */
   async 'POST /api/sessions'(request, env, url, auth) {
     const body = await boundedJson(request);
     if (

@@ -1,9 +1,21 @@
+/** The model gateway's work: a request from the coding container, checked,
+ * rewritten and sent to the provider with the owner's key:
+ *
+ *   container → modelRequest → provider → stream → usageStream → container
+ *                 (checks, plan)            (counts tokens, reports progress,
+ *                                            keeps Claude's thinking)
+ *
+ * The container never holds the key and cannot change the model, the effort
+ * or the output limit. The stream helpers here are also used by chat/chat.mjs.
+ * Depends on prices.mjs and providers.mjs. Leaves out whose account it is and
+ * the turn's quota, which gateways.mjs asks the session for. */
 import { tokens } from '../prices.mjs';
 import { PROVIDERS, requestFields } from '../providers.mjs';
 // A long coding conversation, sent whole each step, with its tools: arno's
 // prune keeps history near 200 KB, so this is a ceiling, not a working size.
 const MAX_BODY = 8 * 1024 * 1024;
 
+/** Reads a JSON request body, refusing more than MAX_BODY bytes. */
 async function readBounded(body) {
   if (!body) throw new Error('missing body');
   const reader = body.getReader();
@@ -71,6 +83,7 @@ export function mistralDeltas() {
     }
   };
   return new TransformStream({
+    /** Rewrites the complete lines of a chunk, holding back a partial one. */
     transform(chunk, controller) {
       buffer += decoder.decode(chunk, { stream: true });
       const lines = buffer.split('\n');
@@ -82,6 +95,7 @@ export function mistralDeltas() {
         buffer = '';
       }
     },
+    /** Passes on what is left at the end. */
     flush(controller) {
       buffer += decoder.decode();
       if (buffer) controller.enqueue(encoder.encode(rewrite(buffer)));
@@ -94,6 +108,7 @@ function thinkingBlocks() {
   const blocks = new Map(),
     toolIds = [];
   return {
+    /** Takes one decoded stream event. */
     read(data) {
       const start = data.type === 'content_block_start' && data.content_block;
       if (/thinking$/.test(start?.type)) blocks.set(data.index, { ...start });
@@ -104,6 +119,7 @@ function thinkingBlocks() {
       if (block?.type === 'thinking' && data.delta.type === 'signature_delta')
         block.signature = (block.signature || '') + data.delta.signature;
     },
+    /** What was kept: the blocks, and the tool call ids that followed. */
     result: () => ({ toolIds, blocks: [...blocks.values()] }),
   };
 }
@@ -125,6 +141,10 @@ export function replayThinking(payload, saved) {
   delete payload.thinking;
   delete payload.output_config;
 }
+/** A pass-through stream over a reply: the bytes go on unchanged while it
+ * counts the reported usage (onUsage at the end), shows text and reasoning
+ * as they come (onProgress, at most every 200 ms), and, if onThinking is
+ * given, hands over Claude's thinking blocks with the tool calls after them. */
 export function usageStream(onUsage, onProgress = async () => {}, onThinking) {
   const decoder = new TextDecoder(),
     thinking = thinkingBlocks();
@@ -134,6 +154,7 @@ export function usageStream(onUsage, onProgress = async () => {}, onThinking) {
     reasoning = '',
     last = 0,
     dirty = false;
+  // Takes one line of the stream: usage, thinking and display text.
   const read = line => {
     if (!line.startsWith('data:')) return;
     try {
@@ -147,6 +168,7 @@ export function usageStream(onUsage, onProgress = async () => {}, onThinking) {
       dirty ||= !!(d.text || d.reasoning);
     } catch {}
   };
+  // Shows the text so far; force ignores the 200 ms pause.
   const publish = async force => {
     if ((dirty || force) && (text || reasoning) && (force || Date.now() - last >= 200)) {
       last = Date.now();
@@ -159,6 +181,7 @@ export function usageStream(onUsage, onProgress = async () => {}, onThinking) {
     }
   };
   return new TransformStream({
+    /** Passes the chunk on, then reads its lines and shows progress. */
     async transform(chunk, controller) {
       controller.enqueue(chunk);
       buffer += decoder.decode(chunk, { stream: true });
@@ -168,6 +191,7 @@ export function usageStream(onUsage, onProgress = async () => {}, onThinking) {
       if (buffer.length > 65536) buffer = '';
       await publish(false);
     },
+    /** At the end: the last preview, the kept thinking and the usage. */
     async flush() {
       buffer += decoder.decode();
       read(buffer);
@@ -186,6 +210,11 @@ export function usageStream(onUsage, onProgress = async () => {}, onThinking) {
     },
   });
 }
+/** Answers one request from the container: only POST to model.internal's chat
+ * path is let through; the model, effort and output limit are the session's,
+ * the instructions are added, and the owner's key goes on. authorize() asks
+ * the session to allow another request. Returns the provider's stream, or an
+ * error response. upstream stands in for fetch in tests. */
 export async function modelRequest(
   request,
   {

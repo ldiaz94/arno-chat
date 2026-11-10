@@ -11,6 +11,7 @@
  * pushes cannot be told from the request; protect a branch on GitHub to
  * refuse them there. */
 
+/** The all-zero object id git uses for "no object": a ref update to it deletes the ref. */
 const ZERO = '0'.repeat(40);
 
 /** Which smart-HTTP request url is, for the repository repo ('owner/name'):

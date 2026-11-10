@@ -177,6 +177,9 @@ document.addEventListener('click', e => {
   if (code) copy(code.closest('.codeblock').querySelector('code').textContent);
   if (e.target.closest('.wrap-toggle')) toggleWrap();
 });
+// Starts the app: asks who is signed in (nobody gets the sign-in page), loads models, sessions
+// and preferences, starts the outbox, then opens the home page, or the conversation a
+// notification linked to.
 async function boot() {
   try {
     const d = await api('/api/me');
@@ -240,6 +243,7 @@ const outside = (dialog, e) => {
   const r = dialog.getBoundingClientRect();
   return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
 };
+// The dialog whose backdrop the pointer went down on, if any.
 let pressedOutside = null;
 document.addEventListener('pointerdown', e => {
   pressedOutside =

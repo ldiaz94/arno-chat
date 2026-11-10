@@ -19,6 +19,7 @@ import { editMessage, retry } from './turns.js';
 import { attachmentsHtml } from './attach.js';
 import { artifactCard } from './artifacts.js';
 import { optionTags } from './options.mjs';
+// Lines added, lines removed and files changed in a unified diff.
 function diffCounts(diff) {
   const lines = (diff || '').split('\n');
   return {
@@ -27,6 +28,8 @@ function diffCounts(diff) {
     files: lines.filter(l => l.startsWith('diff --git')).length,
   };
 }
+// Draws one message in the thread, with its tools, sources, artifacts and footer, and returns
+// the node.
 export function message(role, text, result = {}) {
   const node = document.createElement('article');
   node.className = 'turn ' + (role === 'You' ? 'user' : 'assistant');
@@ -179,11 +182,13 @@ export function failure(text, error, at, attachments = []) {
   scrollDown();
   return node;
 }
+// Scrolls to the bottom if the reader is following the stream, or always with `force`.
 export function scrollDown(force = false) {
   if (force) following = true;
   $('#jump-bottom').hidden = following || !$('#thread');
   if (following) main.scrollTo({ top: main.scrollHeight, behavior: 'instant' });
 }
+// A source's host name without "www.".
 function sourceDomain(url) {
   try {
     return new URL(url).hostname.replace(/^www\./, '');
@@ -191,6 +196,7 @@ function sourceDomain(url) {
     return 'Source';
   }
 }
+// Opens the sources dialog; the source with `id` comes first.
 export function openSources(sources, id) {
   const ordered = id
     ? [...sources].sort((a, b) => Number(b.id === id) - Number(a.id === id))
@@ -215,6 +221,7 @@ export function openSources(sources, id) {
     .join('');
   $('#sources-dialog').showModal();
 }
+// The starter prompts shown in an empty conversation, by kind of session.
 export function suggestions() {
   if (state.session?.kind === 'chat')
     return (

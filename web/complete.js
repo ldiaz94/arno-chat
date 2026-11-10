@@ -6,6 +6,7 @@
 import { $, state, esc, prompt } from './core.js';
 import { suggest } from './commands.mjs';
 
+// The suggestion list, put just above the prompt.
 const box = document.createElement('div');
 box.id = 'command-list';
 box.className = 'command-list';
@@ -18,8 +19,10 @@ prompt.setAttribute('aria-controls', 'command-list');
 let shown = [], // the commands listed
   at = 0; // the one picked
 
+// Which command set applies: a coding session's or a chat's.
 const kind = () => (state.session && state.session.kind !== 'chat' ? 'code' : 'chat');
 
+// Lists the commands matching what is typed; hides the list when none do.
 function render() {
   shown = suggest(prompt.value, kind());
   box.hidden = !shown.length;

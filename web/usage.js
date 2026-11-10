@@ -6,13 +6,17 @@
 import { $, state, esc, num, money, api, main, composer } from './core.js';
 import { busy, drawer, title, sidebar } from './layout.js';
 
+// Milliseconds in a day.
 const Day = 86400000;
+// Requests listed per page.
 const PageSize = 100;
+// The time ranges to choose from: [value, label].
 const Ranges = [
   ['today', 'Today'],
   ['7d', '7 days'],
   ['30d', '30 days'],
 ];
+// The kinds of request to show: [value, label].
 const Filters = [
   ['all', 'All'],
   ['model', 'Models'],
@@ -47,6 +51,7 @@ function cost(n) {
 function cachePct(r) {
   return r.input > 0 && r.cached != null ? Math.round((r.cached / r.input) * 100) + '%' : '—';
 }
+// A row of filter buttons; the one named by `current` is pressed, and `attr` is its data attribute.
 function chips(list, current, attr) {
   return (
     '<div class="chips" role="group">' +
@@ -131,6 +136,7 @@ function byModel() {
       : '<p class="caption">No requests in this range.</p>')
   );
 }
+// One request of the report, as a table row.
 function requestRow(r) {
   return (
     '<tr><td title="' +
@@ -158,6 +164,7 @@ function requestRow(r) {
     '</td></tr>'
   );
 }
+// The requests table for the chosen filter, one page at a time.
 function recent() {
   const rows = view.requests.filter(
     r => view.filter === 'all' || (view.filter === 'model') === (r.kind === 'model'),
@@ -196,6 +203,7 @@ function accountSpend(usage) {
           .join('')
     : '';
 }
+// The Ollama account card: balance and usage, or the note saying why it is missing.
 function ollamaCard() {
   const o = view.ollama;
   if (view.note) return '<p class="caption">' + esc(view.note) + '</p>';
@@ -234,6 +242,7 @@ function ollamaCard() {
   );
 }
 
+// Draws the whole view from `view`.
 function render() {
   main.innerHTML =
     '<div class="home usage-view">' +
@@ -247,6 +256,7 @@ function render() {
 function ollamaNote(e) {
   return e?.status === 404 ? '' : 'Ollama’s account usage is unavailable right now.';
 }
+// Opens the Usage view and loads its data.
 export async function openUsage() {
   ++state.generation;
   state.search++;

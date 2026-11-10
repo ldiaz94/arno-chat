@@ -1,7 +1,19 @@
 /** ArnoProbe, the one Durable Object class. Its name picks its role: a session
  * ('code:<user>:<id>'), a user's index and profile ('index:<user>') or a sign-in
  * record ('auth:<id>'). Requests dispatch by "METHOD /path" (or "* /path" for any
- * method) to the role route tables; turns run from alarm(). */
+ * method) to the route tables; a turn runs from alarm(), not from the request
+ * that queued it.
+ *
+ *   request -> fetch() -> ROUTES[...]   store-routes    index, profile, auth
+ *                                       gateway-routes  calls from the gateways
+ *                                       session-routes  session lifecycle
+ *                                       ../push.mjs, ../code/code-routes.mjs
+ *   alarm() -> /session/run -> chatTurn (../chat/turn.mjs) or codeTurn (../code/turn.mjs)
+ *
+ * The methods those use come from live.mjs (the live view), records.mjs
+ * (transcript, cost, notices), the turns and ../code/workspace.mjs, mixed in
+ * at the bottom. Depends on those modules and ../push.mjs. Leaves out the
+ * HTTP edge: worker.js routes requests here. */
 import { DurableObject } from 'cloudflare:workers';
 import { storeRoutes } from './store-routes.mjs';
 import { gatewayRoutes } from './gateway-routes.mjs';
@@ -15,6 +27,7 @@ import { chatTurn } from '../chat/turn.mjs';
 import { workspace } from '../code/workspace.mjs';
 import { codeTurn } from '../code/turn.mjs';
 
+/** Every route table, merged into one lookup by "METHOD /path". */
 const ROUTES = {
   ...storeRoutes,
   ...pushRoutes,
@@ -23,7 +36,9 @@ const ROUTES = {
   ...codeRoutes,
 };
 
+/** The Durable Object: one instance per session, user index or sign-in record. */
 export class ArnoProbe extends DurableObject {
+  /** Find the route for this request and call it with this = the instance; 404 when none. */
   async fetch(request) {
     const url = new URL(request.url);
     const route = ROUTES[request.method + ' ' + url.pathname] ?? ROUTES['* ' + url.pathname];

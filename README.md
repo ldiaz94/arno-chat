@@ -1,57 +1,235 @@
-# Arno Chat
+<p align="center">
+  <img src="doc/img/banner.svg" alt="arno chat: chat, research and a coding workspace, from your phone" width="800">
+</p>
 
-A responsive chat and remote coding workspace built around [Arno](https://github.com/ldiaz94/arno), Cloudflare Workers/Durable Objects/Containers, and hosted language models.
+Arno Chat is a chat app and a coding workspace you can carry in your
+pocket. In a **chat** you talk to a language model of your choice, which
+can search the web, read pages, write documents and use the services you
+connect. In a **coding session** the model works on one of your GitHub
+repositories, in a container of its own in the cloud: it reads the code,
+runs the tests, edits, commits and pushes, while you watch from a phone or
+a browser. It installs as an app, works offline, and runs entirely on
+Cloudflare: a Worker, Durable Objects and Containers, with no server of its
+own to look after.
 
-**Private deployment:** https://arno-compat-probe.lucelad.workers.dev
+The name is [arno](https://github.com/ldiaz94/arno)'s, the coding agent
+every session runs, with "chat" for what you do with it. The mascot is
+arno's too: a river otter, a small, practical animal that fetches things
+and brings them back, in a teal scarf ([brand/UPSTREAM.md](brand/UPSTREAM.md)
+says where the artwork comes from).
 
-## Use it
+## See it
 
-1. Sign in with GitHub. Basic sign-in does not require repository permission.
-2. The **Chat | Code** switch at the top of the sidebar picks a mode; each has its own home page, conversation list (most recently active first) and last open conversation. In **Chat**, type into the home page's box or choose **New chat** for a regular conversation with web research and persistent context; no coding container starts.
-3. In **Code**, choose **New session**. Connect GitHub repository access, search your visible repositories, or paste an exact GitHub repository URL. Opening a repository card always starts a new session; **Session actions → New session on this repository** starts another one from the current session's branch.
-4. Ask Arno to inspect, edit, or test. The activity indicator separates workspace preparation, execution, and checkpointing, and shows what Arno is doing as it goes. A line starting with `/` goes to Arno as a command (`/clear`, `/compact`, `/notes`, `/usage`, `/help`). `/model`, `/budget` and `/workers` are not sent: pick the model with the model button, and set budget and workers in the options panel (or type `/budget 2.50`, `/workers 2`). `/safety`, `/quit`, `/exit`, `/attach`, `/paste` and `/stage` are refused.
-5. Browse **Code & changes** to navigate files or inspect highlighted diffs. Use **Session actions → Review & publish** to create a new branch/commit and pull request, or ask Arno to commit and push: the session's repository is a real clone, and pushes go to GitHub through the Worker as you.
-6. Open your **avatar/name** for provider keys, system instructions, skills, MCP, and connection settings. Under **You**: whether Enter sends or adds a new line, the default model for new conversations, and the home page's Today card (quote and fact of the day, moon phase, and optional weather from Open-Meteo).
+<p align="center">
+  <img src="doc/img/chat-home.png" alt="The home page on a phone: a greeting, the quote and fact of the day, and recent chats" width="240">
+  <img src="doc/img/chat-streaming.png" alt="A chat answer streaming in, with the model's thinking folded away" width="240">
+  <img src="doc/img/chat-approval.png" alt="A chat asking to allow an action of a connected service before it runs" width="240">
+</p>
+<p align="center">
+  <img src="doc/img/code-session.png" alt="A coding session on a phone: the repository, its branch and an answer with highlighted code" width="240">
+  <img src="doc/img/code-history.png" alt="The commit history of a session, the commit not yet pushed marked" width="240">
+  <img src="doc/img/details.png" alt="Conversation details: artifacts first, then folding sections for context, usage and sources" width="240">
+</p>
 
-The composer's **options** button (sliders) sets, per conversation, web search on or off, the mode (**Standard**, **Fast** for short answers without thinking or search, or **Deep research**, in chats only, which searches and reads more and saves a cited report as an artifact), the thinking effort (Auto, Off, Low, Medium, High, where the model's provider supports it) and the answer style (Normal, Concise, or Caveman). In coding sessions the panel also offers an approach (Auto, Pair, Build or Review: Arno's mode), workers (off, or 1 to 4 working side by side) and a budget (Auto, or $0.1 to $100 per turn). New conversations start from the last choice; each answer's footer tags the options it ran with.
+The pictures come from the design test's fixed data (`npm run
+screenshots`), so they show the app as the tests see it.
 
-Answers stream as they arrive in both chat modes. Expand **Thinking** to view provider-exposed reasoning when available; it stays collapsed by default. Coding previews identify the current model pass and remain provisional until the workspace checkpoint is saved. Closing the page does not cancel a turn.
+## Get it
 
-It installs as an app and works offline: every conversation reads from the device, and messages (with attachments), new chats, renames and saved preferences wait in an outbox, sent in order once the network is back (on iPhone and iPad the app must be open for that). When a new version is deployed, an **Update available** bar appears with an Update button; the app checks when it is reopened and every 30 minutes.
+You need a Cloudflare account with Workers Paid (for Containers), Docker,
+Node 20 or later, and a GitHub App or OAuth app for signing in.
 
-Conversation-row menus support rename/delete without opening a conversation. The interface includes dark/light themes, safe Markdown, syntax highlighting after [ladle](https://github.com/ldiaz94/ladle)'s design (raz, concha, JS/TS, Python, shell and a dozen more, in chat code blocks, artifacts, the file browser and diffs) with phone-sized code and a remembered Wrap toggle, copy/export, persistent drafts, editable chat messages, usage/timings with per-turn and per-session cost at current list prices, resizable tables, source previews, and distinct chat/coding loading states. The code pane docks on ultrawide screens and becomes a dialog on smaller displays.
+```sh
+npm install
+npx wrangler login
+npx wrangler secret put GITHUB_CLIENT_ID          # the GitHub app signing in
+npx wrangler secret put GITHUB_CLIENT_SECRET
+npx wrangler secret put ACCOUNT_ENCRYPTION_KEY    # 32 random bytes, base64
+npx wrangler secret put OLLAMA_API_KEY            # optional: a shared Ollama Cloud key
+npm test                                          # lint, format and unit tests
+npm run deploy                                    # deploys, recording the commit
+```
 
-## Providers and research
+`wrangler.jsonc` names the Worker, its Durable Object, the pinned runner
+image and who may sign in (`ALLOWED_GITHUB_LOGINS`). The runner image is
+built from `runner/Dockerfile` with arno compiled on the host; to update
+arno in it, see [doc/OPERATIONS.md](doc/OPERATIONS.md#runner-image).
+Every secret, setting and recovery step is in that guide.
 
-Ollama Cloud is available through the private deployment fallback or a personal key. Bring your own OpenAI, Anthropic, Google Gemini, DeepSeek, Kimi (Moonshot AI), Mistral or Meta Model API key to use their models in regular chats and coding sessions. Keys are encrypted, masked on read, and kept outside coding containers. Details: [ARCHITECTURE.md](ARCHITECTURE.md).
+## Learn it
 
-Regular and coding conversations can search several web results and read original pages through host-mediated tools. Numbered citations link only to recorded sources and open a preview with title, domain, excerpt, and original link.
+Sign in with GitHub. The **Chat | Code** switch at the top of the sidebar
+chooses the mode; each has its own home page and list of conversations,
+the most recently active first.
 
-If GitHub shows only 17 repositories, check the connection permissions rather than assuming the account has only 17. Reconnect with repo scope, approve organization SSO/access, and, for a GitHub App, expand its installation's selected repositories.
+| Where | What it does |
+| --- | --- |
+| Chat home, **New chat** | A conversation with web research, artifacts and your connected MCP tools; no container |
+| Code home, a repository's **Open** | A new coding session: a clone of the repository in a container of its own |
+| ⋯ → **New session on this repository** | Another session on the same repository, from its current branch |
+| The title | Conversation details: artifacts, context, usage and cost, sources, links, images |
+| `</>` | The session's files, its changes, and its commit history |
+| Model button | The model for this conversation, from every provider you have a key for |
+| Sliders button | This conversation's options (below) |
+| **Edit** in the sidebar | Select conversations and delete them together |
+| You → About | The version the device runs, the server's build, Check for updates |
+
+**Options**, kept per conversation (the sliders button):
+
+| Option | Choices | In |
+| --- | --- | --- |
+| Web search | on, off | both |
+| Mode | Standard; Fast (short, no thinking); Deep research (a cited report saved as an artifact) | Deep research in chats |
+| Thinking | Auto, Off, Low, Medium, High (where the model's provider supports it) | both |
+| Style | Normal, Concise, Caveman | both |
+| MCP tools | on, off (your connections marked *Use in chats*) | chats |
+| Approach | Auto, Pair, Build, Review (arno's mode) | coding |
+| Workers side by side | Off, 1, 2, 4 | coding |
+| Budget per message | Auto, $1, $3, $10, or any amount with `/budget` | coding |
+
+**Slash commands** in a coding session; typing `/` lists them:
+
+| Command | What it does |
+| --- | --- |
+| `/compact [focus]` | Summarize the conversation and go on from the summary |
+| `/clear`, `/new` | Trim the history to the first exchange; start a new conversation |
+| `/usage` | Requests, tokens, cache savings and cost of the session |
+| `/notes`, `/remember`, `/forget`, `/my-memory` | The model's notes on the project; facts kept across conversations |
+| `/test [command]` | Run the project's tests; a failure goes to the model |
+| `/tools`, `/mcp`, `/system`, `/list`, `/load`, `/help` | What arno offers, its MCP servers, its system prompt, other conversations |
+| `/mode`, `/budget`, `/workers` | Set this conversation's options, as the sliders do |
+
+In a session the model can `git push`: the clone's origin goes through the
+Worker, which adds your GitHub token on the way out. **Review & publish**
+(⋯) opens a pull request from what you reviewed instead.
+
+**Settings** (your name, bottom left) hold provider keys (Ollama Cloud,
+OpenAI, Anthropic, Gemini, DeepSeek, Kimi, Mistral, Meta), instructions and
+skills, MCP connections (a token, or **Sign in** with OAuth), your own
+SearXNG, a Cloudflare API token for `wrangler deploy` in sessions, full
+internet for sessions, notifications, and the home page's Today card.
+
+## How it works
+
+Seven ideas, a module or a folder each. Read them in this order.
+
+**1. The pages are plain files.** [`web/`](web/) is the whole app the
+browser runs: ES modules with no framework and no build step, served as
+static assets by Cloudflare. [`web/app.js`](web/app.js) wires them;
+[`web/core.js`](web/core.js) holds the shared state; each other module owns
+one part of the screen (the thread, the sidebar, the code dialog, the
+options). Logic that needs no page lives in `.mjs` files, so the unit tests
+run it in Node. HTML is built as escaped strings ([`web/render.mjs`](web/render.mjs)
+renders Markdown safely, [`web/highlight.mjs`](web/highlight.mjs) colours code
+after [ladle](https://github.com/ldiaz94/ladle)'s design).
+
+**2. One Worker, routes as tables.** [`server/worker.js`](server/worker.js)
+takes every request the static files do not answer: sign-in under `/auth/`
+([`server/auth.mjs`](server/auth.mjs)), the account's routes
+([`server/api.mjs`](server/api.mjs)) and one conversation's
+([`server/sessions-api.mjs`](server/sessions-api.mjs)). Each is a table from
+`METHOD /path` to a handler, so a reader finds a route by searching for it.
+
+**3. A conversation is a Durable Object.** [`server/probe/probe.mjs`](server/probe/probe.mjs)
+is the one Durable Object class; its name chooses its role: a conversation
+(`code:<user>:<id>`), a user's list and profile, or a sign-in. A
+conversation keeps its turns, its job and its files in its own storage,
+and runs each turn from an alarm, so closing the page never stops one.
+Its methods come in groups: the live view ([`live.mjs`](server/probe/live.mjs)),
+the records ([`records.mjs`](server/probe/records.mjs)), and the turns below.
+
+**4. A chat is a tool loop on the server.** [`server/chat/turn.mjs`](server/chat/turn.mjs)
+asks the model ([`chat.mjs`](server/chat/chat.mjs), one adapter for every
+provider's streaming API) and runs the tools it calls: web research
+([`research.mjs`](server/chat/research.mjs)), artifacts, and the MCP tools
+of the connections you marked for chats ([`chat-mcp.mjs`](server/chat/chat-mcp.mjs)).
+A tool that may change something waits for you to tap **Allow**.
+[`plan.mjs`](server/chat/plan.mjs) turns the options into budgets and limits.
+
+**5. A coding session is a container driven by arno.** [`server/code/turn.mjs`](server/code/turn.mjs)
+starts the session's container, or restores it from its snapshot
+([`workspace.mjs`](server/code/workspace.mjs)), and gives your message to
+`arno --serve`, speaking its protocol ([`serve.mjs`](server/code/serve.mjs)).
+arno works on a copy of the project, runs workers side by side, and its
+changes are applied when the turn ends; the app answers every question it
+asks, since the container is the sandbox. Then the diff, a snapshot, and
+the turn is saved.
+
+**6. Credentials never enter the container.** The container has no
+internet of its own. It reaches the world through gateways in the Worker,
+which add the credentials on the way out: the models
+([`server/gateways/model.mjs`](server/gateways/model.mjs)), MCP servers
+([`mcp.mjs`](server/gateways/mcp.mjs), with OAuth sign-in in
+[`mcp-oauth.mjs`](server/gateways/mcp-oauth.mjs)), git for the session's own
+repository ([`server/code/git.mjs`](server/code/git.mjs)), npm and PyPI, and
+Cloudflare's API ([`server/code/sandbox.mjs`](server/code/sandbox.mjs)).
+Secrets at rest are sealed per account and per field
+([`server/secrets.mjs`](server/secrets.mjs)).
+
+**7. Offline first.** A service worker ([`web/sw.js`](web/sw.js)) keeps a
+copy of every file, and of every conversation the app has seen, so it
+opens and reads with no network. What you do offline waits in an outbox
+([`web/outbox.js`](web/outbox.js), with its rules in
+[`web/queue.mjs`](web/queue.mjs)) and is sent in order once the network is
+back. A new version waits until you tap **Update** ([`web/update.js`](web/update.js)).
+
+[doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) goes through every module,
+route and stored record.
+
+## Tests
+
+| Command | What it checks |
+| --- | --- |
+| `npm test` | ESLint, Prettier, and the unit tests: protocols, gateways, prices, rendering, the outbox, publishing, OAuth, and a wrangler bundle build |
+| `npm run test:serve` | The real `arno --serve` against arno's stub model: a turn, a tool, a loaded conversation, a worker, commands, a staged edit |
+| `npm run test:design` | Playwright in Chromium against the pages and fixed data: phone and desktop layouts, themes, every dialog, the composer, edit mode, approval, history |
+| `npm run test:offline` | The service worker: going offline, reading, the outbox flushing in order, the Update bar |
+| `npm run test:live` | The design test against the deployed site |
+
+The browser tests stand in for the server with fixed answers, so they show
+the app behaves, not that GitHub, a provider or a container did.
+[doc/OPERATIONS.md](doc/OPERATIONS.md) keeps the record of real runs.
+
+## Correctness
+
+What is checked against the real thing, and what only against recorded
+shapes, is said plainly:
+
+- Ollama Cloud, Gemini, GitHub sign-in and pushing, the npm and PyPI
+  proxies, and MCP discovery against Linear, Notion, Sentry, Atlassian and
+  Cloudflare were exercised for real.
+- OpenAI, Anthropic, DeepSeek, Kimi, Mistral and Meta are tested against
+  the shapes of their documented streams; a real call needs your key.
+- A full coding turn on Cloudflare (clone, workers, push) has been run by
+  hand, not by a test.
+
+## Size
+
+About 6,800 lines of server code in 37 modules, 9,300 lines of browser
+code in 31, and 4,300 lines of tests (`wc -l`, comments included).
+
+## Left out
+
+- **A live terminal or preview ports.** A session is driven by messages;
+  nothing listens for you to connect to.
+- **Turns longer than 13 minutes.** A turn runs in one Durable Object
+  alarm, which Cloudflare stops at 15.
+- **Go, Rust and other toolchains** in the runner image, to keep it near
+  1.4 GB on a 4 GB disk.
+- **Images in coding sessions**, and MCP resources and prompts (tools only).
+- **Spending caps per day**: budgets are per message.
+- **Accounts for anyone.** It is a private deployment for its owner while
+  it uses shared provider keys.
 
 ## Documentation
 
 | Guide | Contents |
 | --- | --- |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Modules, state, lifecycles, routes, accounts and providers, research, interface, limits |
-| [OPERATIONS.md](OPERATIONS.md) | Testing, deployment, secrets, hosting, troubleshooting, validation record |
-| [SECURITY.md](SECURITY.md) | Credential boundaries, untrusted code and content, publication controls |
-| [brand/UPSTREAM.md](brand/UPSTREAM.md) | Original logo/mascot provenance and license |
+| [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) | Modules, state, lifecycles, routes, providers, research, interface, limits |
+| [doc/OPERATIONS.md](doc/OPERATIONS.md) | Testing, deploying, secrets, the runner image, troubleshooting, the record of real runs |
+| [doc/SECURITY.md](doc/SECURITY.md) | Where credentials live, the container's boundaries, untrusted content, publishing |
 
-## Development and verification
+## Licence
 
-- `npm test`: ESLint, Prettier check, and unit tests (including a wrangler bundle build).
-- `node design-test.cjs`: Playwright against the local web/ files in the system Chromium (set CHROMIUM_PATH if it is not /usr/bin/chromium). `node browser-test.cjs` runs it against the deployed files.
-- `node serve-test.mjs`: drives the real `arno --serve` against Arno's stub model (see OPERATIONS.md).
-- `node offline-test.cjs`: Playwright offline reading against a local server (warm, go offline, reload, open a conversation and artifact; queue messages, a rename and a new chat, then check they reach the server in order once back online).
-- Deploy with `npm run deploy`; the You tab's About card shows the version and build.
-
-Browser fixtures are not evidence of real OAuth or GitHub publication. Real provider, container, MCP and research runs are in the validation record in [OPERATIONS.md](OPERATIONS.md).
-
-## Important boundaries
-
-This is a private deployment restricted to ldiaz94 while it uses shared provider credentials. It is not a publicly enrolled commercial service.
-
-Coding workspaces use the pinned runner image in wrangler.jsonc (Arch Linux with a C toolchain, git, Node, Python, ripgrep, fd and w3m; no Go or Rust). Completed turns checkpoint files and retain up to 20 recent turns, with bounded model context. Snapshot retention follows Cloudflare's 30-day window. Arbitrary dependency downloads, a live terminal, MCP OAuth/stdio installation, account balance, and unlimited context are not implemented. See limits in [ARCHITECTURE.md](ARCHITECTURE.md).
-
-OpenAI/Anthropic/Gemini adapters and key handling have protocol tests; Gemini's chat tool loop and coding gateway were also exercised locally against the real API, not yet through the deployed app. DeepSeek, Kimi, Mistral and Meta are tested only against recorded-shape streams from their API references; no real call has been made. Real calls to OpenAI and Anthropic require the user's keys. No blanket claim of perfect security or complete Claude Code feature parity is made.
+ISC: see [LICENSE](LICENSE). The arno artwork keeps its own ISC licence,
+in [brand/ARNO-LICENSE](brand/ARNO-LICENSE).

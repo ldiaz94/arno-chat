@@ -8,7 +8,9 @@
 import { $, state, esc } from './core.js';
 import { partOfDay, daily, moon, moonPath, weatherText } from './today.mjs';
 import { QUOTES, FACTS } from './home-content.js';
+// Open-Meteo's forecast service.
 const FORECAST = 'https://api.open-meteo.com/v1/forecast';
+// Open-Meteo's place-name search.
 const GEOCODE = 'https://geocoding-api.open-meteo.com/v1/search';
 const WEATHER_KEY = 'weather'; // localStorage: the last forecast, {key, at, place, temp, …}
 const FRESH_MS = 30 * 60 * 1000; // a kept forecast younger than this is not fetched again
@@ -36,6 +38,7 @@ export function greeting(eyebrow, line) {
     '</p></div>'
   );
 }
+// The quote of the day, with its author when known.
 function quoteTile() {
   const [text, author] = daily(QUOTES, new Date(), skips.quote);
   return (
@@ -45,9 +48,11 @@ function quoteTile() {
     (author ? '<cite>— ' + esc(author) + '</cite>' : '')
   );
 }
+// The fact of the day.
 function factTile() {
   return '<p>' + esc(daily(FACTS, new Date(), skips.fact)) + '</p>';
 }
+// The moon's phase today, drawn and named.
 function moonTile() {
   const m = moon(new Date()),
     days = Math.round(m.toFull);
@@ -63,6 +68,7 @@ function moonTile() {
     '</small></div>'
   );
 }
+// Wraps a widget's body in its card, with an "another" button when it has one.
 const tile = (kind, label, body, another) =>
   '<div class="today-tile today-' +
   kind +
@@ -98,6 +104,7 @@ export function todayCard(compact) {
     '</div></section>'
   );
 }
+// Makes each "another" button show the next quote or fact.
 export function wireToday() {
   for (const b of document.querySelectorAll('[data-another]'))
     b.onclick = () => {
@@ -121,6 +128,7 @@ function kept() {
     return null;
   }
 }
+// The weather widget's body: the forecast, or what is missing for it.
 function weatherBody(w) {
   if (!where()) return '<small>Choose a place in Settings › You › Home page.</small>';
   if (!w) return '<small>Loading the forecast…</small>';

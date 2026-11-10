@@ -6,6 +6,8 @@ export const $ = s => document.querySelector(s),
   main = $('#main'),
   composer = $('#composer-wrap'),
   prompt = $('#prompt');
+// What the page knows: the open session, the lists from the server, the user and the busy
+// flag. Fields not commented here are set by the module that owns them.
 export const state = {
   session: null,
   sessions: [],
@@ -34,11 +36,13 @@ export const sendKey = e =>
 /** The hint under a message box. */
 export const sendHint = () =>
   enterSends() ? 'Enter to send · Shift + Enter for a new line' : '⌘ / Ctrl + Enter to send';
+// Escapes text for use in HTML, including inside attributes.
 export const esc = s =>
   String(s ?? '').replace(
     /[&<>"']/g,
     c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
   );
+// The icons: SVG path data in a 24-unit box, by name.
 const paths = {
   plus: 'M12 5v14M5 12h14',
   menu: 'M4 6h16M4 12h16M4 18h16',
@@ -64,6 +68,7 @@ const paths = {
   clip: 'm21 11-9 9a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l8-8',
   sliders: 'M4 6h9m4 0h3M15 4v4M4 12h3m4 0h9M9 10v4M4 18h11m4 0h1M17 16v4',
 };
+// An icon as an inline SVG; an unknown name gives the code icon.
 export function icon(name) {
   return (
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' +
@@ -86,9 +91,11 @@ export async function loadAvatar() {
     state.avatar = 0;
   }
 }
+// A count with thousands separators, or a dash when missing.
 export function num(n) {
   return typeof n === 'number' ? n.toLocaleString() : '—';
 }
+// A time in ms as "340 ms" or seconds, or a dash when missing.
 export function duration(ms) {
   if (ms == null) return '—';
   return ms < 1000
@@ -97,6 +104,7 @@ export function duration(ms) {
       ? (ms / 1000).toFixed(1) + ' s'
       : Math.floor(ms / 60000) + 'm ' + Math.round((ms % 60000) / 1000) + 's';
 }
+// A model's display name from the catalog; the id itself when it is not listed.
 export function modelName(id) {
   return state.models.find(m => m.id === id)?.name || id || 'Choose model';
 }
@@ -132,18 +140,22 @@ export async function api(path, opt = {}) {
   if (!r.ok) throw Object.assign(Error(d.error || 'Request failed'), { status: r.status });
   return d;
 }
+// Shows a short message at the bottom of the page for a few seconds.
 export function toast(text) {
   $('#toast').textContent = text;
   $('#toast').hidden = false;
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => ($('#toast').hidden = true), 4000);
 }
+// Shows an error's message in a toast.
 export function showError(e) {
   toast(e.message || String(e));
 }
+// Dollars, with four decimals under a cent.
 export function money(n) {
   return n == null ? '—' : '$' + n.toFixed(n < 0.01 ? 4 : 2);
 }
+// Copies text to the clipboard and says so.
 export async function copy(text) {
   try {
     await navigator.clipboard.writeText(text);

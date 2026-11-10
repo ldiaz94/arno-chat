@@ -1,11 +1,17 @@
 /** Sign-in: the GitHub OAuth flow (/auth/*), the cookie-bound auth record kept
- * in its own Durable Object, and an authenticated GitHub API client. */
+ * in its own Durable Object (probe/probe.mjs, keyed auth:<id>), and an
+ * authenticated GitHub API client. Depends on http.mjs and
+ * gateways/mcp-oauth.mjs (the MCP callback). Leaves out token refresh: a
+ * sign-in simply expires after 30 days. */
 import { COOKIE, SECURITY, json, cookie, sessionCookie } from './http.mjs';
 import { mcpCallback } from './gateways/mcp-oauth.mjs';
 
+/** The Durable Object that holds one auth record (or pending OAuth state) by id. */
 export function authObject(env, id) {
   return env.PROBE.getByName(`auth:${id}`);
 }
+/** The signed-in user's auth record ({id, token, user, scopes, ...}) from the
+ * cookie, or null when absent, malformed or expired. */
 export async function currentAuth(request, env) {
   const id = cookie(request, COOKIE);
   if (!/^[0-9a-f-]{36}$/.test(id)) return null;
@@ -13,6 +19,7 @@ export async function currentAuth(request, env) {
   if (!response.ok) return null;
   return { id, ...(await response.json()) };
 }
+/** Calls the GitHub API with the user's token; init is passed to fetch. */
 export async function github(path, token, init = {}) {
   return fetch(`https://api.github.com${path}`, {
     ...init,
@@ -49,6 +56,8 @@ export async function repoAccess(auth) {
   }
 }
 
+/** Handles /auth/github (start), /auth/callback (finish and set the cookie),
+ * /auth/logout and /auth/mcp/callback; returns null for other paths. */
 export async function handleOAuth(request, env, url) {
   if (url.pathname === '/auth/mcp/callback') return mcpCallback(request, env, url);
   if (url.pathname === '/auth/github') {

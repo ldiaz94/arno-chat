@@ -42,6 +42,7 @@ import {
 } from './outbox.js';
 import { isLocal } from './queue.mjs';
 import { byRecent, ago, activeAt } from './today.mjs';
+// Opens a saved conversation by id: loads it, draws its thread and picks up a running job.
 export async function resume(id) {
   $('#code-dialog').close();
   const gen = ++state.generation;
@@ -115,11 +116,13 @@ export async function resume(id) {
     $('#retry-open').onclick = () => resume(id);
   }
 }
+// The hint under the composer for a kind of session.
 const composerHint = s =>
   sendHint() +
   (s.kind === 'chat'
     ? ' · Conversations are saved automatically'
     : ' · Changes are saved after each turn');
+// Sets the sidebar's mode, Chat or Code, and remembers it.
 function setMode(mode) {
   state.mode = mode;
   localStorage.setItem('mode', mode);
@@ -197,6 +200,7 @@ function repoBanner() {
     '</a></div>'
   );
 }
+// Shows the home page of the current mode.
 export async function home() {
   $('#code-dialog').close();
   ++state.generation;
@@ -226,10 +230,12 @@ const STARTERS = [
   ['Brainstorm', 'Brainstorm ideas for '],
   ['Summarize', 'Summarize this for me:\n\n'],
 ];
+// The button that picks the model for new conversations.
 const modelChip = () =>
   '<button id="home-model" class="ghost model-button" type="button" aria-label="Model for new conversations">' +
   modelLabel(startModel()) +
   '</button>';
+// The Chat home: a greeting and a box to start a chat from.
 function chatHome() {
   title('Chat', 'Ask, think and research');
   main.innerHTML =
@@ -271,6 +277,7 @@ function chatHome() {
       box.setSelectionRange(box.value.length, box.value.length);
     };
 }
+// The Code home: a greeting, recent sessions and repositories to start from.
 function codeHome() {
   title('Code', 'Build from wherever you are');
   const recent = byRecent(state.sessions.filter(s => modeOf(s) === 'code')).slice(0, 4);
@@ -316,6 +323,7 @@ function codeHome() {
   };
   searchRepos('');
 }
+// One repository of the picker, as a card that opens it.
 function repoCard(r) {
   const node = document.createElement('div');
   node.className = 'repo-card';
@@ -439,6 +447,7 @@ export function anotherSession() {
   const s = state.session;
   if (s?.repo) openRepo({ full_name: s.repo, default_branch: s.ref || 'main' });
 }
+// Creates a coding session for a repository and opens it.
 async function openRepo(repo) {
   state.search++;
   const gen = ++state.generation;
@@ -468,6 +477,7 @@ async function openRepo(repo) {
     }
   }
 }
+// Downloads the open conversation as a Markdown file.
 export function exportChat() {
   if (!state.session) return toast('Open a session first');
   const text =
@@ -491,6 +501,7 @@ export function exportChat() {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
+// Renames a conversation after asking for the new title; offline it waits in the outbox.
 export async function renameConversation(id = state.session?.id) {
   const target = state.sessions.find(s => s.id === id) || state.session;
   if (!id || !target) return toast('Choose a conversation first');
@@ -543,6 +554,7 @@ async function forget(ids) {
   if (state.session && ids.includes(state.session.id)) await home();
   else sidebar();
 }
+// Deletes a conversation after confirming; on the open one it returns to the home page.
 export async function deleteConversation(id = state.session?.id) {
   if (!id) return toast('Choose a conversation first');
   if (state.busy && state.session?.id === id)

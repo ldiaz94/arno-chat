@@ -11,12 +11,14 @@
  *   POST  /api/sessions/<id>/attachments, GET .../attachments/<file>
  *   GET   /api/sessions/<id>/artifacts[/<artifact>]
  *
- * Depends on http.mjs, auth.mjs, code/publish.mjs and probe/attachments.mjs. */
+ * Depends on http.mjs, code/publish.mjs and probe/attachments.mjs. */
 import { SECURITY, json, boundedJson } from './http.mjs';
 import { changesDigest, publishChanges } from './code/publish.mjs';
 import { LIMITS } from './probe/attachments.mjs';
 
+/** A conversation id (a UUID) as a regular-expression source. */
 const ID = '[0-9a-f-]{36}';
+/** /api/sessions/<id>[/<part>[/<item>]]: the id, the action and an optional attachment or artifact id. */
 const PATH = new RegExp('^/api/sessions/(' + ID + ')(?:/([a-z]+))?(?:/(' + ID + '))?$');
 
 /** Requests passed on as they are: "METHOD part" → the object's own path, and

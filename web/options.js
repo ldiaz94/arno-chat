@@ -9,11 +9,13 @@
 import { $, state, icon, esc } from './core.js';
 import { DEFAULTS, checkOptions, optionTags } from './options.mjs';
 
+// The options button, its popover and the composer form.
 const button = $('#options-button'),
   panel = $('#options-panel'),
   form = $('#composer');
 button.innerHTML = icon('sliders');
 
+// Reads a JSON value from localStorage; null when missing or unusable.
 const read = key => {
   try {
     return JSON.parse(localStorage.getItem(key));
@@ -21,6 +23,7 @@ const read = key => {
     return null;
   }
 };
+// Writes a JSON value to localStorage, ignoring failure.
 const write = (key, value) => {
   try {
     localStorage.setItem(key, JSON.stringify(value));
@@ -41,6 +44,7 @@ export function messageOptions() {
     };
   return checkOptions(o, kind()) || { ...DEFAULTS };
 }
+// Keeps the options as this conversation's and as the latest used.
 function save(o) {
   if (state.session?.id) write('options:' + state.session.id, o);
   write('options:last', o);
@@ -103,6 +107,8 @@ const SET = {
     takes: 'Approach: auto, pair, build or review',
   },
 };
+// Applies a /budget, /workers or /mode command to the options. Returns the message to show, or
+// '' when the text is not one of those.
 export function optionCommand(text) {
   const m = /^\/(budget|workers|mode)(?:\s+\$?(\S+))?\s*$/.exec(text);
   if (!m || kind() === 'chat') return '';
@@ -182,6 +188,7 @@ export function render() {
         : '';
 }
 
+// Shows or hides the options popover.
 function open(show) {
   panel.hidden = !show;
   button.setAttribute('aria-expanded', String(show));

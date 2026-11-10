@@ -13,11 +13,14 @@
  *
  * Deploying: bump VERSION whenever a file in SHELL changes, so installed apps
  * fetch the new shell. A new worker waits until the page's Update button
- * (update.js) sends SKIP_WAITING (test.mjs checks SHELL lists every web/ file).
+ * (update.js) sends SKIP_WAITING (test/test.mjs checks SHELL lists every web/ file).
  */
-const VERSION = 'v31';
+const VERSION = 'v32';
+// The name of this version's shell cache; a new VERSION makes a new cache.
 const SHELL_CACHE = 'arno-shell-' + VERSION;
 const DATA_CACHE = 'arno-data'; // cleared by offline.js on sign-out
+// The static files cached on install so the app opens offline. Keep in step with the files the
+// app loads.
 const SHELL = [
   '/',
   '/app.js',
@@ -59,6 +62,7 @@ const SHELL = [
   '/brand/logo.svg',
   '/brand/mascot.webp',
 ];
+// The read endpoints whose replies are kept for offline use.
 const DATA = [
   /^\/api\/(me|models|account|account\/avatar|sessions|usage\/requests)$/,
   /^\/api\/sessions\/[0-9a-f-]{36}$/,
@@ -181,6 +185,7 @@ function dataRead(e, url) {
   });
 }
 
+// Every open window of the app, including ones this worker does not yet control.
 async function appWindows() {
   return self.clients.matchAll({ type: 'window', includeUncontrolled: true });
 }

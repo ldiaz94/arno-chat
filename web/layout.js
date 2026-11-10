@@ -15,6 +15,8 @@ function fitHeight() {
   shell.style.height = typing && v ? v.height + 'px' : '';
   shell.style.top = typing && v ? v.offsetTop + 'px' : '';
 }
+// Refits the shell, the account dialog and the code pane to the visible area; called on resize
+// and when the keyboard opens or closes.
 export function fit() {
   const v = window.visualViewport;
   fitHeight();
@@ -41,12 +43,14 @@ document.addEventListener('focusout', () => setTimeout(fitHeight, 50));
 window.visualViewport?.addEventListener('scroll', fit);
 window.addEventListener('resize', fit);
 fit();
+// Opens or closes the sidebar drawer (small screens).
 export function drawer(open) {
   shell.classList.toggle('drawer-open', open);
   $('#menu').setAttribute('aria-expanded', String(open));
 }
 $('#send').innerHTML = icon('arrow');
 $('#stop').innerHTML = icon('stop');
+// Sets the busy flag and swaps Send for Stop while a turn runs.
 export function busy(value) {
   state.busy = value;
   // While a turn runs, Stop takes Send's place; the thread shows what is happening.
@@ -92,6 +96,7 @@ export function title(name, subtitle) {
   for (const id of ['actions', 'export', 'usage']) $('#' + id).hidden = !state.session;
   for (const id of ['code', 'publish']) $('#' + id).hidden = !coding;
 }
+// Redraws the sidebar: the account button, the Chat | Code switch and the conversation list.
 export function sidebar() {
   $('#account').textContent = state.user?.login || 'Guest';
   $('#account-avatar').innerHTML = avatar((state.user?.login || 'A').slice(0, 2).toUpperCase());
@@ -179,6 +184,7 @@ function themeColor() {
     .getPropertyValue('--bg')
     .trim();
 }
+// Switches between the light and dark theme and remembers it.
 export function theme() {
   document.body.classList.toggle('light');
   localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');

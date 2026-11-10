@@ -13,17 +13,19 @@
  * environment a turn's commands get (sandboxEnv). PyPI's pages name their
  * files on files.pythonhosted.org, so they are rewritten to pyfiles.internal;
  * npm does the same for its own tarballs (replace-registry-host). Depends on
- * account.mjs. Leaves out other registries (crates, Go, Maven, RubyGems) and
+ * account.mjs (profile), secrets.mjs (sealing the token) and http.mjs. Leaves out other registries (crates, Go, Maven, RubyGems) and
  * publishing to any of them. */
 import { profile } from '../account.mjs';
 import { seal, unseal } from '../secrets.mjs';
 import { json } from '../http.mjs';
 
+/** The registry names the container reaches, and the site each one forwards to. */
 const REGISTRIES = {
   'npm.internal': 'https://registry.npmjs.org',
   'pypi.internal': 'https://pypi.org',
   'pyfiles.internal': 'https://files.pythonhosted.org',
 };
+/** Every .internal name this module answers for (the gateways intercept these). */
 export const SANDBOX_HOSTS = [...Object.keys(REGISTRIES), 'cf.internal'];
 
 /** The environment of a turn's commands: package managers and wrangler go

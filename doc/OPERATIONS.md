@@ -2,11 +2,11 @@
 
 ## Development and testing
 
-- `npm install`, then `npm test`: ESLint, `prettier --check`, and the unit tests (`node --test test.mjs`, with test-hooks.mjs stubbing cloudflare:workers), which cover the backend, protocols, encryption, rendering, context, streaming usage, publication, and a wrangler bundle build. `npm run fmt` formats with Prettier.
-- `node design-test.cjs` drives the local web/ files in the system Chromium through Playwright (a dev dependency) with mocked API responses. Set CHROMIUM_PATH if Chromium is not /usr/bin/chromium. Screenshots go to /tmp/arno-*.png.
-- `node serve-test.mjs` drives the real `arno --serve` (turn protocol, /load, staged edits, cancel) against `~/r/arno/build/stub`. It runs from `~/.cache`, not /tmp, because arno's jail has a /tmp of its own that would hide the stage.
-- `node offline-test.cjs` serves web/ and mocked /api/ replies from a local server, lets the service worker warm its cache, cuts the network, reloads and checks a conversation, its image and artifact, the usage page, the offline banner and the disabled composer, then goes back online.
-- `node browser-test.cjs` runs the same suite against the files served by the deployed endpoint (`ARNO_TEST_LIVE=1`).
+- `npm install`, then `npm test`: ESLint, `prettier --check`, and the unit tests (`node --import ./test/hooks.mjs --test test/test.mjs`, with test/hooks.mjs stubbing cloudflare:workers), which cover the backend, protocols, encryption, rendering, context, streaming usage, publication, and a wrangler bundle build. `npm run fmt` formats with Prettier.
+- `npm run test:design` drives the local web/ files in the system Chromium through Playwright (a dev dependency) with mocked API responses. Set CHROMIUM_PATH if Chromium is not /usr/bin/chromium. Screenshots go to /tmp/arno-*.png.
+- `npm run test:serve` drives the real `arno --serve` (turn protocol, /load, staged edits, cancel) against `~/r/arno/build/stub`. It runs from `~/.cache`, not /tmp, because arno's jail has a /tmp of its own that would hide the stage.
+- `npm run test:offline` serves web/ and mocked /api/ replies from a local server, lets the service worker warm its cache, cuts the network, reloads and checks a conversation, its image and artifact, the usage page, the offline banner and the disabled composer, then goes back online.
+- `npm run test:live` runs the same suite against the files served by the deployed endpoint (`ARNO_TEST_LIVE=1`).
 
 The design test covers search through page three, the session drawer, Markdown/code/tables, model selection, usage, reviewed publishing, a dropped submission response, theme switching, citations and source previews, the docked code pane, account settings, row-level rename/delete, and horizontal overflow at widths from 360 to 3440 px, including keyboard-height viewports.
 

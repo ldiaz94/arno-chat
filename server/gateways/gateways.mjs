@@ -1,7 +1,17 @@
-/** Outbound gateways for the untrusted container: model and MCP traffic is
- * intercepted and mediated here, with the account's credentials. Reached
- * through ctx.exports, so worker.js re-exports the classes. Git goes through
- * GitGateway (git.mjs). */
+/** Outbound gateways for the untrusted coding container:
+ *
+ *   container → ModelGateway      model requests (model.mjs)
+ *             → McpGateway        the owner's MCP servers, and web research
+ *             → GitGateway        git fetch and push (code/git.mjs)
+ *             → RegistryGateway   npm and PyPI (code/sandbox.mjs)
+ *             → CloudflareGateway Cloudflare's API (code/sandbox.mjs)
+ *
+ * Each adds the account's credentials here, outside the container, which
+ * never sees them. They are reached through ctx.exports, so worker.js
+ * re-exports the classes; ctx.props.task names the session's ArnoProbe,
+ * asked (probe/gateway-routes.mjs) who the owner is. Depends on account.mjs,
+ * providers.mjs, secrets.mjs, models.mjs, chat/plan.mjs and chat/research.mjs.
+ * Leaves out the protocols themselves, which sit in the modules named. */
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { modelRequest } from './model.mjs';
 import { profile, credential, instructions, searchConnection } from '../account.mjs';
@@ -15,6 +25,8 @@ import { gitProxy } from '../code/git.mjs';
 import { mcpBearer } from './mcp-oauth.mjs';
 import { registryProxy, cloudflareProxy, cloudflareToken } from '../code/sandbox.mjs';
 
+/** Model requests from the container, sent on with the owner's key and the
+ * running turn's plan; the turn's limits are checked per request. */
 export class ModelGateway extends WorkerEntrypoint {
   async fetch(request) {
     const task = this.env.PROBE.get(this.env.PROBE.idFromString(this.ctx.props.task));
@@ -91,7 +103,7 @@ export class McpGateway extends WorkerEntrypoint {
     return proxyMcp(request, connection, await mcpBearer(this.env, ownerId, connection));
   }
 }
-/** The container's git fetches and pushes (git.mjs), with the GitHub token
+/** The container's git fetches and pushes (code/git.mjs), with the GitHub token
  * the owner's last request left with the session. */
 export class GitGateway extends WorkerEntrypoint {
   async fetch(request) {

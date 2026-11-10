@@ -5,6 +5,7 @@
  */
 const KEY = 'arno:diagnostics',
   DEVELOPER = 'arno:developer';
+// Whether a flag is set in localStorage; false when storage is unavailable.
 const stored = key => {
   try {
     return !!localStorage.getItem(key);
@@ -12,6 +13,7 @@ const stored = key => {
     return false;
   }
 };
+// Sets or clears a flag in localStorage.
 const store = (key, on) => {
   try {
     if (on) localStorage.setItem(key, '1');
@@ -24,6 +26,7 @@ const store = (key, on) => {
 /** Developer mode shows the debugging tools in the You tab; off, they hide
  * and the overlay goes. Remembered on this device. */
 export const developerOn = () => stored(DEVELOPER);
+// Turns Developer mode on or off; off also hides the overlay.
 export function setDeveloper(on) {
   store(DEVELOPER, on);
   if (!on) diagnostics(false);
@@ -42,6 +45,7 @@ export async function debugReport() {
     'at: ' + new Date().toISOString(),
   ].join('\n');
 }
+// The overlay element and its refresh timer, while shown.
 let box = null,
   timer = null;
 
@@ -63,6 +67,7 @@ function span(selector) {
   return r ? Math.round(r.top) + '→' + Math.round(r.bottom) : '-';
 }
 
+// The measurements the overlay lists, as [name, value] pairs.
 function measure() {
   const v = window.visualViewport,
     units = u => Math.round(probe('height:100' + u).rect.height),
@@ -92,6 +97,7 @@ function measure() {
   ];
 }
 
+// Redraws the overlay.
 function render() {
   if (box)
     box.innerHTML = measure()
@@ -116,6 +122,7 @@ export function diagnostics(on) {
   timer = setInterval(render, 1000);
 }
 
+// Whether the overlay is showing.
 export const diagnosticsOn = () => !!box;
 
 /** Shows the overlay at start when it was left on. */

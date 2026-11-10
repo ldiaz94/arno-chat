@@ -149,7 +149,9 @@ export function requestFields(
  * to leave 8,000 for the answer, within Opus's 32,000). 'off' sends nothing:
  * thinking stays off where the model allows it. Claude 5 hides its thinking
  * unless asked for a summary. */
+/** Thinking-token budgets for the older Claude models, by effort level. */
 const BUDGET = { low: 2048, medium: 8192, high: 24000 };
+/** Claude's request fields for an effort level (see BUDGET above). */
 function claudeThinking(level, id, maxOutput) {
   if (level === 'off') return {};
   const [, major, minor = 0] = id.match(/-(\d)(?:-(\d)(?!\d))?/) || [],
@@ -181,12 +183,17 @@ export const MODEL_ID =
 /** Models whose provider trains on what you send them; the app never offers or
  * runs them. Meta's "-contributor" models are the only ones marked this way. */
 export const TRAINS_ON_DATA = /^meta\/.*-contributor$/;
+/** Splits a model id into its provider and the id that provider knows:
+ * 'gemini/gemini-3.8-flash' gives gemini and 'gemini-3.8-flash'; an id with
+ * no known prefix is Ollama's. */
 export function providerModel(value) {
   const m = String(value).match(MODEL_ID);
   return m ? { provider: m[1], id: m[2] } : { provider: 'ollama', id: value };
 }
 
-/** Fixed provider origins only. The caller never supplies an arbitrary API URL. */
+/** The chat models a key can use at a provider, as {id, name} with prefixed
+ * ids, or throws if the provider rejects the key. Fixed provider origins
+ * only: the caller never supplies an arbitrary API URL. */
 export async function providerModels(provider, key) {
   const p = PROVIDERS[provider];
   if (!p) throw Error('Unsupported provider');

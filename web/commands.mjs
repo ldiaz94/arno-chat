@@ -1,7 +1,7 @@
 /** The slash commands a coding session's composer suggests: arno's own (see
  * arno(1), COMMANDS), less those that would undo what the app set up, and
  * the app's three that set the conversation's options instead (options.js
- * optionCommand). Regular chats have no commands. DOM-free, so test.mjs
+ * optionCommand). Regular chats have no commands. DOM-free, so test/test.mjs
  * checks it; web/complete.js shows it.
  *
  *   [name, argument hint, what it does, where it goes: arno | app]

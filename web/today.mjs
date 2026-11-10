@@ -1,4 +1,4 @@
-/** The home page's arithmetic, with no DOM so test.mjs runs it in Node: the
+/** The home page's arithmetic, with no DOM so test/test.mjs runs it in Node: the
  * greeting's part of the day, the pick of the day from a list, the moon's
  * phase, the WMO weather codes, and the session list's order and "2m ago"
  * times. Depends on nothing.
@@ -25,6 +25,7 @@ export function daily(list, date, skip = 0) {
 
 const SYNODIC = 29.530588853; // days from one new moon to the next, on average
 const NEW_MOON = Date.UTC(2000, 0, 6, 18, 14); // a known new moon (2000-01-06 18:14 UTC)
+// The moon's eight phase names, from new moon round to new moon.
 const PHASES = [
   'New moon',
   'Waxing crescent',

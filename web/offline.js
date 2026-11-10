@@ -70,6 +70,8 @@ export function banner() {
     : 'Sending ' + Math.min(done + 1, total) + ' of ' + total + '…';
 }
 
+// Records that the network is gone or back, updates the banner and, when back, warms the cache
+// and sends the outbox.
 function setOffline(value) {
   if (value === state.offline) return;
   state.offline = value;
@@ -163,6 +165,8 @@ async function prune(rows) {
   }
 }
 
+// Fetches every conversation (and its images, up to WARM_BYTES) so the service worker keeps a
+// copy. `force` skips the first-visit reads.
 async function warmAll(rows, force) {
   if (!(await controlled())) return;
   // On a first visit the page loaded before the worker took over, so its own

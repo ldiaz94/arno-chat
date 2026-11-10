@@ -21,6 +21,7 @@ const FALLBACK = 'mistral-large-4:cloud'; // when nothing else names a model
 /** The model a new chat or coding session starts with: the one picked on the
  * home page, else the profile's default model. */
 export const startModel = () => state.selectedModel || state.profile.defaultModel || FALLBACK;
+// Loads the model catalog from the server into state.models.
 export async function loadModels() {
   try {
     const d = await api('/api/models');
@@ -31,10 +32,12 @@ export async function loadModels() {
     state.models = [{ id: FALLBACK, name: 'Mistral Large 4 · Le Chonk' }];
   }
 }
+// Shows the open conversation's model (or the one a new one would use) on the model button.
 export function modelButton() {
   const id = state.session?.model || startModel();
   $('#model-button').innerHTML = modelLabel(id) + '<span aria-hidden="true">⌄</span>';
 }
+// Opens the model picker for a target: a session id, or 'new' for the next new conversation.
 export function openModels(target) {
   if (state.busy) return;
   state.modelTarget = target;
@@ -43,6 +46,7 @@ export function openModels(target) {
   $('#model-dialog').showModal();
   $('#model-search').focus();
 }
+// Lists the models that match the picker's search box.
 export function renderModels() {
   const q = $('#model-search').value.toLowerCase(),
     current = state.session?.model || startModel();
@@ -66,6 +70,7 @@ export function renderModels() {
       )
       .join('') || '<p class="empty">No matching models.</p>';
 }
+// Applies a picked model to the picker's target; offline it does nothing.
 export async function chooseModel(id) {
   $('#model-dialog').close();
   if (state.offline) return toast('Reconnect to send');

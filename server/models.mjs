@@ -1,11 +1,19 @@
+/** Which models the app offers: the Ollama catalogue with a fallback list, and
+ * per-model facts (context window, images, thinking effort). Depends on
+ * providers.mjs (model ids and capabilities) and prices.mjs (other providers'
+ * context windows). Leaves out prices themselves. */
 import { MODEL_ID, TRAINS_ON_DATA, providerModel, effortModel } from './providers.mjs';
 import { prices, priceKey } from './prices.mjs';
+/** The model new chats start with. */
 export const DEFAULT_MODEL = 'mistral-large-4:cloud';
+/** Offered when Ollama's catalogue can't be read. */
 export const FALLBACK_MODELS = [
   { id: DEFAULT_MODEL, name: 'Mistral Large 4 · Le Chonk' },
   { id: 'devstral-2:123b-cloud', name: 'Devstral 2 · 123B' },
   { id: 'qwen3-coder:480b-cloud', name: 'Qwen3 Coder · 480B' },
 ];
+/** Ollama's model list, filtered to chat models that call tools, cached for
+ * five minutes; falls back to FALLBACK_MODELS on any failure. */
 export async function catalog(upstream = fetch) {
   try {
     const response = await upstream('https://ollama.com/api/tags', {
@@ -29,6 +37,8 @@ export async function catalog(upstream = fetch) {
     return { models: FALLBACK_MODELS, source: 'fallback', fallback: true };
   }
 }
+/** Whether a chat may use this model: never one that trains on data; any
+ * well-formed provider model id; otherwise one the Ollama catalogue lists. */
 export async function modelAllowed(model) {
   if (TRAINS_ON_DATA.test(model)) return false;
   if (MODEL_ID.test(model)) return true;
@@ -37,6 +47,7 @@ export async function modelAllowed(model) {
   );
 }
 
+/** Cache of ollamaShow results by model id. */
 const shown = new Map();
 /** Ollama's public /api/show for a model, {window, vision, thinking},
  * remembered per isolate; null when it can't be read. */

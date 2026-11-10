@@ -23,6 +23,7 @@ function cells(line) {
   if (line.trim().endsWith('|') && !line.trim().endsWith('\\|')) row.pop();
   return row;
 }
+// A Markdown table's delimiter row, such as |---|:--:|.
 const Separator = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 // RFC 4180: quote a cell holding a comma, quote or line break; double its quotes.
 const csvCell = c => (/[",\r\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c);
@@ -46,11 +47,13 @@ function download(name, text, type) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+// A file-name-safe form of a title.
 const slug = t =>
   (t || 'artifact')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '') || 'artifact';
+// A timestamp as the reader's local date and time.
 const when = ms => new Date(ms).toLocaleString();
 let shown = null; // {title, content} of the version on screen
 

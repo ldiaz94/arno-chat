@@ -1,9 +1,14 @@
 /** Export only regular UTF-8 worktree files. Credentials never enter this code:
  * it executes inside the untrusted container, and the host validates the result.
  * Publishing creates a new branch from the pinned GitHub source commit.
+ * Depends on auth.mjs (the GitHub API call). Used by code-routes.mjs and
+ * turn.mjs. Leaves out merging, force pushes and binary files.
  */
 import { github } from '../auth.mjs';
 
+/** Node script run in the container: prints, as JSON, every file changed since
+ * the pinned source commit (tracked or new; at most 50 files, 1 MB of text) with
+ * its content and mode, or {deleted: true}. */
 export const EXPORT_FILES = String.raw`
 const fs=require('fs'),cp=require('child_process'),path=require('path'),root='/workspace/repo';
 const git=args=>{try{return cp.execFileSync('git',args,{cwd:root,encoding:'utf8'}).trim()}catch{return ''}};
@@ -23,7 +28,8 @@ let size=0;const files=names.map(name=>{
 `;
 /** Host-side validation is necessary even though the export script is fixed:
  * repository code can change the runtime and all files inside its container.
- */
+ * Returns files if they are 1 to 50 safe, unique paths of at most 1 MB of text;
+ * throws otherwise. */
 export function validateFiles(files) {
   if (!Array.isArray(files) || files.length > 50 || !files.length)
     throw Error('No changes to publish');

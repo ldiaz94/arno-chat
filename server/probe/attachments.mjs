@@ -7,13 +7,19 @@
  *
  * An image goes to the model as an image; a text file is inlined as text.
  * Left out: PDFs and other binary documents, and resending earlier turns'
- * images (later turns see "[attached: name]").
+ * images (later turns see "[attached: name]"). Depends on no other app module.
  */
+/** One mebibyte. */
 const MB = 1024 * 1024;
+/** Size of one stored piece of a file. */
 const CHUNK = MB;
+/** Largest image, text file, total per session (bytes) and files per message. */
 export const LIMITS = { image: 5 * MB, text: MB, session: 100 * MB, perMessage: 8 };
+/** Image types models accept. */
 const IMAGE = /^image\/(png|jpeg|webp|gif)$/;
+/** Media types treated as text. */
 const TEXT_TYPE = /^(text\/|application\/(json|xml|yaml|x-yaml|toml|javascript|x-sh|sql))/;
+/** File extensions treated as text when the media type is vague. */
 const TEXT_NAME =
   /\.(txt|md|markdown|csv|tsv|json|jsonl|xml|ya?ml|toml|ini|cfg|conf|log|html?|css|js|mjs|cjs|ts|tsx|jsx|py|rb|go|rs|java|kt|c|h|cc|cpp|hpp|cs|swift|php|sh|bash|zsh|sql|r|lua|pl|ex|exs|hs|ml|scala|clj|raz|cn|pas|diff|patch)$/i;
 

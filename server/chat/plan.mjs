@@ -1,7 +1,9 @@
 /** What a turn's composer options (web/options.mjs) change on the host: web
  * tools, thinking effort, extra instructions, output and research budgets,
- * model rounds and the time limit. Chat (session.mjs plainTurn) and coding
- * (session-routes.mjs, the model gateway, writeConfig) read the same plan.
+ * model rounds and the time limit. Chat (turn.mjs plainTurn) and coding
+ * (code/turn.mjs, code/workspace.mjs writeConfig, and the model gateway in
+ * gateways/gateways.mjs) read the same plan. Depends on providers.mjs and the
+ * option defaults in web/options.mjs. Leaves out the options' storage.
  *
  *   mode      effort          search   output   rounds  searches/reads  time
  *   standard  as chosen       chosen   16,384   8       3 / 6           4 min
@@ -11,15 +13,19 @@
 import { MAX_OUTPUT } from '../providers.mjs';
 import { DEFAULTS } from '../../web/options.mjs';
 
+/** Extra instructions for each answer style the composer offers. */
 const STYLE = {
   normal: '',
   concise: 'Be brief: answer in as few words as the question needs, without preamble or recap.',
   caveman:
     'Answer in caveman speak: few words, no articles, no filler, short sentences. Example: "Me check. Bug in loop. Fix: change < to <=." Keep facts, names, numbers and code exactly right; code blocks stay normal, correct code.',
 };
+/** The instruction added in fast mode. */
 const FAST = 'Answer briefly and directly.';
+/** The instruction added in deep mode: how to research and report. */
 export const DEEP_RESEARCH =
   'Deep research: plan the sub-questions first, then search broadly (several queries), read primary sources, and compare them. Write a structured report (summary, findings by sub-question, disagreements and open questions, numbered citations [1], [2] to the sources you read) and save it with create_artifact, titled "Research: <topic>". Then reply in chat with a short summary and the artifact link.';
+/** Thinking efforts from least to most, to compare them by position. */
 const RANK = ['off', 'low', 'medium', 'high'];
 
 /** Arno's settings for a coding turn's options, as config lines: its mode,

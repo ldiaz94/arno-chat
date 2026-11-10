@@ -6,6 +6,8 @@ import { diffHtml } from './render.mjs';
 import { highlight, detect } from './highlight.mjs';
 import { $, state, esc, icon, num, api, toast, copy } from './core.js';
 import { ago } from './today.mjs';
+// Opens the code dialog (docked beside the thread on wide screens) on a tab: files, diff or
+// history.
 export function openCode(tab = 'files') {
   if (!state.session || state.session.kind === 'chat')
     return toast('Open a repository to browse its code');
@@ -61,6 +63,7 @@ function refTags(refs) {
     )
     .join('');
 }
+// One commit of the history list, as a button.
 function commitRow(c) {
   return (
     '<li><button type="button" class="commit-row" data-commit="' +
@@ -113,6 +116,7 @@ export async function showCommit(sha) {
     $('#code-body').innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
   }
 }
+// Shows a folder or file of the checkout in the dialog. An empty path is the top folder.
 export async function browse(path) {
   if (!state.session) return;
   const id = state.session.id;

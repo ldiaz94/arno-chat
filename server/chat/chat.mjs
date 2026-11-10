@@ -1,3 +1,14 @@
+/** A regular chat's model loop, run on the Worker with no container:
+ *
+ *   history + prompt → request → stream (readReply) → tool calls?
+ *        ↑                                               yes: runTool, add results
+ *        └───────────────────────────────────────────────┘  no: the answer
+ *
+ * One streaming request per round, in the provider's own dialect (Anthropic,
+ * or the OpenAI-style one the others speak), for at most `rounds` rounds.
+ * Depends on research.mjs (default tools), gateways/model.mjs (stream
+ * decoding), prices.mjs, providers.mjs and probe/attachments.mjs. The tools
+ * themselves are chosen by turn.mjs. Leaves out saving the turn. */
 import { WEB_TOOLS } from './research.mjs';
 import { displayDelta, mistralDeltas } from '../gateways/model.mjs';
 import { tokens } from '../prices.mjs';
@@ -107,7 +118,9 @@ async function readReply(body, onProgress) {
 /** Plain chat is a host-side bounded tool loop, never a coding VM. The same
  * provider adapter supports Ollama/OpenAI function calls and Anthropic tools.
  * The last of its `rounds` model requests offers no tools; `effort` and
- * `maxOutput` come from the turn's plan (plan.mjs). */
+ * `maxOutput` come from the turn's plan (plan.mjs). runTool(name, args) runs
+ * one tool call; onRound and onProgress report the turn as it goes; upstream
+ * stands in for fetch in tests. Returns the answer, usage and request log. */
 export async function plainChat({
   model,
   rounds = 8,

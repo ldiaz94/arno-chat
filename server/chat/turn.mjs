@@ -1,6 +1,8 @@
-/** A regular chat's turn, part of ArnoProbe (probe.mjs): the tool loop of
- * chat.mjs with web research, artifacts and the owner's MCP tools for chats,
- * and the wait for the owner's Allow before an MCP action. No container. */
+/** A regular chat's turn, part of ArnoProbe (probe/probe.mjs): the tool loop
+ * of chat.mjs with web research (research.mjs), artifacts (probe/artifacts.mjs)
+ * and the owner's MCP tools for chats (chat-mcp.mjs), and the wait for the
+ * owner's Allow before an MCP action. The turn's budgets come from plan.mjs.
+ * There is no container. Leaves out coding turns (code/turn.mjs). */
 import { json } from '../http.mjs';
 import { plainChat } from './chat.mjs';
 import { modelInput } from '../probe/attachments.mjs';
@@ -12,6 +14,7 @@ import { turnPlan } from './plan.mjs';
 import { effortSupported } from '../models.mjs';
 import { ARTIFACT_INSTRUCTIONS, ARTIFACT_TOOLS, artifactTool } from '../probe/artifacts.mjs';
 
+/** The chat turn's methods, mixed into ArnoProbe (probe.mjs). */
 export const chatTurn = {
   /** Asks the owner to allow an MCP action in a chat, and waits up to three
    * minutes for Allow or Deny (POST /session/approve); the turn's clock stops

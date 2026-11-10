@@ -8,8 +8,11 @@ import { $, state, esc, num, duration, money, api } from './core.js';
 import { openSources } from './thread.js';
 import { attachmentsHtml } from './attach.js';
 
+// A Markdown image, ![alt](url), capturing the alt text and the address.
 const MarkdownImage = /!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g;
+// A bare http(s) address in text.
 const BareLink = /https?:\/\/[^\s<>()[\]"'`]+/g;
+// A path or address that ends like an image file.
 const ImagePath = /\.(png|jpe?g|gif|webp|svg|avif|bmp)$/i;
 
 // Session totals, or a minimal stand-in for sessions saved before stats existed.
@@ -27,6 +30,7 @@ function sessionStats() {
 }
 // Sections folded until opened, unless this device remembers otherwise.
 const Folded = ['Sources', 'Links shared', 'Images', 'Attachments', 'Repository identity'];
+// The sections that are folded, as remembered on this device.
 function folded() {
   try {
     return JSON.parse(localStorage.getItem('info:folded')) || Folded;
@@ -62,6 +66,7 @@ function remember(e) {
     localStorage.setItem('info:folded', JSON.stringify([...set]));
   } catch {}
 }
+// A link's host name without "www.", or the text itself when it is not an address.
 function domain(url) {
   try {
     return new URL(url).hostname.replace(/^www\./, '');
@@ -79,6 +84,7 @@ function shortUrl(url) {
     return url.slice(0, 60);
   }
 }
+// A link that opens in a new tab.
 function link(url, inner) {
   return '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer">' + inner + '</a>';
 }
@@ -126,6 +132,8 @@ const COST_PARTS = [
   ['search', 'Web searches'],
   ['reads', 'Page reads'],
 ];
+// The cost split by part (input, output, searches, reads), for the session and the last turn,
+// as a table.
 function costBreakdown(stats, last) {
   const session = stats.costParts,
     turn = last?.usage?.costParts;
@@ -148,6 +156,7 @@ function costBreakdown(stats, last) {
     '</tbody></table></div>'
   );
 }
+// The Usage section: tokens, time and cost of the session and of the last turn.
 function usageSection(history) {
   const stats = sessionStats(),
     last = history.at(-1);
@@ -196,6 +205,7 @@ function allSources(history) {
     if (s?.url && !seen.has(s.url)) seen.set(s.url, { ...s, id: seen.size + 1 });
   return [...seen.values()];
 }
+// The Sources section: the pages the model read, each opening the source preview.
 function sourcesSection(sources) {
   return section(
     'Sources',
@@ -216,6 +226,7 @@ function sourcesSection(sources) {
     sources.length,
   );
 }
+// The Shared links section: addresses and images found in the messages, less the sources.
 function linksSection(history, sources) {
   const skip = new Set(sources.map(s => s.url)),
     links = new Set();
@@ -301,6 +312,7 @@ async function loadArtifacts(sessionId) {
     // The panel works without it.
   }
 }
+// The repository's name, branch and revision; nothing for a chat.
 function repositorySection(s) {
   return s && s.kind !== 'chat'
     ? section(
@@ -315,6 +327,7 @@ function repositorySection(s) {
       )
     : '';
 }
+// Opens the Conversation details dialog.
 export function openInfo() {
   const s = state.session,
     history = s?.history || [],
