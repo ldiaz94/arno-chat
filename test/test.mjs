@@ -2506,19 +2506,19 @@ test('search off drops web tools and instructions; deep research budgets reach r
   } finally {
     globalThis.fetch = real;
   }
-  // The deep plan's budget lets research go past the standard three searches.
-  const counts = { searches: 3 },
+  // The deep plan's budget lets research go past the standard six searches.
+  const counts = { searches: 6 },
     upstream = async () => Response.json({ results: [] });
   await assert.rejects(
     research('web_search', { query: 'q' }, { key: 'k', sources: [], counts, upstream }),
-    /limit of 3 searches/,
+    /limit of 6 searches/,
   );
   await research(
     'web_search',
     { query: 'q' },
     { key: 'k', sources: [], counts, upstream, limits: turnPlan({ mode: 'deep' }).limits },
   );
-  assert.equal(counts.searches, 4);
+  assert.equal(counts.searches, 7);
 });
 test('coding: search off leaves the web MCP server out of the runner config', async () => {
   const configFor = async plan => {
@@ -2926,4 +2926,28 @@ test('coding artifacts: arno’s files become artifacts once, a change a new ver
     ['The plan v2'],
   );
   await fs.rm(root, { recursive: true });
+});
+test('a turn out of model calls asks for the answer, else keeps what was said; super search widens it', async () => {
+  // Each round: a sentence and a search; the last (no tools) gives nothing.
+  const talk = text => sse([delta({ content: text }), ...callDeltas('c'), delta({}, {})]);
+  const bodies = [],
+    replies = [talk('Found the phases.'), talk('Checking the distance.'), sse([delta({})])];
+  const r = await plainChat({
+    model: 'm1',
+    provider: 'deepseek',
+    key: 'k',
+    rounds: 3,
+    history: [],
+    prompt: 'moon',
+    runTool: async () => ({ sources: [] }),
+    upstream: async (url, init) => (bodies.push(JSON.parse(init.body)), replies.shift()),
+  });
+  assert.equal(bodies[2].tools, undefined, 'the last request offers no tools');
+  assert.match(bodies[2].messages.at(-1).content, /no tool calls left/);
+  assert.match(r.summary, /^Checking the distance\.\n\n\*Stopped at this turn’s research limit/);
+  const plan = turnPlan({ superSearch: true, search: false });
+  assert.equal(plan.search, true);
+  assert.equal(plan.rounds, 32);
+  assert.equal(plan.limits.searches, 25);
+  assert.equal(checkOptions({ superSearch: true }, 'code').superSearch, false);
 });

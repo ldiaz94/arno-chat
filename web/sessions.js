@@ -55,59 +55,7 @@ export async function resume(id) {
     // A chat made offline lives only in the outbox until the server makes it.
     const s = isLocal(id) ? localChat(id) : await api('/api/sessions/' + id);
     if (!s) throw Error('This conversation is no longer on this device.');
-    if (gen !== state.generation) return;
-    state.session = { id, ...s };
-    state.job = null;
-    state.busy = false;
-    setMode(modeOf(s));
-    clearAttachments();
-    sidebar();
-    $('.composer-hint').textContent = composerHint(s);
-    prompt.placeholder =
-      s.kind === 'chat' ? 'Message Arno…' : 'Ask Arno to build, fix, or explain…';
-    title(
-      s.title || s.repo,
-      s.kind === 'chat'
-        ? 'Private chat · No repository required'
-        : (s.ref || 'main') +
-            ' · ' +
-            (s.sourceSha ? s.sourceSha.slice(0, 7) + ' · ' : '') +
-            'GitHub workspace',
-    );
-    main.innerHTML = '<div class="thread"><div id="thread"></div></div>';
-    if (!s.history?.length) $('#thread').innerHTML = suggestions();
-    else
-      for (const t of s.history) {
-        message('You', t.prompt, { at: t.at, attachments: t.attachments });
-        if (t.failed) failure(t.prompt, t.error, t.at, t.attachments);
-        else message('Arno', t.summary, t);
-      }
-    showQueued();
-    const refused = isLocal(id) && chatFailure(id);
-    if (refused) {
-      const card = document.createElement('div');
-      card.className = 'failure';
-      card.setAttribute('role', 'alert');
-      card.innerHTML =
-        '<p>This chat was made offline and the server refused to create it: ' +
-        esc(refused) +
-        '</p><div class="failure-actions"><button type="button" data-chat-delete>Delete</button><button type="button" class="primary" data-chat-retry>Retry</button></div>';
-      card.querySelector('[data-chat-retry]').onclick = async () => {
-        await retryChat(id);
-        card.remove();
-        sidebar();
-      };
-      card.querySelector('[data-chat-delete]').onclick = () => deleteConversation(id);
-      $('#thread').prepend(card);
-    }
-    composer.hidden = false;
-    modelButton();
-    renderOptions();
-    busy(false);
-    prompt.value = sessionStorage.getItem('draft:' + id) || '';
-    resizePrompt();
-    scrollDown(true);
-    if (!isLocal(id)) watchJob(id, gen);
+    if (gen === state.generation) show({ id, ...s }, gen);
   } catch (e) {
     main.innerHTML =
       '<div class="empty"><h2>Couldn’t open this session</h2><p>' +
@@ -115,6 +63,61 @@ export async function resume(id) {
       '</p><button id="retry-open">Try again</button></div>';
     $('#retry-open').onclick = () => resume(id);
   }
+}
+// Draws a conversation as the open one: its thread, title and composer.
+function show(s, gen) {
+  const id = s.id;
+  state.session = s;
+  state.job = null;
+  state.busy = false;
+  setMode(modeOf(s));
+  clearAttachments();
+  sidebar();
+  $('.composer-hint').textContent = composerHint(s);
+  prompt.placeholder = s.kind === 'chat' ? 'Message Arno…' : 'Ask Arno to build, fix, or explain…';
+  title(
+    s.title || s.repo,
+    s.kind === 'chat'
+      ? 'Private chat · No repository required'
+      : (s.ref || 'main') +
+          ' · ' +
+          (s.sourceSha ? s.sourceSha.slice(0, 7) + ' · ' : '') +
+          'GitHub workspace',
+  );
+  main.innerHTML = '<div class="thread"><div id="thread"></div></div>';
+  if (!s.history?.length) $('#thread').innerHTML = suggestions();
+  else
+    for (const t of s.history) {
+      message('You', t.prompt, { at: t.at, attachments: t.attachments });
+      if (t.failed) failure(t.prompt, t.error, t.at, t.attachments);
+      else message('Arno', t.summary, t);
+    }
+  showQueued();
+  const refused = isLocal(id) && chatFailure(id);
+  if (refused) {
+    const card = document.createElement('div');
+    card.className = 'failure';
+    card.setAttribute('role', 'alert');
+    card.innerHTML =
+      '<p>This chat was made offline and the server refused to create it: ' +
+      esc(refused) +
+      '</p><div class="failure-actions"><button type="button" data-chat-delete>Delete</button><button type="button" class="primary" data-chat-retry>Retry</button></div>';
+    card.querySelector('[data-chat-retry]').onclick = async () => {
+      await retryChat(id);
+      card.remove();
+      sidebar();
+    };
+    card.querySelector('[data-chat-delete]').onclick = () => deleteConversation(id);
+    $('#thread').prepend(card);
+  }
+  composer.hidden = false;
+  modelButton();
+  renderOptions();
+  busy(false);
+  prompt.value = (id && sessionStorage.getItem('draft:' + id)) || '';
+  resizePrompt();
+  scrollDown(true);
+  if (id && !isLocal(id)) watchJob(id, gen);
 }
 // The hint under the composer for a kind of session.
 const composerHint = s =>
@@ -138,26 +141,52 @@ export async function switchMode(mode) {
   await home();
   if (open) drawer(true);
 }
-/** Starts a chat with the default model; with `text`, sends it as the first message. */
-export async function newChat(text) {
-  const model = startModel();
+/** Opens a new chat with the default model; with `text`, sends it as the first
+ * message. The chat is a draft, on no server or list, until `persist` makes it. */
+export function newChat(text) {
+  $('#code-dialog').close();
+  state.search++;
+  drawer(false);
+  show(
+    { id: null, draft: true, kind: 'chat', title: 'New chat', model: startModel(), history: [] },
+    ++state.generation,
+  );
+  if (text) {
+    prompt.value = text;
+    $('#composer').requestSubmit();
+  }
+}
+/** Makes the open draft chat a real one the first time it needs to be: its
+ * first message or file. Offline it waits in the outbox. Returns false when
+ * it could not, or when the chat was left meanwhile. */
+export function persist() {
+  const draft = state.session;
+  if (!draft?.draft) return true;
+  // Several files dropped at once make one chat.
+  return (draft.making ||= make(draft));
+}
+// Creates a draft chat on the server, or in the outbox, and opens it in place.
+async function make(draft) {
+  busy(true);
   try {
     let s;
     try {
       if (state.offline) throw unreachable();
-      s = await api('/api/chats', { method: 'POST', body: JSON.stringify({ model }) });
+      s = await api('/api/chats', { method: 'POST', body: JSON.stringify({ model: draft.model }) });
     } catch (e) {
       if (!e.network) throw e;
-      s = await queueChat(model); // made on the server once back online
+      s = await queueChat(draft.model); // made on the server once back online
     }
     state.sessions.unshift(s);
-    await resume(s.id);
-    if (text && state.session?.id === s.id) {
-      prompt.value = text;
-      $('#composer').requestSubmit();
-    }
+    if (state.session !== draft) return false;
+    state.session = { ...s, id: s.id };
+    sidebar();
+    return true;
   } catch (e) {
     showError(e);
+    return false;
+  } finally {
+    busy(false);
   }
 }
 /** On the Code home: a note when private repositories can't be reached, saying

@@ -154,7 +154,8 @@ export const records = {
   },
   /** Keep a failed or stopped turn in the transcript so it survives a reload
    * and can be retried. It never enters model context (see history). */
-  async recordFailure(job, error) {
+  async recordFailure(job, error, cause) {
+    await this.logFailure(job, error, cause);
     await this.dropReplaced(job);
     const at = Date.now();
     await this.ctx.storage.put('turn:' + String(at).padStart(16, '0') + ':' + crypto.randomUUID(), {
@@ -165,6 +166,25 @@ export const records = {
       at,
     });
     await this.trimTurns();
+  },
+  /** Logs a failed turn with what it ran on, to find it in the Worker's logs:
+   * the session and its kind, the model (provider/name), the options, how long
+   * it ran, the error shown and, when one was thrown, its cause. */
+  async logFailure(job, error, cause) {
+    const s = (await this.ctx.storage.get('session')) || {};
+    console.error(
+      JSON.stringify({
+        event: 'turn_failed',
+        session: s.id,
+        kind: s.kind || 'code',
+        model: s.model,
+        repo: s.repo,
+        options: job.options,
+        ms: job.createdAt ? Date.now() - job.createdAt : null,
+        error: String(error),
+        ...(cause ? { cause: String(cause) } : {}),
+      }),
+    );
   },
   /** A retry names the failed turn it replaces (job.replaces, that turn's at);
    * the failed record goes once the retry's own outcome is saved. */

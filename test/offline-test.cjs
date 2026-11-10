@@ -286,12 +286,14 @@ function serve(port) {
     await page.click('[data-session-menu="' + one + '"]');
     await page.click('#list-rename');
     await page.waitForSelector('[data-session="' + one + '"] >> text=Renamed offline');
+    // A new chat is listed, and waits in the outbox, once it has a message.
     await page.click('#new-chat');
-    await page.waitForSelector('.session-item.active >> text=Queued');
     await page.waitForSelector('#thread .starter');
+    assert.equal(await page.locator('.session-item.active').count(), 0);
     await page.fill('#prompt', 'Hello from a new chat');
     await page.click('#send');
     await page.waitForSelector('.turn.queued');
+    await page.waitForSelector('.session-item.active >> text=Queued');
     assert.match(await banner(), /Offline · 4 waiting to send/);
     // They survive a reload: the new chat opens again with its message waiting.
     // The app opens on its home page; the offline chat is in the list.

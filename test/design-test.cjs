@@ -866,9 +866,10 @@ const { chromium } = require('playwright'),
     assert.equal(chatModel, null, 'Enter must not start a chat');
     await page.getByRole('button', { name: 'New chat', exact: false }).click();
     await page.getByRole('heading', { name: 'A little space to think.' }).waitFor();
-    assert.equal(chatModel, 'kimi-k3.1-pro');
-    // The new chat has no activity yet: the older chat stays first until a turn ends.
-    assert.deepEqual(await listed(), [oldChat, '22222222-2222-2222-2222-222222222222']);
+    // The new chat is a draft: nothing is made, or listed, until it gets content.
+    assert.equal(chatModel, null, 'New chat makes nothing yet');
+    assert.deepEqual(await listed(), [oldChat]);
+    submitted = null; // a message sent earlier, in the older chat
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByLabel('Message', { exact: true }).fill('Tell me something interesting');
     await page.getByLabel('Message', { exact: true }).press('Enter');
@@ -883,6 +884,11 @@ const { chromium } = require('playwright'),
     await page.locator('#attach-chips .attach-chip:not(.uploading) .attach-name').waitFor();
     assert.equal(await page.locator('#attach-chips .attach-name').innerText(), 'dot.png');
     assert.equal(uploadHeaders['x-filename'], 'dot.png');
+    assert.equal(
+      chatModel,
+      'kimi-k3.1-pro',
+      'Its first file makes the chat, with the model picked',
+    );
     // Options: the popover fits the phone, picks go to chips, Escape closes it.
     const panel = page.locator('#options-panel'),
       pick = text => panel.locator('label', { hasText: text }).click();
@@ -906,6 +912,7 @@ const { chromium } = require('playwright'),
       mode: 'deep',
       style: 'caveman',
       mcp: true,
+      superSearch: false,
       approach: 'auto',
       workers: '4',
       budget: 'auto',

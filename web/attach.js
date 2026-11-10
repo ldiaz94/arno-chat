@@ -1,11 +1,12 @@
 /** Composer attachments: files and images are uploaded to the open session as soon as they
  * are picked, pasted or dropped, shown as chips above the prompt, and sent by id with the
  * message. Offline (or in a chat made offline) a picked file stays on the device, kept by
- * the outbox until it can be uploaded. Also renders attachments of saved messages.
- * Depends on core and queue.mjs.
+ * the outbox until it can be uploaded. A file picked in a new chat first makes the chat.
+ * Also renders attachments of saved messages. Depends on core, sessions and queue.mjs.
  */
 import { $, state, esc, icon, toast, showError, unreachable } from './core.js';
 import { isLocal } from './queue.mjs';
+import { persist } from './sessions.js';
 
 // Most files that may be attached to one message.
 const MaxFiles = 8;
@@ -115,6 +116,7 @@ export async function uploadFile(sid, file) {
 // Uploads one picked file to the open session (or keeps it for the outbox when offline) and
 // shows its chip.
 async function upload(file) {
+  if (!(await persist())) return;
   const sid = state.session.id,
     kind = file.type.startsWith('image/') ? 'image' : 'text',
     chip = {

@@ -72,14 +72,18 @@ function choose(key, value) {
   const o = { ...messageOptions(), [key]: value };
   if (key === 'mode') {
     const was = messageOptions().mode;
-    if (value === 'fast') Object.assign(o, { effort: 'off', search: false });
+    if (value === 'fast') Object.assign(o, { effort: 'off', search: false, superSearch: false });
     else if (was === 'fast') {
       if (o.effort === 'off') o.effort = 'auto';
       o.search = true;
     }
     if (value === 'deep') o.search = true;
   }
-  if (key === 'search' && !value && o.mode === 'deep') o.mode = 'standard';
+  if (key === 'search' && !value) {
+    if (o.mode === 'deep') o.mode = 'standard';
+    o.superSearch = false;
+  }
+  if (key === 'superSearch' && value) o.search = true;
   save(o);
 }
 
@@ -133,6 +137,7 @@ export function render() {
     o.effort !== 'auto' && ['effort', 'Thinking: ' + o.effort],
     !o.search && ['search', 'No search'],
     chat && !o.mcp && ['mcp', 'No MCP tools'],
+    chat && o.superSearch && ['superSearch', 'Super search'],
     ...(chat
       ? []
       : [
@@ -162,6 +167,7 @@ export function render() {
   button.title = chips.length ? 'Options: ' + optionTags(o).join(', ') : 'Message options';
   $('#opt-search').checked = o.search;
   $('#opt-mcp').checked = o.mcp;
+  $('#opt-super').checked = o.superSearch;
   for (const name of ['mode', 'effort', 'style', 'approach', 'workers', 'budget'])
     for (const input of panel.querySelectorAll('input[name="' + name + '"]'))
       input.checked = input.value === o[name];
@@ -202,6 +208,7 @@ panel.onchange = e => {
   const t = e.target;
   if (t.id === 'opt-search') choose('search', t.checked);
   else if (t.id === 'opt-mcp') choose('mcp', t.checked);
+  else if (t.id === 'opt-super') choose('superSearch', t.checked);
   else if (t.name) choose(t.name, t.value);
 };
 $('#option-chips').onclick = e => {

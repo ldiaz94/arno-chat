@@ -117,13 +117,15 @@ async function readReply(body, onProgress) {
 
 /** Plain chat is a host-side bounded tool loop, never a coding VM. The same
  * provider adapter supports Ollama/OpenAI function calls and Anthropic tools.
- * The last of its `rounds` model requests offers no tools; `effort` and
+ * The last of its `rounds` model requests offers no tools and asks for the
+ * answer; if none comes, the latest text said is the answer, marked as cut
+ * short. `effort` and
  * `maxOutput` come from the turn's plan (plan.mjs). runTool(name, args) runs
  * one tool call; onRound and onProgress report the turn as it goes; upstream
  * stands in for fetch in tests. Returns the answer, usage and request log. */
 export async function plainChat({
   model,
-  rounds = 8,
+  rounds = 12,
   effort = 'auto',
   maxOutput,
   history,
@@ -205,8 +207,24 @@ export async function plainChat({
     const config = fields.extra_body?.google?.thinking_config || {};
     fields.extra_body = { google: { thinking_config: { ...config, include_thoughts: true } } };
   }
+  // The answer, with the turn's usage: on a cut-short turn, what was said last.
+  const answer = (summary, reasoning) => ({
+    exitCode: 0,
+    model,
+    summary,
+    reasoning,
+    diff: '',
+    requestLog,
+    usage: {
+      ...total,
+      inputTokens: total.measuredCalls ? total.inputTokens : null,
+      outputTokens: total.measuredCalls ? total.outputTokens : null,
+    },
+  });
+  let said = ''; // the latest text the model wrote beside its tool calls
   for (let round = 0; round < rounds; round++) {
     await onRound();
+    if (runTool && round && round === rounds - 1) nudge(messages, provider);
     const tools =
       runTool && round < rounds - 1
         ? provider === 'anthropic'
@@ -261,22 +279,28 @@ export async function plainChat({
       total.lastInputTokens = t.input + t.cached + t.write;
       requestLog.push({ at: Date.now(), ...t });
     }
-    if (!reply.calls.length) {
-      if (!reply.summary.trim())
-        throw Error('The model returned no text. Try another model or a shorter request.');
-      return {
-        exitCode: 0,
-        model,
-        summary: reply.summary.trim(),
-        reasoning: reply.reasoning,
-        diff: '',
-        requestLog,
-        usage: {
-          ...total,
-          inputTokens: total.measuredCalls ? total.inputTokens : null,
-          outputTokens: total.measuredCalls ? total.outputTokens : null,
-        },
-      };
+    if (reply.summary.trim() && reply.calls.length) said = reply.summary.trim();
+    if (!reply.calls.length || round === rounds - 1) {
+      if (!reply.calls.length && reply.summary.trim())
+        return answer(reply.summary.trim(), reply.reasoning);
+      if (said) return answer(said + CUT_SHORT, reply.reasoning);
+      console.log(
+        JSON.stringify({
+          event: 'empty_reply',
+          provider,
+          model,
+          round: round + 1,
+          rounds,
+          calls: reply.calls.length,
+          reasoning: reply.reasoning?.length || 0,
+          output: reply.usage ? tokens(reply.usage).output : null,
+        }),
+      );
+      throw Error(
+        round === rounds - 1
+          ? 'Research ran out of model calls before an answer. Try Super search, or narrow the question.'
+          : 'The model returned no text. Try another model or a shorter request.',
+      );
     }
     if (!runTool) throw Error('This response requested unavailable tools');
     const parsed = reply.calls.map(c => {
@@ -327,5 +351,18 @@ export async function plainChat({
       for (const r of results)
         messages.push({ role: 'tool', tool_call_id: r.id, content: r.result });
   }
-  throw Error('Research reached its model-call limit. Narrow the question and try again.');
+}
+/** Added to a turn's answer when its model calls ran out before it finished. */
+const CUT_SHORT =
+  '\n\n*Stopped at this turn’s research limit, so this may be incomplete. Super search allows more.*';
+/** Before the last model request (which offers no tools): asks for the answer
+ * now, from what was found. Anthropic's goes beside the tool results, in the
+ * same user turn. */
+function nudge(messages, provider) {
+  const text =
+    'This turn has no tool calls left. Answer now from what you found, and say what you could not check.';
+  const last = messages.at(-1);
+  if (provider === 'anthropic' && Array.isArray(last?.content))
+    last.content.push({ type: 'text', text });
+  else messages.push({ role: 'user', content: text });
 }

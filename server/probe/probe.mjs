@@ -76,13 +76,12 @@ export class ArnoProbe extends DurableObject {
           await this.notify(result);
         }
       } catch (e) {
-        console.error(JSON.stringify({ event: 'turn_failed', error: String(e) }));
         const current = await this.ctx.storage.get('job');
         if (current?.status === 'cancelled') {
           if (this.ctx.container?.running) await this.ctx.container.destroy();
         } else {
           const error = 'The coding task failed. Your last checkpoint is preserved.';
-          await this.recordFailure(job, error);
+          await this.recordFailure(job, error, e);
           await this.ctx.storage.put('job', { ...job, status: 'failed', result: { error } });
           await this.notify({ error });
         }

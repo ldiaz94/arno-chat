@@ -7,6 +7,8 @@
  *   mode    standard | fast | deep                deep: regular chats only
  *   style   normal | concise | caveman            how the answer is written
  *   mcp     true | false                          MCP tools (regular chats only)
+ *   superSearch  true | false                     more searches, reads, model calls
+ *                                                 and time (regular chats only)
  *
  * Coding sessions only (arno's settings; regular chats keep the defaults):
  *   approach  auto | pair | build | review        arno's mode; auto is its chat
@@ -20,6 +22,7 @@ export const CHOICES = {
   mode: ['standard', 'fast', 'deep'],
   style: ['normal', 'concise', 'caveman'],
   mcp: [true, false],
+  superSearch: [false, true],
   approach: ['auto', 'pair', 'build', 'review'],
   workers: ['off', '1', '2', '3', '4'],
   budget: ['auto', '1', '3', '10'],
@@ -31,6 +34,7 @@ export const DEFAULTS = {
   mode: 'standard',
   style: 'normal',
   mcp: true,
+  superSearch: false,
   approach: 'auto',
   workers: '4',
   budget: 'auto',
@@ -63,7 +67,10 @@ export function checkOptions(value, kind) {
     return null;
   if (o.mode === 'deep' && kind !== 'chat') return null;
   if (kind === 'chat') for (const k of CODE_ONLY) o[k] = DEFAULTS[k];
-  else o.mcp = DEFAULTS.mcp; // a coding session's MCP tools are its connections' own switch
+  else {
+    o.mcp = DEFAULTS.mcp; // a coding session's MCP tools are its connections' own switch
+    o.superSearch = DEFAULTS.superSearch;
+  }
   return o;
 }
 
@@ -77,6 +84,7 @@ export function optionTags(o) {
     o.style === 'normal' ? '' : o.style[0].toUpperCase() + o.style.slice(1),
     o.effort === 'auto' || (fast && o.effort === 'off') ? '' : 'Thinking: ' + o.effort,
     o.search || fast || o.mode === 'deep' ? '' : 'No search',
+    o.superSearch ? 'Super search' : '',
     o.mcp === false ? 'No MCP tools' : '',
     !o.approach || o.approach === 'auto' ? '' : o.approach[0].toUpperCase() + o.approach.slice(1),
     !o.workers || o.workers === '4'

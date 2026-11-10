@@ -5,10 +5,11 @@
  * gateways/gateways.mjs) read the same plan. Depends on providers.mjs and the
  * option defaults in web/options.mjs. Leaves out the options' storage.
  *
- *   mode      effort          search   output   rounds  searches/reads  time
- *   standard  as chosen       chosen   16,384   8       3 / 6           4 min
- *   fast      off unless set  chosen   4,096    8       3 / 6           4 min
- *   deep      at least medium on       16,384   16      10 / 20         12 min
+ *   mode          effort          search   output   rounds  searches/reads  time
+ *   standard      as chosen       chosen   16,384   12      6 / 12          4 min
+ *   fast          off unless set  chosen   4,096    12      6 / 12          4 min
+ *   deep          at least medium on       16,384   16      10 / 20         12 min
+ *   super search  (any mode)      on       as mode  32      25 / 50         12 min
  */
 import { MAX_OUTPUT } from '../providers.mjs';
 import { DEFAULTS } from '../../web/options.mjs';
@@ -59,7 +60,7 @@ export function turnPlan(options = DEFAULTS) {
     deep = o.mode === 'deep',
     fast = o.mode === 'fast';
   return {
-    search: deep || o.search,
+    search: deep || o.superSearch || o.search,
     // 'auto' sends no effort field at all: the provider's default.
     effort: deep
       ? RANK[Math.max(2, RANK.indexOf(o.effort))]
@@ -67,10 +68,14 @@ export function turnPlan(options = DEFAULTS) {
         ? 'off'
         : o.effort,
     maxOutput: fast ? 4096 : MAX_OUTPUT,
-    rounds: deep ? 16 : 8,
-    limits: deep ? { searches: 10, reads: 20, sources: 60 } : undefined,
-    // A Durable Object alarm may run for 15 minutes; deep research keeps 3 spare.
-    timeLimit: deep ? 12 * 60000 : 4 * 60000,
+    rounds: o.superSearch ? 32 : deep ? 16 : 12,
+    limits: o.superSearch
+      ? { searches: 25, reads: 50, sources: 80 }
+      : deep
+        ? { searches: 10, reads: 20, sources: 60 }
+        : undefined,
+    // A Durable Object alarm may run for 15 minutes; the longer turns keep 3 spare.
+    timeLimit: deep || o.superSearch ? 12 * 60000 : 4 * 60000,
     instructions: [deep ? DEEP_RESEARCH : fast ? FAST : '', STYLE[o.style]]
       .filter(Boolean)
       .join('\n\n'),

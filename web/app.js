@@ -99,7 +99,7 @@ $('#stop').onclick = async () => {
 };
 prompt.oninput = () => {
   resizePrompt();
-  if (state.session) sessionStorage.setItem('draft:' + state.session.id, prompt.value);
+  if (state.session?.id) sessionStorage.setItem('draft:' + state.session.id, prompt.value);
 };
 prompt.onkeydown = e => {
   if (sendKey(e)) {

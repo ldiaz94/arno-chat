@@ -8,7 +8,7 @@ import { $, state, esc, duration, api, toast, showError, prompt, sendKey } from 
 import { openNamed } from './artifacts.js';
 import { busy, title, bump } from './layout.js';
 import { message, failure, scrollDown, place } from './thread.js';
-import { resume } from './sessions.js';
+import { resume, persist } from './sessions.js';
 import { uploading, takeReady, restore } from './attach.js';
 import { warm } from './offline.js';
 import { queueMessage, waiting } from './outbox.js';
@@ -302,6 +302,7 @@ export async function submit(e) {
     resizePrompt();
     return toast(set);
   }
+  if (!(await persist())) return;
   prompt.value = '';
   resizePrompt();
   sessionStorage.removeItem('draft:' + state.session.id);

@@ -79,6 +79,12 @@ export async function chooseModel(id) {
     $('#home-model').innerHTML = modelLabel(id);
     return;
   }
+  // A draft chat isn't on the server yet: it is made with the model picked.
+  if (state.session.draft) {
+    state.session.model = id;
+    modelButton();
+    return renderOptions();
+  }
   const sid = state.session.id;
   busy(true);
   toast('Saving model selection…');

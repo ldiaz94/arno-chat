@@ -112,8 +112,8 @@ export async function searxngSearch(search, query, upstream = fetch) {
   return Array.isArray(data.results) ? data.results : [];
 }
 /** A turn's research budget: searches, page reads, and sources kept for citing.
- * Deep research passes larger ones (plan.mjs). */
-export const LIMITS = { searches: 3, reads: 6, sources: 30 };
+ * Deep research and super search pass larger ones (plan.mjs). */
+export const LIMITS = { searches: 6, reads: 12, sources: 30 };
 /** Runs one research call. web_search tries the account's SearXNG first and
  * falls back to Ollama; counts.searxng counts SearXNG searches (free) and
  * counts.searches Ollama's (billed). */
