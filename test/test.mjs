@@ -3005,3 +3005,13 @@ test('a chat turn that fails carries what it spent, to be charged', async () => 
   assert.equal(e.spent.usage.outputTokens, 32768);
   assert.equal(e.spent.requestLog.length, 2);
 });
+test('an artifact edit finds its text with the whitespace misremembered, once only', async () => {
+  const { applyEdits } = await import('../server/probe/artifacts.mjs');
+  const svg = '<svg>\n  <radialGradient id="lit">\n    <stop/>\n  </radialGradient>\n</svg>';
+  assert.equal(
+    applyEdits(svg, [{ find: '      <radialGradient id="lit">\n<stop/>', replace: '<g/>' }]),
+    '<svg>\n  <g/>\n  </radialGradient>\n</svg>',
+  );
+  assert.throws(() => applyEdits(svg, [{ find: 'id="moon"', replace: '' }]), /not found/);
+  assert.throws(() => applyEdits('a b a  b', [{ find: 'a\nb', replace: '' }]), /more than once/);
+});

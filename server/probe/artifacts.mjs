@@ -39,7 +39,7 @@ const MERMAID = 'https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.mi
 
 /** Text added to the system prompt telling the model when and how to use the artifact tools. */
 export const ARTIFACT_INSTRUCTIONS =
-  'You can make artifacts with create_artifact, read one with read_artifact and revise it with update_artifact: standalone things the user may want to keep, open full screen, copy or download. Kinds: markdown (documents, plans, lists, tables, itineraries, specs), html (an interactive page, mini-app, game, calculator or chart: one self-contained file with inline CSS and JS; scripts may load from cdn.jsdelivr.net, cdnjs.cloudflare.com or unpkg.com, but the page has no network otherwise, so put its data in the page), svg (a drawing, icon or illustration), mermaid (a flowchart, sequence, class, state, gantt or ER diagram; the source only, no fence) and code (a source file; give its language). Use one for substantial content (roughly more than 15 lines), anything visual or interactive, or when asked; keep the chat reply short and refer to the artifact by title. Update an existing artifact rather than making a near-duplicate; for a small change, send edits instead of the whole content.';
+  'You can make artifacts with create_artifact, read one with read_artifact and revise it with update_artifact: standalone things the user may want to keep, open full screen, copy or download. Kinds: markdown (documents, plans, lists, tables, itineraries, specs), html (an interactive page, mini-app, game, calculator or chart: one self-contained file with inline CSS and JS; scripts may load from cdn.jsdelivr.net, cdnjs.cloudflare.com or unpkg.com, but the page has no network otherwise, so put its data in the page), svg (a drawing, icon or illustration), mermaid (a flowchart, sequence, class, state, gantt or ER diagram; the source only, no fence) and code (a source file; give its language). For a chart, an html page with Chart.js (<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>) and the data inline. For 3D, an html page with three.js as a module, through an import map: {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}; the page cannot fetch files, so build geometry in code and give textures as data: URLs or https images. Use one for substantial content (roughly more than 15 lines), anything visual or interactive, or when asked; keep the chat reply short and refer to the artifact by title. Update an existing artifact rather than making a near-duplicate; for a small change, send edits instead of the whole content.';
 
 /** The tool definitions offered to the model (name, description, JSON schema). */
 export const ARTIFACT_TOOLS = [
@@ -167,15 +167,32 @@ function checkContent(content, kind) {
 /** content with each edit's find, which must occur exactly once, replaced. */
 export function applyEdits(content, edits) {
   for (const { find, replace } of edits) {
-    if (typeof find !== 'string' || !find || typeof replace !== 'string')
+    if (typeof find !== 'string' || !find.trim() || typeof replace !== 'string')
       throw Error('Each edit needs find and replace');
-    const at = content.indexOf(find);
-    if (at < 0) throw Error('Edit not applied, text not found: ' + find.slice(0, 80));
-    if (content.indexOf(find, at + 1) >= 0)
-      throw Error('Edit not applied, text occurs more than once: ' + find.slice(0, 80));
-    content = content.slice(0, at) + replace + content.slice(at + find.length);
+    const [at, length] = locate(content, find);
+    content = content.slice(0, at) + replace + content.slice(at + length);
   }
   return content;
+}
+/** Where an edit's text is, as [start, length]: exactly, or else with its
+ * whitespace (indentation, line breaks) matched loosely, as models often
+ * misremember it. Either way it must occur once. */
+function locate(content, find) {
+  const fail = why => Error('Edit not applied, text ' + why + ': ' + find.trim().slice(0, 80));
+  const at = content.indexOf(find);
+  if (at >= 0) {
+    if (content.indexOf(find, at + 1) >= 0) throw fail('occurs more than once');
+    return [at, find.length];
+  }
+  const words = find
+    .trim()
+    .split(/\s+/)
+    .map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const found = [...content.matchAll(new RegExp(words.join('\\s+'), 'g'))];
+  if (found.length === 1) return [found[0].index, found[0][0].length];
+  throw fail(
+    found.length ? 'occurs more than once' : 'not found (read_artifact gives the current text)',
+  );
 }
 
 /** Makes or replaces an artifact from fields {title, kind, language, mime,
