@@ -242,6 +242,9 @@ const { chromium } = require('playwright'),
       let d;
       if (u.pathname === '/api/account/avatar')
         return route.fulfill({ status: 404, json: { error: 'No picture' } });
+      // A conversation whose delete the server refuses (the sidebar's edit mode).
+      if (route.request().method() === 'DELETE' && u.pathname.endsWith('/' + oldChat))
+        return route.fulfill({ status: 500, json: { error: 'Storage unavailable' } });
       if (u.pathname === '/api/account/delete') {
         deleted = route.request().postDataJSON();
         return route.fulfill({ json: { deleted: true } });
@@ -773,6 +776,23 @@ const { chromium } = require('playwright'),
       () => document.querySelector('#title').textContent === 'Research notes',
     );
     await page.getByRole('button', { name: 'Open sessions', exact: true }).click();
+    // Edit mode: a conversation whose delete fails stays listed and picked; Escape leaves.
+    await page.locator('#list-edit').click();
+    await page.locator('.session-item[data-session="' + oldChat + '"]').click();
+    assert.equal(await page.locator('#bulk-delete').textContent(), 'Delete selected (1)');
+    page.once('dialog', d => d.accept());
+    await page.locator('#bulk-delete').click();
+    await page.getByText('0 deleted · 1 could not be deleted').waitFor();
+    assert.ok((await listed()).includes(oldChat));
+    assert.equal(
+      await page
+        .locator('.session-item[data-session="' + oldChat + '"]')
+        .getAttribute('aria-pressed'),
+      'true',
+    );
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#bulk-bar').isHidden(), true);
+    assert.equal(await page.locator('.session-pick').count(), 0);
     await page.getByRole('button', { name: 'Account settings', exact: true }).click();
     // The You tab opens first: picture (initials, no photo), about text and privacy notice.
     assert.equal(await page.locator('#picture').textContent(), 'LD');

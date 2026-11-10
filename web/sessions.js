@@ -529,19 +529,28 @@ export async function renameConversation(id = state.session?.id) {
     showError(e);
   }
 }
+/** Deletes one conversation where it lives: on the server, or on this device
+ * for a chat made offline. Throws when it could not. */
+function remove(id) {
+  return isLocal(id) ? dropSession(id) : api('/api/sessions/' + id, { method: 'DELETE' });
+}
+/** Takes deleted conversations off the list, and goes home if one was open. */
+async function forget(ids) {
+  state.sessions = state.sessions.filter(s => !ids.includes(s.id));
+  for (const id of ids) state.selected.delete(id);
+  $('#actions-dialog').close();
+  $('#conversation-dialog').close();
+  if (state.session && ids.includes(state.session.id)) await home();
+  else sidebar();
+}
 export async function deleteConversation(id = state.session?.id) {
   if (!id) return toast('Choose a conversation first');
   if (state.busy && state.session?.id === id)
     return toast('Stop the active task before deleting this conversation');
   if (!confirm('Delete this conversation and its saved workspace? This cannot be undone.')) return;
   try {
-    if (isLocal(id)) await dropSession(id);
-    else await api('/api/sessions/' + id, { method: 'DELETE' });
-    state.sessions = state.sessions.filter(s => s.id !== id);
-    $('#actions-dialog').close();
-    $('#conversation-dialog').close();
-    if (state.session?.id === id) await home();
-    else sidebar();
+    await remove(id);
+    await forget([id]);
     toast('Conversation deleted');
   } catch (e) {
     showError(e);
@@ -556,38 +565,39 @@ export function toggleEdit() {
 /** Selects or deselects one conversation row in edit mode. */
 export function togglePick(id) {
   if (!state.editing) return;
-  state.selected.has(id) ? state.selected.delete(id) : state.selected.add(id);
+  if (state.selected.has(id)) state.selected.delete(id);
+  else state.selected.add(id);
   sidebar();
 }
-/** Deletes every selected conversation, one server call each, then leaves edit mode. */
+/** Deletes every selected conversation, one request each. Those that fail stay
+ * listed and selected, so they can be tried again; edit mode ends when all go. */
 export async function deleteSelected() {
   const ids = [...state.selected];
   if (!ids.length) return;
-  const blocked = state.busy && ids.includes(state.session?.id);
-  if (blocked) return toast('Stop the active task before deleting this conversation');
-  const what =
-    'Delete ' +
-    ids.length +
-    (ids.length === 1 ? ' conversation' : ' conversations') +
-    ' and their saved workspaces? This cannot be undone.';
-  if (!confirm(what)) return;
-  const failed = [];
-  for (const id of ids) {
+  if (state.busy && ids.includes(state.session?.id))
+    return toast('Stop the active task before deleting this conversation');
+  const n = ids.length === 1 ? '1 conversation' : ids.length + ' conversations';
+  if (!confirm('Delete ' + n + ' and their saved workspaces? This cannot be undone.')) return;
+  const done = [];
+  for (const id of ids)
     try {
-      if (isLocal(id)) await dropSession(id);
-      else await api('/api/sessions/' + id, { method: 'DELETE' });
+      await remove(id);
+      done.push(id);
     } catch (e) {
-      failed.push(id);
-      console.error('bulk delete failed for ' + id, e);
+      console.error('delete failed for ' + id, e);
     }
-  }
-  state.sessions = state.sessions.filter(s => !ids.includes(s.id));
-  state.selected.clear();
-  state.editing = false;
-  $('#actions-dialog').close();
-  $('#conversation-dialog').close();
-  if (state.session && ids.includes(state.session.id)) await home();
-  else sidebar();
-  if (failed.length) toast(ids.length - failed.length + ' deleted · ' + failed.length + ' failed');
-  else toast(ids.length === 1 ? 'Conversation deleted' : ids.length + ' conversations deleted');
+  const failed = ids.length - done.length;
+  if (!failed) state.editing = false;
+  await forget(done);
+  toast(
+    failed
+      ? done.length +
+          ' deleted · ' +
+          failed +
+          ' could not be deleted' +
+          (state.offline ? ' while offline' : '')
+      : done.length === 1
+        ? 'Conversation deleted'
+        : done.length + ' conversations deleted',
+  );
 }

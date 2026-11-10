@@ -110,6 +110,7 @@ export function sidebar() {
   $('#bulk-delete').textContent =
     'Delete selected' + (state.selected.size ? ' (' + state.selected.size + ')' : '');
   const rows = byRecent(state.sessions.filter(s => modeOf(s) === state.mode));
+  editBtn.hidden = !rows.length && !edit;
   const row = s => {
     const name = esc(s.title || s.repo),
       picked = state.selected.has(s.id),
@@ -122,22 +123,17 @@ export function sidebar() {
       '<div class="session-row' +
       (edit && picked ? ' picked' : '') +
       '">' +
+      // In edit mode the whole row is the toggle; the round mark only shows it.
       (edit
-        ? '<button class="session-pick' +
+        ? '<span class="session-pick' +
           (picked ? ' on' : '') +
-          '" type="button" data-pick="' +
-          esc(s.id) +
-          '" aria-pressed="' +
-          picked +
-          '" aria-label="Select ' +
-          name +
-          '">' +
+          '" aria-hidden="true">' +
           (picked ? '✓' : '') +
-          '</button>'
+          '</span>'
         : '') +
       '<button class="session-item ' +
       (s.id === state.session?.id ? 'active' : '') +
-      (edit ? ' picking' : '') +
+      (edit ? ' picking" aria-pressed="' + picked : '') +
       '" data-session="' +
       esc(s.id) +
       '"><strong>' +

@@ -3315,3 +3315,6 @@ details.setting-card.collapsible[open] > summary {
   border-color: var(--muted);
   background: var(--muted);
 }
+.session-pick {
+  pointer-events: none;
+}

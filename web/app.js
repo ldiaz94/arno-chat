@@ -129,7 +129,10 @@ for (const b of document.querySelectorAll('[data-mode]'))
   b.onclick = () => switchMode(b.dataset.mode);
 $('#brand').onclick = () => switchMode(state.mode);
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') drawer(false);
+  // Escape leaves the sidebar's edit mode first, then closes the drawer.
+  if (e.key === 'Escape' && !document.querySelector('dialog[open]'))
+    if (state.editing) toggleEdit();
+    else drawer(false);
   if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
     e.preventDefault();
     if (state.session) openModels('session');
@@ -137,8 +140,6 @@ document.addEventListener('keydown', e => {
   }
 });
 document.addEventListener('click', e => {
-  const pick = e.target.closest('[data-pick]');
-  if (pick) return togglePick(pick.dataset.pick);
   const session = e.target.closest('[data-session]');
   if (session) {
     if (state.editing) togglePick(session.dataset.session);
