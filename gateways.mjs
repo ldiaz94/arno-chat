@@ -17,6 +17,7 @@ import { WEB_INSTRUCTIONS, webMcp } from './web.mjs';
 import { turnPlan } from './plan.mjs';
 import { effortSupported } from './models.mjs';
 import { gitProxy } from './git.mjs';
+import { mcpBearer } from './mcp-oauth.mjs';
 
 export class ModelGateway extends WorkerEntrypoint {
   async fetch(request) {
@@ -91,8 +92,7 @@ export class McpGateway extends WorkerEntrypoint {
         search: await searchConnection(this.env, ownerId, p),
       });
     if (!connection) return new Response('MCP connection not enabled', { status: 403 });
-    const token = await unseal(this.env, ownerId, 'mcp:' + id, connection.token);
-    return proxyMcp(request, connection, token);
+    return proxyMcp(request, connection, await mcpBearer(this.env, ownerId, connection));
   }
 }
 /** The container's git fetches and pushes (git.mjs), with the GitHub token

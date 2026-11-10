@@ -28,6 +28,7 @@ import {
   requestFields,
 } from './account.mjs';
 import { testMcp } from './mcp.mjs';
+import { startSignIn, mcpCallback, mcpBearer } from './mcp-oauth.mjs';
 import { research, citedSources } from './web.mjs';
 import { ArnoProbe, default as worker } from './worker.js';
 test('browser scripts parse', () => {
@@ -2528,4 +2529,97 @@ test('serve messages are netstrings of netstrings, read across chunk boundaries'
     ['busy', '1'],
   ]);
   assert.throws(() => decoderOf().push(new TextEncoder().encode('x:')), /malformed/);
+});
+test('MCP OAuth: discovery, registration, PKCE sign-in, callback and refresh', async () => {
+  const env = {
+    ACCOUNT_ENCRYPTION_KEY: btoa(String.fromCharCode(...new Uint8Array(32).fill(9))),
+  };
+  // Durable objects in memory: the pending sign-in and the profile.
+  const stores = new Map();
+  env.PROBE = {
+    getByName: name => ({
+      fetch: async (url, opt = {}) => {
+        const path = new URL(url).pathname,
+          body = opt.body ? JSON.parse(opt.body) : null;
+        if (path === '/oauth/put') stores.set(name, body);
+        if (path === '/oauth/take') {
+          const v = stores.get(name);
+          stores.delete(name);
+          return v ? Response.json(v) : new Response(null, { status: 404 });
+        }
+        const p = stores.get(name) || { mcp: [{ id: 'lin', url: 'https://mcp.example.com/mcp' }] };
+        if (path === '/profile/get') return Response.json(p);
+        if (path === '/profile/mcp-token') {
+          p.mcp = p.mcp.map(c => (c.id === body.id && c.url === body.url ? { ...c, ...body } : c));
+          stores.set(name, p);
+        }
+        return new Response(null, { status: 204 });
+      },
+    }),
+  };
+  let tokenForm;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    const u = String(url);
+    if (u === 'https://mcp.example.com/mcp')
+      return new Response('', {
+        status: 401,
+        headers: {
+          'WWW-Authenticate':
+            'Bearer resource_metadata="https://mcp.example.com/.well-known/oauth-protected-resource", scope="read"',
+        },
+      });
+    if (u.endsWith('/.well-known/oauth-protected-resource'))
+      return Response.json({
+        resource: 'https://mcp.example.com/mcp',
+        authorization_servers: ['https://auth.example.com'],
+      });
+    if (u === 'https://auth.example.com/.well-known/oauth-authorization-server')
+      return Response.json({
+        authorization_endpoint: 'https://auth.example.com/authorize',
+        token_endpoint: 'https://auth.example.com/token',
+        registration_endpoint: 'https://auth.example.com/register',
+        code_challenge_methods_supported: ['S256'],
+      });
+    if (u === 'https://auth.example.com/register') return Response.json({ client_id: 'c1' });
+    if (u === 'https://auth.example.com/token') {
+      tokenForm = new URLSearchParams(String(init.body));
+      return Response.json({
+        access_token: tokenForm.get('grant_type') === 'refresh_token' ? 'a2' : 'a1',
+        refresh_token: 'r1',
+        expires_in: tokenForm.get('grant_type') === 'refresh_token' ? 3600 : 1,
+      });
+    }
+    return new Response('not found', { status: 404 });
+  };
+  try {
+    const to = new URL(await startSignIn(env, 7, 'lin', 'https://app.example.com'));
+    assert.equal(to.origin + to.pathname, 'https://auth.example.com/authorize');
+    assert.equal(to.searchParams.get('code_challenge_method'), 'S256');
+    assert.equal(to.searchParams.get('resource'), 'https://mcp.example.com/mcp');
+    assert.equal(to.searchParams.get('scope'), 'read');
+    const state = to.searchParams.get('state');
+    const back = await mcpCallback(
+      null,
+      env,
+      new URL('https://app.example.com/auth/mcp/callback?code=xyz&state=' + state),
+    );
+    assert.equal(back.headers.get('Location'), '/?mcp=lin');
+    assert.equal(tokenForm.get('code_verifier').length, 43);
+    // The state is used once.
+    const again = await mcpCallback(
+      null,
+      env,
+      new URL('https://app.example.com/auth/mcp/callback?code=xyz&state=' + state),
+    );
+    assert.match(again.headers.get('Location'), /mcp_error=/);
+    // The access token expires within a minute, so the next use refreshes it.
+    const connection = stores.get('profile:7').mcp[0];
+    assert.equal(connection.oauth, true);
+    assert.equal(await mcpBearer(env, 7, connection), 'a2');
+    assert.equal(tokenForm.get('grant_type'), 'refresh_token');
+    assert.equal(await mcpBearer(env, 7, stores.get('profile:7').mcp[0]), 'a2');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });

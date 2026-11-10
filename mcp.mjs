@@ -34,6 +34,10 @@ export async function proxyMcp(request, connection, token) {
       return new Response('Unsupported MCP method', { status: 403 });
     headers['Content-Type'] = 'application/json';
   }
+  // 30 s for the server to start answering; a tool's streamed answer may go on
+  // (the turn's own time limit ends it).
+  const stop = new AbortController(),
+    timer = setTimeout(() => stop.abort(), 30000);
   let response;
   try {
     response = await fetch(connection.url, {
@@ -41,10 +45,12 @@ export async function proxyMcp(request, connection, token) {
       headers,
       body,
       redirect: 'manual',
-      signal: AbortSignal.timeout(30000),
+      signal: stop.signal,
     });
   } catch {
     return new Response('MCP connection failed', { status: 502 });
+  } finally {
+    clearTimeout(timer);
   }
   if (response.status >= 300 && response.status < 400) {
     await response.body?.cancel();

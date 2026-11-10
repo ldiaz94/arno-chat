@@ -282,7 +282,7 @@ export function publicProfile(env, p) {
         },
       ]),
     ),
-    mcp: (p.mcp || []).map(({ token, ...m }) => ({ ...m, hasToken: !!token })),
+    mcp: (p.mcp || []).map(({ token, ...m }) => ({ ...m, hasToken: !!token, oauth: !!m.oauth })),
     search: p.search
       ? {
           url: p.search.url,
@@ -501,17 +501,20 @@ export async function accountRoute(request, env, userId) {
           (typeof c.token !== 'string' || c.token.length > 2000 || /[\r\n]/.test(c.token))
         )
           throw Error('MCP token must be a single line up to 2,000 characters');
-        const token = c.clearToken
-          ? null
-          : c.token
-            ? await seal(env, userId, 'mcp:' + c.id, c.token)
-            : old?.token || null;
+        // A token is for the URL it was given or signed in to: a new URL drops it.
+        const kept = old && old.url === c.url && !c.clearToken;
+        const token = c.token
+          ? await seal(env, userId, 'mcp:' + c.id, c.token)
+          : kept
+            ? old.token || null
+            : null;
         mcp.push({
           id: c.id,
           name: String(c.name || c.id).slice(0, 80),
           url: c.url,
           enabled: !!c.enabled,
           token,
+          oauth: !c.token && kept && !!old.oauth,
         });
       }
       if (new Set(mcp.map(m => m.id)).size !== mcp.length) throw Error('MCP IDs must be unique');

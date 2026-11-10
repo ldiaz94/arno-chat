@@ -3318,3 +3318,7 @@ details.setting-card.collapsible[open] > summary {
 .session-pick {
   pointer-events: none;
 }
+.mcp-actions {
+  display: inline-flex;
+  gap: 6px;
+}

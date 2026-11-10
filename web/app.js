@@ -43,7 +43,7 @@ import { openCode, browse, reviewPublish, showCommit } from './code.js';
 import { submit, resizePrompt } from './turns.js';
 import './attach.js'; // wires the paperclip, paste and drop
 import './options.js'; // wires the options button, its popover and chips
-import './settings.js'; // wires the account settings dialog
+import { mcpReturn } from './settings.js'; // also wires the account settings dialog
 import { register, warm, clearData } from './offline.js';
 import { startOutbox, flush } from './outbox.js';
 tableResize(document);
@@ -210,6 +210,7 @@ async function boot() {
     if (/^[0-9a-f-]{36}$/.test(linked || '')) await resume(linked);
     else await home();
     flush(); // whatever waited from an earlier visit
+    mcpReturn(); // back from an MCP server's sign-in
     if (!state.offline) setTimeout(warm, 2000); // after the page settles
   } catch (e) {
     main.innerHTML =

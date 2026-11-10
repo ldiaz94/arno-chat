@@ -13,9 +13,9 @@ import {
   providerModel,
   effortModel,
   accountRoute,
-  unseal,
 } from './account.mjs';
 import { testMcp } from './mcp.mjs';
+import { startSignIn, mcpBearer } from './mcp-oauth.mjs';
 import { publicWebUrl } from './web.mjs';
 import { pushApiRoutes } from './push.mjs';
 import { LIMITS } from './attachments.mjs';
@@ -99,9 +99,16 @@ export const apiRoutes = {
       connection = p.mcp?.find(c => c.id === id);
     if (!connection) return json({ error: 'Save this MCP connection first' }, 400);
     try {
-      return json(
-        await testMcp(connection, await unseal(env, auth.user.id, 'mcp:' + id, connection.token)),
-      );
+      return json(await testMcp(connection, await mcpBearer(env, auth.user.id, connection)));
+    } catch (e) {
+      return json({ error: e.message }, 400);
+    }
+  },
+  /** Starts an OAuth sign-in to a saved MCP connection: where to send the browser. */
+  async 'POST /api/account/mcp-oauth'(request, env, url, auth) {
+    const { id } = await boundedJson(request);
+    try {
+      return json({ url: await startSignIn(env, auth.user.id, String(id || ''), url.origin) });
     } catch (e) {
       return json({ error: e.message }, 400);
     }

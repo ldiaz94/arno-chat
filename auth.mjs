@@ -1,6 +1,7 @@
 /** Sign-in: the GitHub OAuth flow (/auth/*), the cookie-bound auth record kept
  * in its own Durable Object, and an authenticated GitHub API client. */
 import { COOKIE, SECURITY, json, cookie, sessionCookie } from './http.mjs';
+import { mcpCallback } from './mcp-oauth.mjs';
 
 export function authObject(env, id) {
   return env.PROBE.getByName(`auth:${id}`);
@@ -49,6 +50,7 @@ export async function repoAccess(auth) {
 }
 
 export async function handleOAuth(request, env, url) {
+  if (url.pathname === '/auth/mcp/callback') return mcpCallback(request, env, url);
   if (url.pathname === '/auth/github') {
     if (!env.GITHUB_CLIENT_ID || !env.GITHUB_CLIENT_SECRET)
       return json({ error: 'GitHub OAuth is not configured' }, 503);

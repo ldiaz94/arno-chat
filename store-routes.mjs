@@ -61,6 +61,17 @@ export const storeRoutes = {
     );
   },
   'POST /profile/patch': patchProfile,
+  /** An MCP connection's token after an OAuth sign-in or refresh (mcp-oauth.mjs),
+   * kept only if the connection still has the URL it was signed in to. */
+  async 'POST /profile/mcp-token'(request) {
+    const { id, url, token, oauth } = await request.json();
+    await this.ctx.storage.transaction(async txn => {
+      const p = (await txn.get('profile')) || {};
+      p.mcp = (p.mcp || []).map(c => (c.id === id && c.url === url ? { ...c, token, oauth } : c));
+      await txn.put('profile', p);
+    });
+    return new Response(null, { status: 204 });
+  },
   'POST /profile/key': patchProfile,
   async 'PUT /avatar'(request) {
     const type = request.headers.get('Content-Type') || '';

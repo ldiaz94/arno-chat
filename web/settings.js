@@ -66,15 +66,46 @@ function mcpCard(c = {}) {
     '"></label></div><label>HTTPS endpoint<input class="field mcp-url" type="url" placeholder="https://example.com/mcp" value="' +
     esc(c.url || '') +
     '"></label><label>Bearer token (optional)<input class="field mcp-token" type="password" autocomplete="new-password" placeholder="' +
-    (c.hasToken ? 'Token saved · leave blank to keep' : 'Optional bearer token') +
+    (c.oauth
+      ? 'Signed in · paste a token to use it instead'
+      : c.hasToken
+        ? 'Token saved · leave blank to keep'
+        : 'Optional bearer token') +
     '"></label><div class="setting-row"><label class="check-label"><input class="mcp-enabled" type="checkbox" ' +
     (c.enabled ? 'checked' : '') +
-    '> Enable for coding sessions</label><button class="test-mcp" type="button">Test</button></div><label class="check-label caption"><input type="checkbox" class="mcp-clear"> Remove saved token</label><p class="caption mcp-status">' +
-    (c.hasToken
-      ? 'Token is encrypted and never sent to the coding container.'
-      : 'Save settings before testing this connection.') +
+    '> Enable for coding sessions</label><span class="mcp-actions"><button class="signin-mcp ghost" type="button">' +
+    (c.oauth ? 'Sign in again' : 'Sign in') +
+    '</button><button class="test-mcp" type="button">Test</button></span></div><label class="check-label caption"><input type="checkbox" class="mcp-clear"> ' +
+    (c.oauth ? 'Sign out (remove the saved sign-in)' : 'Remove saved token') +
+    '</label><p class="caption mcp-status">' +
+    (c.oauth
+      ? 'Signed in with OAuth. The tokens are encrypted, refreshed when they expire, and never sent to the coding container.'
+      : c.hasToken
+        ? 'Token is encrypted and never sent to the coding container.'
+        : 'Servers such as Linear, Notion or Sentry sign in with OAuth: save, then Sign in. Others take a bearer token.') +
     '</p>';
   node.querySelector('.remove-setting').onclick = () => node.remove();
+  // OAuth: the saved connection's server sends the browser to its sign-in page,
+  // which comes back to /auth/mcp/callback and then to the app (mcpReturn).
+  node.querySelector('.signin-mcp').onclick = async e => {
+    const id = node.querySelector('.mcp-id').value,
+      saved = account.mcp.find(m => m.id === id),
+      status = node.querySelector('.mcp-status');
+    if (!saved || saved.url !== node.querySelector('.mcp-url').value)
+      return (status.textContent = 'Save preferences first, then sign in.');
+    e.target.disabled = true;
+    status.textContent = 'Finding the server’s sign-in…';
+    try {
+      const d = await api('/api/account/mcp-oauth', {
+        method: 'POST',
+        body: JSON.stringify({ id }),
+      });
+      location.assign(d.url);
+    } catch (err) {
+      status.textContent = err.message;
+      e.target.disabled = false;
+    }
+  };
   node.querySelector('.test-mcp').onclick = async e => {
     e.target.disabled = true;
     const status = node.querySelector('.mcp-status');
@@ -506,6 +537,18 @@ async function saveAccount() {
   }
 }
 $('#account-settings').onclick = openAccount;
+/** Back from an MCP server's OAuth sign-in (?mcp=id or ?mcp_error=why): says
+ * how it went and opens the MCP settings. */
+export async function mcpReturn() {
+  const q = new URLSearchParams(location.search),
+    id = q.get('mcp'),
+    error = q.get('mcp_error');
+  if (!id && !error) return;
+  history.replaceState(null, '', location.pathname);
+  toast(error ? 'MCP sign-in failed: ' + error : 'Signed in to ' + id);
+  await openAccount();
+  settingsTabs('mcp');
+}
 $('#account-dialog').addEventListener('close', () =>
   document.querySelectorAll('#account-body input[type=password]').forEach(n => (n.value = '')),
 );
