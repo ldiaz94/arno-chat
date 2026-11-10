@@ -1834,6 +1834,12 @@ test('artifacts: kinds, edits, versions kept apart, restore, old records moved',
   assert.equal(read.version, 2);
   assert.match(artifactList(touched), new RegExp(made.id + ' "Clock" \\(html, v2\\)'));
   assert.equal(artifactList([]), '');
+  // Models sometimes send the title for the id; a wrong one hears what there is.
+  assert.equal((await artifactTool(storage, 'read_artifact', { id: 'clock' }, [])).id, made.id);
+  await assert.rejects(
+    artifactTool(storage, 'read_artifact', { id: 'Moon' }, []),
+    /No artifact "Moon".*"Clock"/,
+  );
   const v1 = await getArtifact(storage, made.id, 1);
   assert.equal(v1.version, 1);
   assert.equal(v1.latest, 2);
@@ -2979,4 +2985,23 @@ test('a reply that spends all its output thinking is asked again without thinkin
   assert.equal(r.summary, 'Full moon on the 24th.');
   assert.equal(bodies[0].reasoning_effort, undefined);
   assert.equal(bodies[1].reasoning_effort, 'none');
+});
+
+test('a chat turn that fails carries what it spent, to be charged', async () => {
+  const usage = { prompt_tokens: 10, completion_tokens: 16384, total_tokens: 16394 };
+  const empty = () => sse([{ choices: [{ index: 0, delta: {}, finish_reason: 'length' }], usage }]);
+  const replies = [empty(), empty()];
+  const e = await plainChat({
+    model: 'deepseek-v4.1-flash:1017',
+    provider: 'ollama',
+    key: 'k',
+    history: [],
+    prompt: 'moon',
+    runTool: async () => ({}),
+    upstream: async () => replies.shift(),
+  }).catch(e => e);
+  assert.match(e.message, /no text/);
+  assert.equal(e.spent.usage.calls, 2);
+  assert.equal(e.spent.usage.outputTokens, 32768);
+  assert.equal(e.spent.requestLog.length, 2);
 });

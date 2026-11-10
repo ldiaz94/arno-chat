@@ -227,152 +227,169 @@ export async function plainChat({
     },
   });
   let said = ''; // the latest text the model wrote beside its tool calls
-  for (let round = 0; round < rounds; round++) {
-    await onRound();
-    if (runTool && round && round === rounds - 1) nudge(messages, provider);
-    const tools =
-      runTool && round < rounds - 1
-        ? provider === 'anthropic'
-          ? toolSpecs.map(t => ({
-              name: t.name,
-              description: t.description,
-              input_schema: t.inputSchema,
-            }))
-          : toolSpecs.map(t => ({
-              type: 'function',
-              function: { name: t.name, description: t.description, parameters: t.inputSchema },
-            }))
-        : undefined;
-    const response = await upstream(endpoint, {
-      method: 'POST',
-      redirect: 'manual',
-      signal,
-      headers:
-        provider === 'anthropic'
-          ? {
-              'x-api-key': key,
-              'anthropic-version': '2023-06-01',
-              'Content-Type': 'application/json',
-            }
-          : { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model,
-        messages,
-        stream: true,
-        tools,
-        ...fields,
-        ...(provider === 'anthropic'
-          ? { system: instructions || 'You are a helpful assistant.' }
-          : {}),
-      }),
-    });
-    total.calls++;
-    if (!response.ok) {
-      await response.body?.cancel();
-      throw Error(provider + ' could not complete this chat (' + response.status + ')');
-    }
-    const body =
-      provider === 'mistral' ? response.body.pipeThrough(mistralDeltas()) : response.body;
-    const reply = await readReply(body, preview => onProgress({ ...preview, round: round + 1 }));
-    if (reply.usage) {
-      const t = tokens(reply.usage);
-      total.measuredCalls++;
-      total.inputTokens += t.input + t.cached + t.write;
-      total.cachedTokens += t.cached;
-      total.cacheWriteTokens += t.write;
-      total.outputTokens += t.output;
-      total.lastInputTokens = t.input + t.cached + t.write;
-      requestLog.push({ at: Date.now(), ...t });
-    }
-    if (reply.summary.trim() && reply.calls.length) said = reply.summary.trim();
-    // All of the output went on thinking (seen with DeepSeek's flash models at
-    // the provider's default effort): ask the same round again, not thinking (low still
-    // spent it all).
-    const spent = reply.usage && tokens(reply.usage).output >= (maxOutput || MAX_OUTPUT);
-    if (
-      !reply.calls.length &&
-      !reply.summary.trim() &&
-      spent &&
-      !rethought &&
-      effort !== 'off' &&
-      effortModel(provider, model)
-    ) {
-      console.log(JSON.stringify({ event: 'rethink', provider, model, round: round + 1 }));
-      fields = fieldsAt('off');
-      rethought = true;
-      round--;
-      continue;
-    }
-    if (!reply.calls.length || round === rounds - 1) {
-      if (!reply.calls.length && reply.summary.trim())
-        return answer(reply.summary.trim(), reply.reasoning);
-      if (said) return answer(said + CUT_SHORT, reply.reasoning);
-      console.log(
-        JSON.stringify({
-          event: 'empty_reply',
-          provider,
+  try {
+    return await loop();
+  } catch (e) {
+    // What the turn spent so far rides on its error, to be charged (records.mjs).
+    e.spent = answer('', '');
+    throw e;
+  }
+  // The rounds, until an answer.
+  async function loop() {
+    for (let round = 0; round < rounds; round++) {
+      await onRound();
+      if (runTool && round && round === rounds - 1) nudge(messages, provider);
+      const tools =
+        runTool && round < rounds - 1
+          ? provider === 'anthropic'
+            ? toolSpecs.map(t => ({
+                name: t.name,
+                description: t.description,
+                input_schema: t.inputSchema,
+              }))
+            : toolSpecs.map(t => ({
+                type: 'function',
+                function: { name: t.name, description: t.description, parameters: t.inputSchema },
+              }))
+          : undefined;
+      const response = await upstream(endpoint, {
+        method: 'POST',
+        redirect: 'manual',
+        signal,
+        headers:
+          provider === 'anthropic'
+            ? {
+                'x-api-key': key,
+                'anthropic-version': '2023-06-01',
+                'Content-Type': 'application/json',
+              }
+            : { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           model,
-          round: round + 1,
-          rounds,
-          calls: reply.calls.length,
-          reasoning: reply.reasoning?.length || 0,
-          output: reply.usage ? tokens(reply.usage).output : null,
+          messages,
+          stream: true,
+          tools,
+          ...fields,
+          ...(provider === 'anthropic'
+            ? { system: instructions || 'You are a helpful assistant.' }
+            : {}),
         }),
-      );
-      throw Error(
-        round === rounds - 1
-          ? 'Research ran out of model calls before an answer. Try Super search, or narrow the question.'
-          : 'The model returned no text. Try another model or a shorter request.',
-      );
-    }
-    if (!runTool) throw Error('This response requested unavailable tools');
-    const parsed = reply.calls.map(c => {
-      try {
-        return { ...c, args: c.arguments ? JSON.parse(c.arguments) : c.input || {} };
-      } catch {
-        return { ...c, args: null };
+      });
+      total.calls++;
+      if (!response.ok) {
+        await response.body?.cancel();
+        throw Error(provider + ' could not complete this chat (' + response.status + ')');
       }
-    });
-    if (provider === 'anthropic')
-      messages.push({
-        role: 'assistant',
-        content: [
-          ...reply.thinking,
-          ...(reply.summary ? [{ type: 'text', text: reply.summary }] : []),
-          ...parsed.map(c => ({ type: 'tool_use', id: c.id, name: c.name, input: c.args || {} })),
-        ],
-      });
-    else
-      messages.push({
-        role: 'assistant',
-        content: reply.summary || null,
-        ...(replay ? { reasoning_content: reply.reasoning } : {}),
-        tool_calls: reply.calls.map(c => ({
-          id: c.id,
-          type: 'function',
-          function: { name: c.name, arguments: c.arguments || JSON.stringify(c.input || {}) },
-          ...(c.extra_content ? { extra_content: c.extra_content } : {}),
-        })),
-      });
-    const results = [];
-    for (const c of parsed) {
-      let result;
-      try {
-        if (!c.args) throw Error('Invalid tool arguments');
-        result = await runTool(c.name, c.args);
-      } catch (e) {
-        result = { error: e.message };
+      const body =
+        provider === 'mistral' ? response.body.pipeThrough(mistralDeltas()) : response.body;
+      const reply = await readReply(body, preview => onProgress({ ...preview, round: round + 1 }));
+      if (reply.usage) {
+        const t = tokens(reply.usage);
+        total.measuredCalls++;
+        total.inputTokens += t.input + t.cached + t.write;
+        total.cachedTokens += t.cached;
+        total.cacheWriteTokens += t.write;
+        total.outputTokens += t.output;
+        total.lastInputTokens = t.input + t.cached + t.write;
+        requestLog.push({ at: Date.now(), ...t });
       }
-      results.push({ id: c.id, result: JSON.stringify(result) });
-    }
-    if (provider === 'anthropic')
-      messages.push({
-        role: 'user',
-        content: results.map(r => ({ type: 'tool_result', tool_use_id: r.id, content: r.result })),
+      if (reply.summary.trim() && reply.calls.length) said = reply.summary.trim();
+      // All of the output went on thinking (seen with DeepSeek's flash models at
+      // the provider's default effort): ask the same round again, not thinking (low still
+      // spent it all).
+      const spent = reply.usage && tokens(reply.usage).output >= (maxOutput || MAX_OUTPUT);
+      if (
+        !reply.calls.length &&
+        !reply.summary.trim() &&
+        spent &&
+        !rethought &&
+        effort !== 'off' &&
+        effortModel(provider, model)
+      ) {
+        console.log(JSON.stringify({ event: 'rethink', provider, model, round: round + 1 }));
+        fields = fieldsAt('off');
+        rethought = true;
+        round--;
+        continue;
+      }
+      if (!reply.calls.length || round === rounds - 1) {
+        if (!reply.calls.length && reply.summary.trim())
+          return answer(reply.summary.trim(), reply.reasoning);
+        if (said) return answer(said + CUT_SHORT, reply.reasoning);
+        console.log(
+          JSON.stringify({
+            event: 'empty_reply',
+            provider,
+            model,
+            round: round + 1,
+            rounds,
+            calls: reply.calls.length,
+            reasoning: reply.reasoning?.length || 0,
+            output: reply.usage ? tokens(reply.usage).output : null,
+          }),
+        );
+        throw Error(
+          round === rounds - 1
+            ? 'Research ran out of model calls before an answer. Try Super search, or narrow the question.'
+            : 'The model returned no text. Try another model or a shorter request.',
+        );
+      }
+      if (!runTool) throw Error('This response requested unavailable tools');
+      const parsed = reply.calls.map(c => {
+        try {
+          return { ...c, args: c.arguments ? JSON.parse(c.arguments) : c.input || {} };
+        } catch {
+          return { ...c, args: null };
+        }
       });
-    else
-      for (const r of results)
-        messages.push({ role: 'tool', tool_call_id: r.id, content: r.result });
+      if (provider === 'anthropic')
+        messages.push({
+          role: 'assistant',
+          content: [
+            ...reply.thinking,
+            ...(reply.summary ? [{ type: 'text', text: reply.summary }] : []),
+            ...parsed.map(c => ({ type: 'tool_use', id: c.id, name: c.name, input: c.args || {} })),
+          ],
+        });
+      else
+        messages.push({
+          role: 'assistant',
+          content: reply.summary || null,
+          ...(replay ? { reasoning_content: reply.reasoning } : {}),
+          tool_calls: reply.calls.map(c => ({
+            id: c.id,
+            type: 'function',
+            function: { name: c.name, arguments: c.arguments || JSON.stringify(c.input || {}) },
+            ...(c.extra_content ? { extra_content: c.extra_content } : {}),
+          })),
+        });
+      const results = [];
+      for (const c of parsed) {
+        let result;
+        try {
+          if (!c.args) throw Error('Invalid tool arguments');
+          result = await runTool(c.name, c.args);
+        } catch (e) {
+          console.log(
+            JSON.stringify({ event: 'tool_error', model, tool: c.name, error: e.message }),
+          );
+          result = { error: e.message };
+        }
+        results.push({ id: c.id, result: JSON.stringify(result) });
+      }
+      if (provider === 'anthropic')
+        messages.push({
+          role: 'user',
+          content: results.map(r => ({
+            type: 'tool_result',
+            tool_use_id: r.id,
+            content: r.result,
+          })),
+        });
+      else
+        for (const r of results)
+          messages.push({ role: 'tool', tool_call_id: r.id, content: r.result });
+    }
   }
 }
 /** Added to a turn's answer when its model calls ran out before it finished. */

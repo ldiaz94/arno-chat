@@ -32,14 +32,46 @@ export const records = {
       result.reasoning = clip(result.reasoning, 4000);
       result.truncated = true;
     }
-    const stats = (await this.ctx.storage.get('stats')) || {
-      turns: 0,
-      calls: 0,
-      inputTokens: 0,
-      outputTokens: 0,
-      measuredCalls: 0,
-      totalMs: 0,
+    const stats = await this.stats();
+    await this.charge(result, stats);
+    stats.turns++;
+    stats.totalMs += result.timing.totalMs;
+    const records = { stats },
+      legacy = await this.ctx.storage.get('history');
+    if (sourceRegistry) {
+      const meta = await this.ctx.storage.get('session');
+      records.session = { ...meta, sources: sourceRegistry };
+    }
+    if (snapshot) records.snapshot = snapshot;
+    if (legacy)
+      for (let i = 0; i < legacy.length; i++)
+        records['turn:' + String(legacy[i].at || i).padStart(16, '0') + ':legacy' + i] = legacy[i];
+    records['turn:' + String(Date.now()).padStart(16, '0') + ':' + crypto.randomUUID()] = {
+      prompt,
+      ...result,
+      at: Date.now(),
     };
+    await this.ctx.storage.put(records);
+    if (legacy) await this.ctx.storage.delete('history');
+    await this.trimTurns();
+  },
+  /** The session's running totals. */
+  async stats() {
+    return (
+      (await this.ctx.storage.get('stats')) || {
+        turns: 0,
+        calls: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        measuredCalls: 0,
+        totalMs: 0,
+      }
+    );
+  },
+  /** Prices what a turn spent (result.usage, webUsage, requestLog), sets its
+   * usage.cost and costParts, adds it to the stats given and to the owner's
+   * request log. A failed or stopped turn is charged too (chargeFailed). */
+  async charge(result, stats) {
     result.model ||= (await this.ctx.storage.get('session'))?.model;
     // Cost: the model's tokens at list price (null when unpriced) plus searches;
     // the parts are kept per turn and summed per session for the breakdown.
@@ -68,32 +100,31 @@ export const records = {
       (stats.unpriced || 0) + Number(modelCost == null && !!result.usage.measuredCalls);
     await this.logRequests(session, result, price, rates);
     delete result.requestLog;
-    stats.turns++;
     stats.calls += result.usage.calls;
     stats.measuredCalls += result.usage.measuredCalls;
     stats.inputTokens += result.usage.inputTokens || 0;
     stats.outputTokens += result.usage.outputTokens || 0;
-    stats.totalMs += result.timing.totalMs;
-    const records = { stats },
-      legacy = await this.ctx.storage.get('history');
     stats.webSearches = (stats.webSearches || 0) + (result.webUsage?.searches || 0);
     stats.webReads = (stats.webReads || 0) + (result.webUsage?.reads || 0);
-    if (sourceRegistry) {
-      const meta = await this.ctx.storage.get('session');
-      records.session = { ...meta, sources: sourceRegistry };
+  },
+  /** Charges what a turn that failed or was stopped had already spent (the
+   * `spent` a chat turn's error carries): its model calls and web calls go
+   * to the totals and the request log like a finished turn's. Best effort. */
+  async chargeFailed(spent) {
+    try {
+      const stats = await this.stats();
+      await this.charge(spent, stats);
+      await this.ctx.storage.put('stats', stats);
+      console.log(
+        JSON.stringify({
+          event: 'failed_turn_cost',
+          cost: spent.usage.cost,
+          calls: spent.usage.calls,
+        }),
+      );
+    } catch (e) {
+      console.error(JSON.stringify({ event: 'failed_turn_cost_failed', error: String(e) }));
     }
-    if (snapshot) records.snapshot = snapshot;
-    if (legacy)
-      for (let i = 0; i < legacy.length; i++)
-        records['turn:' + String(legacy[i].at || i).padStart(16, '0') + ':legacy' + i] = legacy[i];
-    records['turn:' + String(Date.now()).padStart(16, '0') + ':' + crypto.randomUUID()] = {
-      prompt,
-      ...result,
-      at: Date.now(),
-    };
-    await this.ctx.storage.put(records);
-    if (legacy) await this.ctx.storage.delete('history');
-    await this.trimTurns();
   },
   /** Add this turn's requests (each model call, search and page read) to the
    * owner's request log in their index object; best effort, never fails a turn. */

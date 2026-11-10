@@ -140,6 +140,10 @@ export const chatTurn = {
           });
           return data;
         },
+      }).catch(e => {
+        // A failed turn is charged for what it spent: its web calls too, at the session's model.
+        if (e.spent) Object.assign(e.spent, { model: session.model, webUsage: counts });
+        throw e;
       });
       result.model = session.model;
       result.attachments = attached;
@@ -148,7 +152,7 @@ export const chatTurn = {
       result.webUsage = counts;
       result.options = job?.options;
       if ((await this.ctx.storage.get('job'))?.status === 'cancelled')
-        throw Error('Chat cancelled');
+        throw Object.assign(Error('Chat cancelled'), { spent: result });
       result.timing = {
         workspace: 'chat',
         startupMs: 0,
@@ -158,7 +162,7 @@ export const chatTurn = {
       };
       await this.phase('saving', { workspace: 'chat' });
       if ((await this.ctx.storage.get('job'))?.status === 'cancelled')
-        throw Error('Chat cancelled');
+        throw Object.assign(Error('Chat cancelled'), { spent: result });
       await this.saveTurn(result, prompt, null, sources, editAt);
       const current = await this.ctx.storage.get('session');
       if (

@@ -200,8 +200,7 @@ export async function artifactTool(storage, name, args, touched) {
   const title = typeof args.title === 'string' ? args.title.trim().slice(0, 80) : '';
   let artifact;
   if (name === 'read_artifact') {
-    const a = await load(storage, String(args.id || ''));
-    if (!a) throw Error('No artifact with that id in this conversation');
+    const a = await find(storage, args.id);
     if (a.kind === 'image')
       return { id: a.id, title: a.title, kind: a.kind, content: '(an image)' };
     const content = String(a.content);
@@ -224,8 +223,7 @@ export async function artifactTool(storage, name, args, touched) {
       content: args.content,
     });
   } else {
-    const old = await load(storage, String(args.id || ''));
-    if (!old) throw Error('No artifact with that id in this conversation');
+    const old = await find(storage, args.id);
     const content = Array.isArray(args.edits) ? applyEdits(old.content, args.edits) : args.content;
     artifact = await putArtifact(storage, old.id, { title: title || old.title, content });
   }
@@ -236,6 +234,21 @@ export async function artifactTool(storage, name, args, touched) {
   return { id: artifact.id, title: artifact.title, kind: artifact.kind, version: artifact.version };
 }
 
+/** The artifact a tool call names, by id or, as models sometimes send, by its
+ * title; when none matches, the error lists the ones there are. */
+async function find(storage, ref) {
+  const key = String(ref || '').trim();
+  const byId = key && (await load(storage, key));
+  if (byId) return byId;
+  const list = await listArtifacts(storage),
+    named = list.findLast(a => a.title.toLowerCase() === key.toLowerCase());
+  if (named) return load(storage, named.id);
+  throw Error(
+    list.length
+      ? 'No artifact ' + JSON.stringify(key) + ' in this conversation. ' + artifactList(list)
+      : 'This conversation has no artifacts yet.',
+  );
+}
 /** The line a turn's instructions give the conversation's artifacts (summaries,
  * oldest first): the latest MAX_LISTED, with their ids; '' when there are none. */
 export function artifactList(list) {
