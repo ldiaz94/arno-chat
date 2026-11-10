@@ -974,6 +974,31 @@ const { chromium } = require('playwright'),
     await page.getByLabel('Message', { exact: true }).press('Control+Enter');
     assert.deepEqual(await chips(), ['Caveman', 'Build', 'Workers: 2', '$2.50 budget']);
     assert.equal(await page.getByLabel('Message', { exact: true }).inputValue(), '');
+    // Typing / lists the commands; Tab or Enter puts the picked one in, a tap too.
+    const composer = page.getByLabel('Message', { exact: true }),
+      names = () => page.locator('#command-list .command-name').allInnerTexts();
+    await composer.pressSequentially('/c');
+    assert.deepEqual(
+      (await names()).map(n => n.split(' ')[0]),
+      ['/compact', '/clear'],
+    );
+    await page.screenshot({ path: '/tmp/arno-commands.png' });
+    await composer.press('ArrowDown');
+    await composer.press('Tab');
+    assert.equal(await composer.inputValue(), '/clear ');
+    assert.equal(await page.locator('#command-list').isHidden(), true);
+    await composer.fill('');
+    await composer.pressSequentially('/mo');
+    await composer.press('Enter'); // chooses, does not send
+    assert.equal(await composer.inputValue(), '/mode ');
+    await composer.pressSequentially('review');
+    await composer.press('Control+Enter');
+    assert.ok((await chips()).includes('Review'));
+    await composer.pressSequentially('/us');
+    await page.locator('#command-list [data-command="usage"]').click();
+    assert.equal(await composer.inputValue(), '/usage ');
+    // A regular chat suggests nothing.
+    await composer.fill('');
   } finally {
     await browser.close();
   }

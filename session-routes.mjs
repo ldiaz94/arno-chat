@@ -22,7 +22,7 @@ export function hostCommand(prompt) {
   const name = /^\/([a-z]+)/.exec(prompt.trim())?.[1];
   if (['model', 'models', 'provider'].includes(name))
     return 'Change the model with the model button';
-  if (['budget', 'workers'].includes(name))
+  if (['budget', 'workers', 'mode'].includes(name))
     return 'Set /' + name + ' in the options (sliders) button';
   if (['safety', 'quit', 'exit', 'attach', 'paste', 'stage'].includes(name))
     return '/' + name + ' is not available here';

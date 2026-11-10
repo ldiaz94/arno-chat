@@ -49,6 +49,8 @@ Arno Chat turns a GitHub repository clone into a resumable remote coding workspa
 | web/attach.js | Composer attachments: upload on pick/paste/drop, chips, attachment rendering for messages and details |
 | web/turns.js | Sending, editing, job polling and live output |
 | web/options.js | Composer options: the sliders button, its popover, chips, per-conversation storage |
+| web/commands.mjs | The slash commands a coding session suggests (arno's, less those the host refuses, and /mode, /budget, /workers, which set the conversation's options) |
+| web/complete.js | Slash-command suggestions above the composer: arrows, Tab or Enter, Escape, tap |
 | web/options.mjs | The options' choices and defaults, the strict check (also used by the server) and footer tags |
 | web/settings.js | Account settings dialog |
 | web/profile.js | The dialog's You tab: about text, profile picture (resize and upload), privacy notice, account deletion |

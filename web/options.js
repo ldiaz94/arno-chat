@@ -79,28 +79,42 @@ function choose(key, value) {
   save(o);
 }
 
-/** A composer line /budget or /workers, in a coding session, sets the
- * conversation's option instead of going to arno, whose own /budget lasts
+/** A composer line /budget, /workers or /mode, in a coding session, sets the
+ * conversation's option instead of going to arno, whose own settings last
  * only the turn's process. Returns what it did, or '' for another line. */
+// The three: the option each sets, how its value reads, and what it takes.
+const SET = {
+  budget: {
+    key: 'budget',
+    label: 'Budget per message',
+    show: v => (v === 'auto' ? 'auto' : '$' + v),
+    takes: 'A budget is auto or dollars from 0.1 to 100: /budget 2.50',
+  },
+  workers: {
+    key: 'workers',
+    label: 'Workers side by side',
+    show: v => v,
+    takes: 'Workers: off or 1 to 4',
+  },
+  mode: {
+    key: 'approach',
+    label: 'Approach',
+    show: v => v,
+    takes: 'Approach: auto, pair, build or review',
+  },
+};
 export function optionCommand(text) {
-  const m = /^\/(budget|workers)(?:\s+\$?(\S+))?\s*$/.exec(text);
+  const m = /^\/(budget|workers|mode)(?:\s+\$?(\S+))?\s*$/.exec(text);
   if (!m || kind() === 'chat') return '';
-  const [, key, raw = ''] = m,
-    value = { none: 'auto', off: key === 'budget' ? 'auto' : 'off' }[raw] || raw;
-  if (!value)
-    return key === 'budget'
-      ? 'Budget per message: ' +
-          (messageOptions().budget === 'auto' ? 'auto' : '$' + messageOptions().budget)
-      : 'Workers side by side: ' + messageOptions().workers;
-  const o = checkOptions({ ...messageOptions(), [key]: value }, 'code');
-  if (!o)
-    return key === 'budget'
-      ? 'A budget is auto or dollars from 0.1 to 100: /budget 2.50'
-      : 'Workers: off or 1 to 4';
+  const set = SET[m[1]],
+    raw = (m[2] || '').toLowerCase(),
+    // off and none mean no limit for a budget, no workers for workers; chat is arno's auto
+    value = { none: 'auto', chat: 'auto', off: set.key === 'budget' ? 'auto' : 'off' }[raw] || raw;
+  if (!value) return set.label + ': ' + set.show(messageOptions()[set.key]);
+  const o = checkOptions({ ...messageOptions(), [set.key]: value }, 'code');
+  if (!o) return set.takes;
   save(o);
-  return key === 'budget'
-    ? 'Budget per message: ' + (value === 'auto' ? 'auto' : '$' + value)
-    : 'Workers side by side: ' + value;
+  return set.label + ': ' + set.show(value);
 }
 /** Paints the chips and, when open, the popover from the current options. */
 export function render() {

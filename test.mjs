@@ -31,6 +31,7 @@ import { testMcp } from './mcp.mjs';
 import { startSignIn, mcpCallback, mcpBearer } from './mcp-oauth.mjs';
 import { registryProxy, cloudflareProxy, sandboxEnv } from './sandbox.mjs';
 import { chatMcpTools, callChatMcp } from './chat-mcp.mjs';
+import { COMMANDS, suggest } from './web/commands.mjs';
 import { research, citedSources } from './web.mjs';
 import { ArnoProbe, default as worker } from './worker.js';
 test('browser scripts parse', () => {
@@ -2767,4 +2768,18 @@ test('chat MCP approval: waits for the owner, then runs or not', async () => {
   f.obj.chatAbort.abort();
   assert.equal(await denied, false);
   clearTimeout(f.obj.chatTimer);
+});
+test('slash commands: suggested in coding sessions only, by prefix, none refused by the host', () => {
+  assert.deepEqual(suggest('/', 'chat'), []);
+  assert.deepEqual(
+    suggest('/c', 'code').map(c => c[0]),
+    ['compact', 'clear'],
+  );
+  assert.deepEqual(suggest('/compact', 'code'), []); // typed in full
+  assert.deepEqual(suggest('/compact x', 'code'), []); // an argument started
+  assert.equal(suggest('/', 'code').length, COMMANDS.length);
+  // Every arno command offered is one the host lets through; the app's are
+  // handled in the browser (options.js) and refused if they reach the host.
+  for (const [name, , , where] of COMMANDS)
+    assert.equal(!!hostCommand('/' + name), where === 'app', name);
 });
