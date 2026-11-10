@@ -1136,13 +1136,14 @@ const { chromium } = require('playwright'),
     await page.goto('https://arno.test/?session=' + id);
     await page.getByRole('heading', { name: 'What this repository does' }).waitFor();
     assert.equal(await page.locator('[data-mode="code"]').getAttribute('aria-pressed'), 'true');
-    // A coding session starts from the last options, without deep research.
+    // A coding session has its own options: the chat's Caveman and deep
+    // research are not carried over, and deep research is not offered.
     await page.getByRole('button', { name: 'Message options' }).click();
     assert.equal(
       await page.locator('#options-panel label', { hasText: 'Deep research' }).isHidden(),
       true,
     );
-    assert.deepEqual(await chips(), ['Caveman']);
+    assert.deepEqual(await chips(), []);
     // Coding options: approach, workers and budget, then /budget typed.
     await page
       .locator('#options-panel label')
@@ -1153,7 +1154,7 @@ const { chromium } = require('playwright'),
     await page.keyboard.press('Escape');
     await page.getByLabel('Message', { exact: true }).fill('/budget 2.50');
     await page.getByLabel('Message', { exact: true }).press('Control+Enter');
-    assert.deepEqual(await chips(), ['Caveman', 'Build', 'Workers: 2', '$2.50 budget']);
+    assert.deepEqual(await chips(), ['Build', 'Workers: 2', '$2.50 budget']);
     assert.equal(await page.getByLabel('Message', { exact: true }).inputValue(), '');
     // Typing / lists the commands; Tab or Enter puts the picked one in, a tap too.
     const composer = page.getByLabel('Message', { exact: true }),

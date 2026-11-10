@@ -2,8 +2,10 @@
  * sessions also approach, workers and budget): the sliders
  * button, its popover, and the chips for choices that differ from the
  * defaults. Each conversation keeps its own options in localStorage
- * (`options:<id>`); a conversation without any starts from the last ones
- * used (`options:last`). Every message is sent with them (turns.js).
+ * (`options:<id>`), and one without any has the defaults: a choice made in
+ * one conversation never changes another. A new chat not yet made (a draft,
+ * sessions.js) keeps its choices on itself until it is (keepOptions). Every
+ * message is sent with them (turns.js).
  * Depends on core and options.mjs.
  */
 import { $, state, icon, esc } from './core.js';
@@ -36,7 +38,7 @@ const kind = () => (state.session && state.session.kind !== 'chat' ? 'code' : 'c
  * a coding session, and anything unreadable to the defaults. */
 export function messageOptions() {
   const id = state.session?.id,
-    saved = (id && read('options:' + id)) || read('options:last') || DEFAULTS,
+    saved = (id ? read('options:' + id) : state.session?.options) || DEFAULTS,
     o = {
       ...DEFAULTS,
       ...saved,
@@ -44,11 +46,15 @@ export function messageOptions() {
     };
   return checkOptions(o, kind()) || { ...DEFAULTS };
 }
-// Keeps the options as this conversation's and as the latest used.
+// Keeps the options as this conversation's, or on the draft not yet made.
 function save(o) {
   if (state.session?.id) write('options:' + state.session.id, o);
-  write('options:last', o);
+  else if (state.session) state.session.options = o;
   render();
+}
+/** Gives a conversation just made from a draft the options chosen in it. */
+export function keepOptions(id, o) {
+  if (o) write('options:' + id, o);
 }
 /** Moves a chat made offline's options to the id the server gave it. */
 export function moveOptions(from, to) {

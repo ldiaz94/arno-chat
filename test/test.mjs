@@ -189,7 +189,9 @@ test('plain chat publishes text before completion and keeps thinking out of answ
   assert.equal(previews[0].reasoning, 'Model explanation');
   controller.enqueue(
     new TextEncoder().encode(
-      'data: ' + JSON.stringify({ choices: [{ delta: { content: ' world' } }] }) + '\n\n',
+      'data: ' +
+        JSON.stringify({ choices: [{ delta: { content: ' world' } }] }) +
+        '\n\ndata: [DONE]\n\n',
     ),
   );
   controller.close();
@@ -982,8 +984,8 @@ test('plain chat executes a web tool then returns a cited final answer', async (
     upstream: async () =>
       new Response(
         ++calls === 1
-          ? 'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call1","function":{"name":"web_search","arguments":"{\\"query\\":\\"test\\"}"}}]}}]}\n\n'
-          : 'data: {"choices":[{"delta":{"content":"Verified fact [1]."}}]}\n\n',
+          ? 'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call1","function":{"name":"web_search","arguments":"{\\"query\\":\\"test\\"}"}}]}}]}\n\ndata: [DONE]\n\n'
+          : 'data: {"choices":[{"delta":{"content":"Verified fact [1]."}}]}\n\ndata: [DONE]\n\n',
       ),
   });
   assert.equal(executed, true);
@@ -1795,7 +1797,7 @@ test('attachments: chunked round trip, kind and size checks, model input per pro
               choices: [{ delta: { content: 'ok' } }],
               delta: { type: 'text_delta', text: 'ok' },
             }) +
-            '\n\n',
+            '\n\ndata: [DONE]\n\n',
         );
       },
     });
@@ -2390,7 +2392,9 @@ test('effort per provider: each model gets the nearest value it accepts, auto se
   assert.equal(fields.extra_body.google.thinking_config.thinking_level, 'low');
 });
 const claudeStream = events =>
-  new Response(events.map(e => 'data: ' + JSON.stringify(e) + '\n\n').join(''));
+  new Response(
+    [...events, { type: 'message_stop' }].map(e => 'data: ' + JSON.stringify(e) + '\n\n').join(''),
+  );
 const THINKING_REPLY = [
   { type: 'message_start', message: { usage: { input_tokens: 10 } } },
   { type: 'content_block_start', index: 0, content_block: { type: 'thinking', thinking: '' } },
@@ -2504,7 +2508,9 @@ test('search off drops web tools and instructions; deep research budgets reach r
   globalThis.fetch = async (url, init) => {
     if (String(url).endsWith('/v1/chat/completions')) {
       bodies.push(JSON.parse(init.body));
-      return new Response('data: {"choices":[{"delta":{"content":"Ugh. Done."}}]}\n\n');
+      return new Response(
+        'data: {"choices":[{"delta":{"content":"Ugh. Done."}}]}\n\ndata: [DONE]\n\n',
+      );
     }
     if (String(url).endsWith('/api/show')) return Response.json({ capabilities: ['thinking'] });
     return new Response('{}', { status: 404 });
@@ -3080,4 +3086,39 @@ test('a tool whose limit the turn reached is no longer offered', async () => {
     bodies[1].tools.map(t => t.function.name),
     ['create_artifact'],
   );
+});
+test('a reply the provider cut off is asked again, and fails loudly if cut again', async () => {
+  const cut = () => new Response('data: {"choices":[{"delta":{"content":"Me look moo"}}]}\n\n');
+  const run = replies =>
+    plainChat({
+      model: 'kimi-k3.1-pro',
+      provider: 'ollama',
+      key: 'k',
+      history: [],
+      prompt: 'moon',
+      runTool: async () => ({}),
+      upstream: async () => replies.shift(),
+    });
+  assert.equal((await run([cut(), sse([delta({ content: 'Full moon.' })])])).summary, 'Full moon.');
+  await assert.rejects(run([cut(), cut()]), /cut its reply off before it finished, twice/);
+});
+test('a turn out of time keeps what the model said, marked as stopped', async () => {
+  const abort = new AbortController();
+  const r = await plainChat({
+    model: 'kimi-k3.1-pro',
+    provider: 'ollama',
+    key: 'k',
+    history: [],
+    prompt: 'moon',
+    signal: abort.signal,
+    runTool: async () => ({}),
+    upstream: async (url, init) => {
+      if (init.body.includes('"role":"tool"')) {
+        abort.abort(); // the clock runs out during the second request
+        throw Object.assign(Error('The operation was aborted'), { name: 'AbortError' });
+      }
+      return sse([delta({ content: 'The moon is waxing.' }), ...callDeltas('a'), delta({})]);
+    },
+  });
+  assert.match(r.summary, /^The moon is waxing\.\n\n\*Stopped at this turn’s time limit/);
 });

@@ -259,7 +259,7 @@ Statistics are cumulative from when measurement was added. A chat turn that fail
 
 ## Composer options
 
-Every message carries `options` = `{search, effort, mode, style, mcp, superSearch}`, and in coding sessions also `{approach, workers, budget}` (web/options.mjs; defaults `true`, `'auto'`, `'standard'`, `'normal'`, `'auto'`, `'off'`, `'auto'`; missing ones take their defaults). enqueue checks them strictly and keeps them on the job; the saved turn keeps them as `options`, and its footer tags the non-default ones ("Deep research", "Caveman", "Thinking: high", "No search"). Outbox entries keep the body, so queued sends, retries and edits carry them too. The browser keeps them per conversation in localStorage (`options:<id>`, moved with an offline chat's id), and a conversation without any starts from `options:last`.
+Every message carries `options` = `{search, effort, mode, style, mcp, superSearch}`, and in coding sessions also `{approach, workers, budget}` (web/options.mjs; defaults `true`, `'auto'`, `'standard'`, `'normal'`, `'auto'`, `'off'`, `'auto'`; missing ones take their defaults). enqueue checks them strictly and keeps them on the job; the saved turn keeps them as `options`, and its footer tags the non-default ones ("Deep research", "Caveman", "Thinking: high", "No search"). Outbox entries keep the body, so queued sends, retries and edits carry them too. The browser keeps them per conversation in localStorage (`options:<id>`, moved with an offline chat's id); a conversation without any has the defaults, so a choice made in one never changes another. A draft chat keeps its choices on itself and hands them to the chat once it is made (`keepOptions`).
 
 server/chat/plan.mjs turns them into a plan both kinds of turn follow:
 

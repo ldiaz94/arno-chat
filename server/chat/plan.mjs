@@ -6,8 +6,8 @@
  * option defaults in web/options.mjs. Leaves out the options' storage.
  *
  *   mode          effort          search   output   rounds  searches/reads  time
- *   standard      as chosen       chosen   16,384   12      6 / 12          4 min
- *   fast          off unless set  chosen   4,096    12      6 / 12          4 min
+ *   standard      as chosen       chosen   16,384   12      6 / 12          8 min
+ *   fast          off unless set  chosen   4,096    12      6 / 12          8 min
  *   deep          at least medium on       16,384   16      10 / 20         12 min
  *   super search  (any mode)      on       as mode  32      25 / 50         12 min
  */
@@ -75,7 +75,7 @@ export function turnPlan(options = DEFAULTS) {
         ? { searches: 10, reads: 20, sources: 60 }
         : undefined,
     // A Durable Object alarm may run for 15 minutes; the longer turns keep 3 spare.
-    timeLimit: deep || o.superSearch ? 12 * 60000 : 4 * 60000,
+    timeLimit: deep || o.superSearch ? 12 * 60000 : 8 * 60000,
     instructions: [deep ? DEEP_RESEARCH : fast ? FAST : '', STYLE[o.style]]
       .filter(Boolean)
       .join('\n\n'),

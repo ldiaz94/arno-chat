@@ -29,7 +29,10 @@ function visible(text, reasoning) {
  * streaming dialect. Credential-bearing headers never enter these results.
  * Anthropic's thinking blocks (thinking with its signature, or redacted) are
  * kept whole in `thinking`: with tools, the next request must send them back
- * unchanged before the tool_use blocks. Only thinking text is ever shown. */
+ * unchanged before the tool_use blocks. Only thinking text is ever shown.
+ * `finish` is why the reply ended (finish_reason or stop_reason), `complete`
+ * whether the stream said it had (that, [DONE] or message_stop): a stream
+ * cut short says neither. */
 async function readReply(body, onProgress) {
   const reader = body.getReader(),
     decoder = new TextDecoder(),
@@ -40,15 +43,20 @@ async function readReply(body, onProgress) {
     reasoning = '',
     usage = null,
     size = 0,
-    last = 0;
+    last = 0,
+    finish = null,
+    ended = false;
   const line = s => {
     if (!s.startsWith('data:')) return;
+    if (s.slice(5).trim() === '[DONE]') return void (ended = true);
     let v;
     try {
       v = JSON.parse(s.slice(5).trim());
     } catch {
       return;
     }
+    finish = v.choices?.[0]?.finish_reason || v.delta?.stop_reason || finish;
+    if (v.type === 'message_stop') ended = true;
     const u = v.message?.usage || v.usage;
     if (u) usage = { ...(usage || {}), ...u };
     const delta = displayDelta(v);
@@ -112,6 +120,8 @@ async function readReply(body, onProgress) {
     calls: [...calls.values()],
     thinking: [...thinking.values()],
     usage,
+    finish,
+    complete: ended || !!finish,
   };
 }
 
@@ -216,7 +226,8 @@ export async function plainChat({
     return f;
   };
   let fields = fieldsAt(effort),
-    rethought = false; // whether a round was asked again with less thinking
+    rethought = false, // whether a round was asked again with less thinking
+    recut = false; // whether a round cut short by the provider was asked again
   // The answer, with the turn's usage: on a cut-short turn, what was said last.
   const answer = (summary, reasoning) => ({
     exitCode: 0,
@@ -236,6 +247,8 @@ export async function plainChat({
   try {
     return await loop();
   } catch (e) {
+    // Out of time with something said already: that is the answer, marked.
+    if (signal?.aborted && said) return answer(said + OUT_OF_TIME, '');
     // What the turn spent so far rides on its error, to be charged (records.mjs).
     e.spent = answer('', '');
     throw e;
@@ -301,6 +314,28 @@ export async function plainChat({
         requestLog.push({ at: Date.now(), ...t });
       }
       if (reply.summary.trim() && reply.calls.length) said = reply.summary.trim();
+      // The provider's stream ended before the reply said it had: ask the
+      // round once more, then fail rather than keep a fragment as the answer.
+      if (!reply.complete) {
+        console.log(
+          JSON.stringify({
+            event: 'stream_cut',
+            provider,
+            model,
+            round: round + 1,
+            text: reply.summary.length,
+            calls: reply.calls.length,
+            again: !recut,
+          }),
+        );
+        if (recut)
+          throw Error(
+            provider + ' cut its reply off before it finished, twice. Try again, or another model.',
+          );
+        recut = true;
+        round--;
+        continue;
+      }
       // All of the output went on thinking (seen with DeepSeek's flash models at
       // the provider's default effort): ask the same round again, not thinking (low still
       // spent it all).
@@ -406,6 +441,9 @@ export async function plainChat({
 /** Added to a turn's answer when its model calls ran out before it finished. */
 const CUT_SHORT =
   '\n\n*Stopped at this turn’s research limit, so this may be incomplete. Super search allows more.*';
+/** Added to a turn's answer when its time ran out before it finished. */
+const OUT_OF_TIME =
+  '\n\n*Stopped at this turn’s time limit, so this may be incomplete. Super search allows longer.*';
 /** Before the last model request (which offers no tools): asks for the answer
  * now, from what was found. Anthropic's goes beside the tool results, in the
  * same user turn. */

@@ -28,7 +28,7 @@ import { modelButton, modelLabel, openModels, startModel } from './models.js';
 import { message, failure, scrollDown, suggestions } from './thread.js';
 import { watchJob, resizePrompt } from './turns.js';
 import { clearAttachments } from './attach.js';
-import { render as renderOptions } from './options.js';
+import { render as renderOptions, keepOptions } from './options.js';
 import { greeting, todayCard, wireToday } from './home.js';
 import { controls } from './offline.js';
 import {
@@ -178,6 +178,7 @@ async function make(draft) {
       s = await queueChat(draft.model); // made on the server once back online
     }
     state.sessions.unshift(s);
+    keepOptions(s.id, draft.options);
     if (state.session !== draft) return false;
     state.session = { ...s, id: s.id };
     sidebar();

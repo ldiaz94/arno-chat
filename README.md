@@ -86,7 +86,7 @@ the most recently active first.
 | Mode | Standard; Fast (short, no thinking); Deep research (a cited report saved as an artifact) | Deep research in chats |
 | Thinking | Auto, Off, Low, Medium, High (where the model's provider supports it) | both |
 | Style | Normal, Concise, Caveman | both |
-| Super search | on, off: more searches, page reads, model calls and time for one turn (25, 50, 32, 12 min instead of 6, 12, 12, 4 min) | chats |
+| Super search | on, off: more searches, page reads, model calls and time for one turn (25, 50, 32, 12 min instead of 6, 12, 12, 8 min) | chats |
 | MCP tools | on, off (your connections marked *Use in chats*) | chats |
 | Approach | Auto, Pair, Build, Review (arno's mode) | coding |
 | Workers side by side | Off, 1, 2, 4 | coding |

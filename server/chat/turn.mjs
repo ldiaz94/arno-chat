@@ -141,9 +141,21 @@ export const chatTurn = {
           return data;
         },
       }).catch(e => {
+        // Aborted by the turn's clock (not a Stop, which cancels the job): say so.
+        const late = e.name === 'AbortError' && Date.now() >= this.chatDeadline - 1000;
+        const error = late
+          ? Object.assign(
+              Error(
+                'This turn reached its time limit (' +
+                  plan.timeLimit / 60000 +
+                  ' minutes) before the model answered. Try again, a faster model, or Super search for longer.',
+              ),
+              { spent: e.spent },
+            )
+          : e;
         // A failed turn is charged for what it spent: its web calls too, at the session's model.
-        if (e.spent) Object.assign(e.spent, { model: session.model, webUsage: counts });
-        throw e;
+        if (error.spent) Object.assign(error.spent, { model: session.model, webUsage: counts });
+        throw error;
       });
       result.model = session.model;
       result.attachments = attached;
