@@ -25,6 +25,10 @@ function visible(text, reasoning) {
     : { text: text.slice(end + 10), reasoning: reasoning + text.slice(9, end) };
 }
 
+/** The most bytes one streamed reply may take. The wire costs far more than its
+ * text (a JSON event per few characters), so 16,000 tokens of thinking can pass
+ * 2 MB; the text itself is held to 60,000 characters below. */
+const MAX_STREAM = 32e6;
 /** Decode text, native tool calls, and reported usage from either provider's
  * streaming dialect. Credential-bearing headers never enter these results.
  * Anthropic's thinking blocks (thinking with its signature, or redacted) are
@@ -98,7 +102,12 @@ async function readReply(body, onProgress) {
       const { done, value } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > 2000000) throw Error('Oversized provider response');
+      if (size > MAX_STREAM)
+        throw Error(
+          "The model's reply passed " +
+            MAX_STREAM / 1e6 +
+            ' MB, too long to keep. Try again, or ask for less at once.',
+        );
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop();
