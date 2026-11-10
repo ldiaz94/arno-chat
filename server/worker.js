@@ -3,7 +3,8 @@
  * re-exported here for the runtime. */
 import { SECURITY, json, sameOrigin } from './http.mjs';
 import { currentAuth, handleOAuth, repoAccess } from './auth.mjs';
-import { apiRoutes, sessionPaths } from './api.mjs';
+import { apiRoutes } from './api.mjs';
+import { sessionPaths } from './sessions-api.mjs';
 
 export { ArnoProbe } from './probe/probe.mjs';
 export {

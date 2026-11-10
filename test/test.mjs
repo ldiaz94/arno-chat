@@ -14,7 +14,7 @@ import { usageStream, modelRequest, displayDelta } from '../server/gateways/mode
 import { checkOptions, optionTags, DEFAULTS } from '../web/options.mjs';
 import { turnPlan, codeSettings, codeLimits } from '../server/chat/plan.mjs';
 import { gitProxy, refUpdates } from '../server/code/git.mjs';
-import { hostCommand } from '../server/probe/session-routes.mjs';
+import { hostCommand } from '../server/code/code-routes.mjs';
 import { encode, decoderOf } from '../server/code/serve.mjs';
 import { plainChat } from '../server/chat/chat.mjs';
 import { validPath } from '../server/code/files.mjs';

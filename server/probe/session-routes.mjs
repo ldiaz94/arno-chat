@@ -2,88 +2,13 @@
  * lifecycle, turns, live events, file preview and publishable changes.
  * Called with this = the ArnoProbe instance. */
 import { SECURITY, json } from '../http.mjs';
+import { hostCommand } from '../code/code-routes.mjs';
 import { modelAllowed, contextWindow, acceptsImages } from '../models.mjs';
 import { attachmentsFor, saveAttachment, readAttachment } from './attachments.mjs';
 import { listArtifacts } from './artifacts.mjs';
-import { EXPORT_FILES, validateFiles, WORKTREE_DIFF } from '../code/publish.mjs';
-import { buildPrompt, sessionPrompt } from '../code/context.mjs';
-import { serveTurn, replyOf, transcriptOf, activityOf } from '../code/serve.mjs';
-import { sandboxEnv } from '../code/sandbox.mjs';
-import { READ_FILE, validPath } from '../code/files.mjs';
-import { citedSources } from '../chat/research.mjs';
 import { checkOptions } from '../../web/options.mjs';
-import { turnPlan, codeLimits } from '../chat/plan.mjs';
-import { gitRemote } from '../code/git.mjs';
-
-/** Why a coding session's line can't go to arno, or '': the commands that
- * would undo what the host set up (its model, safety and process), or need a
- * terminal. The rest (/clear, /compact, /notes, /usage, /help, ...) go on. */
-export function hostCommand(prompt) {
-  const name = /^\/([a-z]+)/.exec(prompt.trim())?.[1];
-  if (['model', 'models', 'provider'].includes(name))
-    return 'Change the model with the model button';
-  if (['budget', 'workers', 'mode'].includes(name))
-    return 'Set /' + name + ' in the options (sliders) button';
-  if (['safety', 'quit', 'exit', 'attach', 'paste', 'stage'].includes(name))
-    return '/' + name + ' is not available here';
-  return '';
-}
-/** git log's fields for a commit, parted by unit separators. */
-const LOG_FORMAT = '%H%x1f%an%x1f%at%x1f%s%x1f%D';
 
 export const sessionRoutes = {
-  /** The newest commits of the session's checkout: each with its author, time,
-   * subject and refs, and whether it is only here (not yet on GitHub); and
-   * how many files have uncommitted changes. */
-  async 'GET /session/history'() {
-    const refused = await this.wake();
-    if (refused) return refused;
-    const cwd = { cwd: '/workspace/repo' };
-    const [log, local, status] = await Promise.all([
-      this.exec(['git', 'log', '-n', '100', '--format=' + LOG_FORMAT, 'HEAD'], cwd, 20),
-      this.exec(['git', 'rev-list', '-n', '100', 'HEAD', '--not', '--remotes'], cwd, 20),
-      this.exec(['git', 'status', '--porcelain'], cwd, 20),
-    ]);
-    if (log.exitCode !== 0) return json({ error: 'Could not read the history' }, 500);
-    const only = new Set(local.stdout.split('\n').filter(Boolean));
-    const commits = log.stdout
-      .split('\n')
-      .filter(Boolean)
-      .map(line => {
-        const [sha, author, at, subject, refs] = line.split('\x1f');
-        return { sha, author, at: Number(at) * 1000, subject, refs, local: only.has(sha) };
-      });
-    return json({ commits, uncommitted: status.stdout.split('\n').filter(Boolean).length });
-  },
-  /** One commit: its message and its patch, cut at 120 KB. Its files' contents
-   * may still be on GitHub (a partial clone), so git may fetch them. */
-  async 'GET /session/commit'(request, url) {
-    const sha = url.searchParams.get('sha') || '';
-    if (!/^[0-9a-f]{7,40}$/.test(sha)) return json({ error: 'Invalid commit' }, 400);
-    const refused = await this.wake();
-    if (refused) return refused;
-    const session = await this.ctx.storage.get('session');
-    this.gitOpen = { repo: session.repo, ownerId: session.ownerId };
-    try {
-      const r = await this.exec(
-        ['git', 'show', '--no-color', '--patch', '--format=%H%x1f%an%x1f%at%x1f%B%x1e', sha],
-        { cwd: '/workspace/repo' },
-        60,
-      );
-      if (r.exitCode !== 0) return json({ error: 'Could not read that commit' }, 404);
-      const [head, ...rest] = r.stdout.split('\x1e'),
-        [full, author, at, message] = head.split('\x1f');
-      return json({
-        sha: full,
-        author,
-        at: Number(at) * 1000,
-        message: message.trim(),
-        patch: rest.join('').replace(/^\n+/, '').slice(0, 120000),
-      });
-    } finally {
-      this.gitOpen = null;
-    }
-  },
   async 'POST /session/rename'(request) {
     const { title } = await request.json();
     if (typeof title !== 'string' || !title.trim() || title.length > 100)
@@ -123,26 +48,6 @@ export const sessionRoutes = {
     await this.ctx.storage.put('session', { ...session, ownerId, id: session.id || id });
     if (github?.token && session.kind !== 'chat') await this.keepGithub(ownerId, github);
     return new Response(null, { status: 204 });
-  },
-  async 'GET /session/files'(request, url) {
-    const name = url.searchParams.get('path') || '';
-    if (!validPath(name)) return json({ error: 'Invalid file path' }, 400);
-    const refused = await this.wake();
-    if (refused) return refused;
-    const p = await this.ctx.container.exec(['node', '-e', READ_FILE, name], {
-      cwd: '/workspace/repo',
-    });
-    const result = await p.output();
-    if (result.exitCode !== 0)
-      return json(
-        {
-          error:
-            'Cannot preview this path. Preview supports regular UTF-8 files up to 200 KB and no symlinks.',
-        },
-        400,
-      );
-    if (result.stdout.byteLength > 1500000) return json({ error: 'Preview too large' }, 413);
-    return json(JSON.parse(new TextDecoder().decode(result.stdout)));
   },
   async 'POST /session/chat-init'(request) {
     const { model, ownerId, id } = await request.json();
@@ -185,46 +90,6 @@ export const sessionRoutes = {
     await this.ctx.storage.delete('modelQuota');
     if (this.ctx.container?.running) await this.ctx.container.destroy();
     return json({ status: 'cancelled' });
-  },
-  async 'GET /session/changes'() {
-    const job = await this.ctx.storage.get('job');
-    if (this.inFlight || (job && ['queued', 'running'].includes(job.status)))
-      return json({ error: 'Wait for the task to finish before publishing' }, 409);
-    const session = await this.ctx.storage.get('session');
-    if (!session) return json({ error: 'Session not found' }, 404);
-    if (!session.sourceSha)
-      return json(
-        {
-          error:
-            'This older session has no pinned source commit. Open a new session before publishing.',
-        },
-        409,
-      );
-    this.inFlight = true;
-    try {
-      await this.start(session.model);
-      const p = await this.ctx.container.exec(['node', '-e', EXPORT_FILES], {
-        cwd: '/workspace/repo',
-      });
-      const output = await p.output();
-      if (output.exitCode !== 0)
-        return json(
-          {
-            error: 'Unable to export changes. Only regular text files up to 1 MB are supported.',
-          },
-          400,
-        );
-      if (output.stdout.byteLength > 2000000) return json({ error: 'Changes too large' }, 413);
-      const { files } = JSON.parse(new TextDecoder().decode(output.stdout));
-      return json({
-        files: validateFiles(files),
-        repo: session.repo,
-        ref: session.ref,
-        sourceSha: session.sourceSha,
-      });
-    } finally {
-      this.inFlight = false;
-    }
   },
   async 'POST /session/suspend'() {
     const job = await this.ctx.storage.get('job');
@@ -365,86 +230,6 @@ export const sessionRoutes = {
       contextWindow: await contextWindow(meta.model),
     });
   },
-  /** A new coding session: the workspace's container starts, the repository
-   * is cloned into it through the git gateway (git.mjs), and the first
-   * checkpoint is taken. */
-  async 'POST /session/init'(request) {
-    const model = request.headers.get('X-Arno-Model');
-    const repo = request.headers.get('X-Arno-Repo');
-    const ref = request.headers.get('X-Arno-Ref');
-    if (
-      !(await modelAllowed(model)) ||
-      !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo || '') ||
-      !ref
-    )
-      return json({ error: 'Invalid session' }, 400);
-    let github;
-    try {
-      github = JSON.parse(request.headers.get('X-Arno-GitHub') || 'null');
-    } catch {
-      github = null;
-    }
-    const ownerId = request.headers.get('X-Arno-Owner') || null;
-    await this.start(model);
-    await this.exec(
-      [
-        'sh',
-        '-c',
-        'rm -rf /workspace/repo /workspace/config /workspace/data; mkdir -p /workspace/config/arno /workspace/data',
-      ],
-      {},
-      30,
-    );
-    if (github?.token) await this.keepGithub(ownerId, github);
-    // The gateway serves this repository while the clone runs (gitOpen).
-    this.gitOpen = { repo, ownerId };
-    let clone;
-    try {
-      clone = await this.exec(
-        [
-          'git',
-          'clone',
-          '-q',
-          '--filter=blob:none',
-          '--branch',
-          ref,
-          gitRemote(repo),
-          '/workspace/repo',
-        ],
-        {},
-        170,
-      );
-    } finally {
-      this.gitOpen = null;
-    }
-    if (clone.exitCode !== 0)
-      return json({ error: 'Could not clone the repository', detail: clone.stderr }, 502);
-    const head = await this.exec(['git', 'rev-parse', 'HEAD'], { cwd: '/workspace/repo' }, 10);
-    const meta = {
-      repo,
-      ref,
-      model,
-      ownerId,
-      remoteUrl: 'https://github.com/' + repo,
-      sourceSha: head.stdout.trim() || request.headers.get('X-Arno-Sha') || null,
-      createdAt: Date.now(),
-    };
-    await this.exec(
-      [
-        'sh',
-        '-c',
-        'git config arno.sourceCommit "$1" && git config arno.cloned true',
-        'sh',
-        meta.sourceSha,
-      ],
-      { cwd: '/workspace/repo' },
-      10,
-    );
-    await this.gitSetup(meta);
-    const snapshot = await this.ctx.container.snapshotContainer({});
-    await this.ctx.storage.put({ session: meta, snapshot });
-    return json(meta);
-  },
   async 'POST /session/run'(request) {
     if (this.inFlight) return json({ error: 'Arno is already working' }, 409);
     const session = await this.ctx.storage.get('session');
@@ -454,160 +239,6 @@ export const sessionRoutes = {
       return json({ error: 'Invalid prompt' }, 400);
     if (this.inFlight) return json({ error: 'Arno is already working' }, 409);
     if (session.kind === 'chat') return this.plainTurn(session, prompt.trim(), editAt);
-    this.inFlight = true;
-    try {
-      const began = Date.now(),
-        turnId = crypto.randomUUID();
-      await this.phase(this.ctx.container.running ? 'preparing' : 'restoring');
-      const workspace = await this.start(session.model);
-      if ((await this.ctx.storage.get('job'))?.status === 'cancelled')
-        throw Error('Task cancelled');
-      const options = (await this.ctx.storage.get('job'))?.options,
-        plan = turnPlan(options),
-        limits = codeLimits(options);
-      await this.writeConfig(session.model, plan, options);
-      await this.gitSetup(session);
-      const startupMs = Date.now() - began;
-      await this.phase('thinking', { workspace, startupMs });
-      const previous = await this.history();
-      // Attached files go into the workspace, outside the repository, and the
-      // prompt names them: the prompt is a command-line argument, too small for
-      // inlining.
-      const attached = (await this.ctx.storage.get('job'))?.attachments || [];
-      const paths = [];
-      for (const meta of attached) {
-        const file = await readAttachment(this.ctx.storage, meta.id),
-          path = '/workspace/attachments/' + meta.id.slice(0, 8) + '-' + meta.name;
-        if (!file) continue;
-        await this.exec(['sh', '-c', 'mkdir -p /workspace/attachments && cat > "$1"', 'sh', path], {
-          stdin: new Response(file.bytes).body,
-        });
-        paths.push(path);
-      }
-      const note = paths.length
-        ? '\n\nAttached files (read them as needed):\n' + paths.join('\n')
-        : '';
-      // The model gateway reads the turn's options from here (/model-account).
-      await this.ctx.storage.put('modelQuota', {
-        used: 0,
-        rounds: limits.rounds,
-        turnId,
-        options,
-        sources: session.sources || [],
-        webCounts: { searches: 0, reads: 0 },
-        deadline: Date.now() + limits.timeLimit + 60000,
-      });
-      const refsBefore = await this.remoteRefs();
-      const modelBegan = Date.now();
-      const process = await this.ctx.container.exec(
-        [
-          'timeout',
-          '--kill-after=10',
-          String(limits.timeLimit / 1000 + 60),
-          '/usr/local/bin/arno',
-          '--serve',
-        ],
-        {
-          cwd: '/workspace/repo',
-          env: {
-            XDG_CONFIG_HOME: '/workspace/config',
-            XDG_DATA_HOME: '/workspace/data',
-            PYTHONDONTWRITEBYTECODE: '1',
-            ...sandboxEnv((await this.sandbox(session.ownerId)).cloudflare),
-          },
-          stdin: 'pipe',
-        },
-      );
-      // arno's standard error (crashes, and what tools print) is kept short.
-      let stderr = '';
-      const drained = process.stderr
-        ?.pipeThrough(new TextDecoderStream())
-        .pipeTo(new WritableStream({ write: t => void (stderr = (stderr + t).slice(-10000)) }))
-        .catch(() => {});
-      const stop = new AbortController(),
-        timer = setTimeout(() => stop.abort(), limits.timeLimit);
-      let turn;
-      try {
-        turn = await serveTurn(process, {
-          hello: { prompt: sessionPrompt(session, await this.sandbox(session.ownerId)) },
-          conversation: session.arnoConversation,
-          // A conversation arno no longer has (or a session from before it kept
-          // them) starts again with the earlier turns as context.
-          // A command goes as it is.
-          line: loaded =>
-            prompt.startsWith('/')
-              ? prompt
-              : loaded
-                ? prompt + note
-                : buildPrompt(session, previous, prompt + note),
-          onEvent: e => this.activity(activityOf(e)),
-          signal: stop.signal,
-        });
-      } finally {
-        clearTimeout(timer);
-      }
-      const exitCode = await Promise.race([
-        process.exitCode,
-        new Promise(r => setTimeout(() => r(null), 15000)),
-      ]);
-      await drained;
-      if (turn.conversation && turn.conversation !== session.arnoConversation)
-        await this.ctx.storage.put('session', {
-          ...(await this.ctx.storage.get('session')),
-          arnoConversation: turn.conversation,
-        });
-      const executionMs = Date.now() - modelBegan;
-      await this.phase('checkpointing', { workspace, startupMs, executionMs });
-      const pushed = await this.followPush(refsBefore);
-      const reply = replyOf(turn),
-        failed = !reply && !turn.entries.length;
-      const diffResult = await this.exec(
-        ['node', '-e', WORKTREE_DIFF],
-        { cwd: '/workspace/repo' },
-        30,
-      );
-      const result = {
-        exitCode: failed ? exitCode || 1 : 0,
-        model: session.model,
-        summary: (
-          (turn.cancelled ? 'Stopped at the time limit. ' : '') +
-          (reply || stderr || 'Arno ended without a reply (exit ' + exitCode + ').')
-        ).slice(-12000),
-        diff: diffResult.stdout.slice(-40000),
-        diagnostics: (transcriptOf(turn) + (stderr ? '\n\n' + stderr : '')).slice(-40000),
-        arno: turn.stats,
-        pushed: pushed || undefined,
-        reasoning:
-          this.live?.jobId === (await this.ctx.storage.get('job'))?.id
-            ? this.live?.reasoning || ''
-            : '',
-        timing: { startupMs, executionMs, workspace },
-      };
-      const q = await this.ctx.storage.get('modelQuota');
-      result.usage = {
-        calls: q?.used || 0,
-        measuredCalls: q?.measuredCalls || 0,
-        inputTokens: q?.measuredCalls ? q.inputTokens : null,
-        outputTokens: q?.measuredCalls ? q.outputTokens : null,
-        cachedTokens: q?.cachedTokens || 0,
-        cacheWriteTokens: q?.cacheWriteTokens || 0,
-        lastInputTokens: q?.lastInputTokens ?? null,
-      };
-      result.requestLog = q?.requestLog || [];
-      result.sources = citedSources(result.summary, q?.sources || [], previous);
-      result.attachments = attached;
-      result.webUsage = q?.webCounts || { searches: 0, reads: 0 };
-      result.options = options;
-      const checkpointBegan = Date.now();
-      const snapshot = await this.ctx.container.snapshotContainer({});
-      result.timing.checkpointMs = Date.now() - checkpointBegan;
-      result.timing.totalMs = Date.now() - began;
-      await this.saveTurn(result, prompt.trim(), snapshot, q?.sources || []);
-      return json(result);
-    } finally {
-      this.inFlight = false;
-      await this.ctx.storage.delete(['modelQuota', 'thinking']);
-      await this.ctx.storage.setAlarm(Date.now() + 35 * 60 * 1000);
-    }
+    return this.codeTurn(session, prompt.trim());
   },
 };

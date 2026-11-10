@@ -2,6 +2,8 @@
  * it executes inside the untrusted container, and the host validates the result.
  * Publishing creates a new branch from the pinned GitHub source commit.
  */
+import { github } from '../auth.mjs';
+
 export const EXPORT_FILES = String.raw`
 const fs=require('fs'),cp=require('child_process'),path=require('path'),root='/workspace/repo';
 const git=args=>{try{return cp.execFileSync('git',args,{cwd:root,encoding:'utf8'}).trim()}catch{return ''}};
@@ -58,3 +60,83 @@ out+=run(['diff',base,'--','.']);
 for(const file of run(['ls-files','--others','--exclude-standard','-z']).split('\0').filter(Boolean).slice(0,50)){if(out.length>60000)break;out+=run(['diff','--no-index','--','/dev/null',file])}
 process.stdout.write(out.slice(0,60000));
 `;
+
+/** The changes for review, checked, and the digest that names them: a publish
+ * must name the same digest, so what is published is what was reviewed. */
+export async function changesDigest(changes) {
+  const files = validateFiles(changes.files),
+    hash = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(JSON.stringify({ files, sourceSha: changes.sourceSha })),
+    );
+  const digest = [...new Uint8Array(hash)].map(n => n.toString(16).padStart(2, '0')).join('');
+  return { changes, files, digest };
+}
+
+/** Publishes reviewed changes ({changes, files} of changesDigest) to GitHub
+ * with token: a commit on the pinned source commit, a new branch body.branch
+ * (arno/...), and a pull request titled body.title. An error carries the
+ * HTTP status to answer with. */
+export async function publishChanges({ changes, files }, body, token) {
+  if (
+    typeof body.branch !== 'string' ||
+    !/^arno\/[a-zA-Z0-9][a-zA-Z0-9_-]{0,70}$/.test(body.branch) ||
+    typeof body.title !== 'string' ||
+    !body.title.trim() ||
+    body.title.length > 200
+  )
+    throw Object.assign(Error('Use an arno/branch-name and a commit title up to 200 characters'), {
+      status: 400,
+    });
+  const call = async (path, method = 'GET', data) => {
+    const r = await github('/repos/' + changes.repo + path, token, {
+      method,
+      ...(data
+        ? { body: JSON.stringify(data), headers: { 'Content-Type': 'application/json' } }
+        : {}),
+    });
+    if (!r.ok)
+      throw Error(
+        'GitHub rejected publishing (' +
+          r.status +
+          '). A branch may already exist; check GitHub before retrying.',
+      );
+    return r.json();
+  };
+  const base = await call('/git/commits/' + changes.sourceSha);
+  const tree = await call('/git/trees', 'POST', {
+    base_tree: base.tree.sha,
+    tree: files.map(f => ({
+      path: f.path,
+      mode: f.mode || '100644',
+      type: 'blob',
+      ...(f.deleted ? { sha: null } : { content: f.content }),
+    })),
+  });
+  const commit = await call('/git/commits', 'POST', {
+    message: body.title.trim(),
+    tree: tree.sha,
+    parents: [changes.sourceSha],
+  });
+  await call('/git/refs', 'POST', { ref: 'refs/heads/' + body.branch, sha: commit.sha });
+  let url = null,
+    warning = null;
+  try {
+    url = (
+      await call('/pulls', 'POST', {
+        title: body.title.trim(),
+        head: body.branch,
+        base: changes.ref,
+        body: 'Changes prepared with Arno Chat.\n\nBase revision: ' + changes.sourceSha,
+      })
+    ).html_url;
+  } catch {
+    warning = 'Branch created, but the pull request could not be opened. Open it on GitHub.';
+  }
+  return {
+    branch: body.branch,
+    commit: commit.sha,
+    url: url || 'https://github.com/' + changes.repo + '/tree/' + body.branch,
+    warning,
+  };
+}
