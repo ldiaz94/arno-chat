@@ -192,10 +192,16 @@ export async function research(
   });
   if (!response.ok) {
     await response.body?.cancel();
+    // Only a refused key is the account's; a page read can fail because the page does.
+    const s = response.status;
     throw Error(
-      'Web provider rejected the request (' +
-        response.status +
-        '). Search may require access on your Ollama account.',
+      s === 401 || s === 403
+        ? 'Web provider rejected the request (' +
+            s +
+            '). Search may require access on your Ollama account.'
+        : name === 'web_read'
+          ? 'That page could not be read (' + s + '). Try another source.'
+          : 'Web search failed (' + s + '). Try again or rephrase the query.',
     );
   }
   const data = await boundedJson(response);
