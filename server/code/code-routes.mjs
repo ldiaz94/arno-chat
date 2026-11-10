@@ -38,7 +38,35 @@ exit 1
 /** git log's fields for a commit, parted by unit separators. */
 const LOG_FORMAT = '%H%x1f%an%x1f%at%x1f%s%x1f%D';
 
+/** How many commits GitHub has on the session's branch that its checkout
+ * does not: fetched now, through the git gateway (gitOpen lets it in outside
+ * a turn). null when the fetch fails (offline, signed out). */
+async function behindOf(probe, session) {
+  probe.gitOpen = { repo: session.repo, ownerId: session.ownerId };
+  try {
+    const f = await probe.exec(
+      [
+        'sh',
+        '-c',
+        'git fetch -q origin "+refs/heads/$REF:refs/remotes/origin/$REF" && git rev-list --count "HEAD..origin/$REF"',
+      ],
+      { cwd: '/workspace/repo', env: { REF: session.ref || 'main' } },
+      30,
+    );
+    return f.exitCode === 0 ? Number(f.stdout.trim()) || 0 : null;
+  } finally {
+    probe.gitOpen = null;
+  }
+}
+
 export const codeRoutes = {
+  /** Whether there is anything to pull: {behind, ref} (behindOf). */
+  async 'GET /session/behind'() {
+    const refused = await this.wake();
+    if (refused) return refused;
+    const session = await this.ctx.storage.get('session');
+    return json({ behind: await behindOf(this, session), ref: session.ref });
+  },
   /** The newest commits of the session's checkout: each with its author, time,
    * subject and refs, and whether it is only here (not yet on GitHub); and
    * how many files have uncommitted changes. */
@@ -47,24 +75,7 @@ export const codeRoutes = {
     if (refused) return refused;
     const cwd = { cwd: '/workspace/repo' },
       session = await this.ctx.storage.get('session');
-    // What GitHub has that the checkout does not: fetched now, so the tab can
-    // offer a pull. A failed fetch (offline, signed out) shows no count.
-    this.gitOpen = { repo: session.repo, ownerId: session.ownerId };
-    let behind = null;
-    try {
-      const f = await this.exec(
-        [
-          'sh',
-          '-c',
-          'git fetch -q origin "+refs/heads/$REF:refs/remotes/origin/$REF" && git rev-list --count "HEAD..origin/$REF"',
-        ],
-        { ...cwd, env: { REF: session.ref || 'main' } },
-        30,
-      );
-      if (f.exitCode === 0) behind = Number(f.stdout.trim()) || 0;
-    } finally {
-      this.gitOpen = null;
-    }
+    const behind = await behindOf(this, session);
     const [log, local, status] = await Promise.all([
       this.exec(['git', 'log', '-n', '100', '--format=' + LOG_FORMAT, 'HEAD'], cwd, 20),
       this.exec(['git', 'rev-list', '-n', '100', 'HEAD', '--not', '--remotes'], cwd, 20),

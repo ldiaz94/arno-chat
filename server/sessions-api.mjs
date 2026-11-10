@@ -7,7 +7,7 @@
  *   POST  /api/sessions/<id>/messages           send a message (a turn)
  *   GET   /api/sessions/<id>/job | events       follow the turn
  *   POST  /api/sessions/<id>/cancel | approve   stop it, answer its question
- *   GET   /api/sessions/<id>/files | history | commit | changes, POST publish
+ *   GET   /api/sessions/<id>/files | history | behind | commit | changes, POST publish
  *   POST  /api/sessions/<id>/attachments, GET .../attachments/<file>
  *   GET   /api/sessions/<id>/artifacts[/<artifact>]
  *
@@ -29,6 +29,7 @@ const FORWARD = {
   'GET events': ['/session/events'],
   'GET files': ['/session/files', 'path'],
   'GET history': ['/session/history'],
+  'GET behind': ['/session/behind'],
   'GET commit': ['/session/commit', 'sha'],
   'GET diff': ['/session/diff'],
   'POST cancel': ['/session/cancel'],

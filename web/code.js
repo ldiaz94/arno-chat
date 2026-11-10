@@ -45,9 +45,7 @@ async function changes(publish = false) {
       (any
         ? 'On ' + esc(d.ref || 'this branch') + ', not on GitHub yet'
         : 'The branch matches GitHub') +
-      '</small></div><div class="changes-actions"><button type="button" class="ghost" data-pull>' +
-      icon('download') +
-      ' Pull</button>' +
+      '</small></div><div class="changes-actions"><button type="button" class="ghost" data-pull></button>' +
       (any
         ? '<button type="button" class="primary" data-pr>' +
           icon('branch') +
@@ -56,6 +54,7 @@ async function changes(publish = false) {
       '</div></div><div id="pr-form" hidden></div>' +
       (any ? '<div class="diff-view panel-diff">' + diffHtml(d.diff) + '</div>' : '');
     $('#code-body [data-pr]')?.addEventListener('click', prForm);
+    checkBehind();
     if (publish && any) prForm();
   } catch (e) {
     $('#code-body').innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
@@ -154,11 +153,69 @@ async function prForm() {
     $('#code-body [data-pr]')?.removeAttribute('disabled');
   }
 }
+// What is known of each session's lag behind GitHub: id → {n, at}, n being
+// the commits to pull (null when GitHub could not be asked). A minute fresh;
+// the Changes and History tabs and the ⋯ sheet share it.
+const behind = new Map(),
+  checking = new Map(), // id → the request asking now
+  FRESH = 60000;
+let pulling = false; // a pull is running
+
+/** Records how far a session is behind GitHub. */
+function known(id, n) {
+  behind.set(id, { n: n ?? null, at: Date.now() });
+}
+/** What is known of the open session's lag behind GitHub, or undefined. */
+export function behindNow() {
+  return behind.get(state.session?.id);
+}
+/** Paints every Pull button from what is known: Checking… (spinner, off)
+ * until GitHub answers, Pulling… while a pull runs, Up to date (off) when
+ * there is nothing, else Pull and how many commits. */
+export function paintPull() {
+  const k = behindNow(),
+    busy = pulling || !k,
+    label = pulling
+      ? 'Pulling…'
+      : !k
+        ? 'Checking…'
+        : k.n === 0
+          ? 'Up to date'
+          : 'Pull' + (k.n ? ' ' + num(k.n) : '');
+  for (const b of document.querySelectorAll('button[data-pull]')) {
+    b.disabled = busy || k.n === 0;
+    b.setAttribute('aria-busy', String(busy));
+    b.innerHTML = (busy ? '<span class="spinner"></span>' : icon('download')) + ' ' + label;
+    b.title = k?.n === 0 ? 'Nothing new on GitHub' : '';
+  }
+}
+/** Asks GitHub how far the open session is behind, unless a fresh answer is
+ * known, and paints the buttons; one request per session at a time. */
+export async function checkBehind() {
+  const s = state.session;
+  if (!s || s.kind === 'chat') return;
+  const k = behind.get(s.id);
+  paintPull();
+  if (k && Date.now() - k.at < FRESH) return;
+  if (!checking.has(s.id))
+    checking.set(
+      s.id,
+      api('/api/sessions/' + s.id + '/behind')
+        .then(d => known(s.id, d.behind))
+        .catch(() => known(s.id, null))
+        .finally(() => checking.delete(s.id)),
+    );
+  await checking.get(s.id);
+  paintPull();
+}
 /** Brings GitHub's new commits on the session's branch into its workspace
  * (server/code/code-routes.mjs pull), and says how it went. */
 export async function pull() {
-  if (!state.session || state.session.kind === 'chat') return;
-  toast('Pulling from GitHub…');
+  if (!state.session || state.session.kind === 'chat' || pulling) return;
+  const id = state.session.id;
+  pulling = true;
+  if (!document.querySelector('button[data-pull]')) toast('Pulling from GitHub…');
+  paintPull();
   try {
     const d = await api('/api/sessions/' + state.session.id + '/pull', {
       method: 'POST',
@@ -169,6 +226,7 @@ export async function pull() {
         ? 'Already up to date with GitHub'
         : 'Pulled ' + d.commits + ' commit' + (d.commits === 1 ? '' : 's') + ' from GitHub',
     );
+    known(id, 0);
     if ($('#history-tab').matches('[aria-pressed="true"]')) openCode('history');
   } catch (e) {
     toast(
@@ -178,6 +236,9 @@ export async function pull() {
             '. Ask Arno to merge and resolve them.'
         : e.message,
     );
+  } finally {
+    pulling = false;
+    paintPull();
   }
 }
 /** The History tab: the checkout's newest commits, newest first; those not
@@ -188,6 +249,7 @@ async function history() {
   try {
     const d = await api('/api/sessions/' + id + '/history');
     if (state.session?.id !== id) return;
+    known(id, d.behind);
     $('#code-body').innerHTML =
       (d.behind
         ? '<p class="history-note pull-note">' +
@@ -196,7 +258,7 @@ async function history() {
           (d.behind === 1 ? '' : 's') +
           ' on GitHub (' +
           esc(d.ref || 'this branch') +
-          ') <button type="button" class="primary" data-pull>Pull</button></p>'
+          ') <button type="button" class="primary" data-pull></button></p>'
         : '') +
       (d.uncommitted
         ? '<p class="history-note">' +
@@ -208,6 +270,7 @@ async function history() {
       '<ol class="commit-list">' +
       d.commits.map(commitRow).join('') +
       '</ol>';
+    paintPull();
   } catch (e) {
     $('#code-body').innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
   }

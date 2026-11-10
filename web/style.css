@@ -3566,3 +3566,18 @@ a.button {
 .changes-sum .tag {
   justify-self: start;
 }
+/* A Pull button: a spinner while it checks or pulls; off when GitHub has
+   nothing new (code.js paintPull). */
+button[data-pull] .spinner {
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  min-height: 14px;
+}
+.action-item:disabled:hover {
+  background: none;
+}
+button[data-pull][aria-busy='false']:disabled,
+.action-item:disabled {
+  cursor: default;
+}

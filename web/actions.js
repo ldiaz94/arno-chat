@@ -10,7 +10,7 @@
  */
 import { $, state, esc, icon } from './core.js';
 import { renameConversation, deleteConversation, exportChat, anotherSession } from './sessions.js';
-import { openCode, pull } from './code.js';
+import { openCode, pull, behindNow, checkBehind } from './code.js';
 
 /** The rows: [key, icon, title, what it says more (a function of the open
  * session), what it does, which conversations have it]. */
@@ -27,7 +27,14 @@ const ACTIONS = [
     'pull',
     'download',
     'Pull from GitHub',
-    s => 'Bring in new commits on ' + (s.ref || 'its branch'),
+    s => {
+      const n = behindNow()?.n;
+      return n === 0
+        ? 'Up to date: nothing new on ' + (s.ref || 'its branch')
+        : n
+          ? n + ' new commit' + (n === 1 ? '' : 's') + ' on ' + (s.ref || 'its branch')
+          : 'Bring in new commits on ' + (s.ref || 'its branch');
+    },
     pull,
     'code',
   ],
@@ -56,15 +63,19 @@ const ACTIONS = [
   ],
 ];
 
-/** One row of the sheet. */
+/** One row of the sheet; Pull is off when GitHub has nothing new. */
 function row([key, glyph, title, more], s) {
+  const off = key === 'pull' && behindNow()?.n === 0;
   return (
     '<button type="button" class="action-item' +
     (key === 'delete' ? ' danger' : '') +
     '" data-action="' +
     key +
     '"' +
-    (key === 'another' || key === 'pull' ? ' data-online="Reconnect to use GitHub"' : '') +
+    (off ? ' disabled' : '') +
+    ((key === 'another' || key === 'pull') && !off
+      ? ' data-online="Reconnect to use GitHub"'
+      : '') +
     '><span class="action-icon">' +
     icon(glyph) +
     '</span><span class="action-text"><strong>' +
@@ -75,10 +86,21 @@ function row([key, glyph, title, more], s) {
   );
 }
 
-/** Opens the sheet for the open conversation. */
+/** Opens the sheet for the open conversation, and, in a coding session, asks
+ * GitHub whether there is anything to pull, drawing the sheet again once it
+ * knows. */
 export function openActions() {
   const s = state.session;
   if (!s) return;
+  draw(s);
+  $('#actions-dialog').showModal();
+  if (s.kind !== 'chat')
+    checkBehind().then(() => {
+      if ($('#actions-dialog').open && state.session === s) draw(s);
+    });
+}
+/** Draws the sheet's groups for session s. */
+function draw(s) {
   const coding = s.kind !== 'chat',
     group = (label, rows) =>
       rows.length
@@ -100,7 +122,6 @@ export function openActions() {
       'Conversation',
       ACTIONS.filter(a => !a[5]),
     );
-  $('#actions-dialog').showModal();
 }
 
 $('#action-items').addEventListener('click', e => {

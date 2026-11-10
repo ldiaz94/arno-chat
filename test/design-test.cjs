@@ -323,6 +323,7 @@ const { chromium } = require('playwright'),
         };
       } else if (u.pathname.endsWith('/diff')) d = { diff, ref: 'main' };
       else if (u.pathname.endsWith('/pull')) d = { status: 'merged', commits: 2 };
+      else if (u.pathname.endsWith('/behind')) d = { behind: 0, ref: 'main' };
       else if (u.pathname.endsWith('/history'))
         d = {
           behind: 2,
@@ -685,6 +686,12 @@ const { chromium } = require('playwright'),
     await page.locator('[data-action="changes"]').click();
     // The Changes tab: counts, Pull, and the pull request form in place.
     await page.locator('.changes-bar', { hasText: '1 file to push' }).waitFor();
+    // Pull counts what GitHub has (known from the History tab); once pulled,
+    // it says there is nothing and is off.
+    await page.locator('.changes-bar button[data-pull]', { hasText: 'Pull 2' }).click();
+    await page
+      .locator('.changes-bar button[data-pull]:disabled', { hasText: 'Up to date' })
+      .waitFor();
     await page.getByRole('button', { name: 'Pull request…' }).click();
     await page.locator('#publish-title').fill('Improve example');
     assert.equal(await page.locator('#publish-branch').inputValue(), 'arno/improve-example');
