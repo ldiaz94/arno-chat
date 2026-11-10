@@ -200,6 +200,8 @@ export async function plainChat({
   };
   // One entry per model request, for the account's request log.
   const requestLog = [];
+  // One entry per tool call, {tool, ok, ms}, for the turn's log line.
+  const toolLog = [];
   // The request's fields at a thinking effort. Gemini's thoughts arrive in
   // content as <thought>…</thought>, asked for beside the effort's own thinking_config.
   const fieldsAt = level => {
@@ -220,6 +222,7 @@ export async function plainChat({
     reasoning,
     diff: '',
     requestLog,
+    toolLog,
     usage: {
       ...total,
       inputTokens: total.measuredCalls ? total.inputTokens : null,
@@ -366,10 +369,13 @@ export async function plainChat({
       const results = [];
       for (const c of parsed) {
         let result;
+        const began = Date.now();
         try {
           if (!c.args) throw Error('Invalid tool arguments');
           result = await runTool(c.name, c.args);
+          toolLog.push({ tool: c.name, ok: !result?.error, ms: Date.now() - began });
         } catch (e) {
+          toolLog.push({ tool: c.name, ok: false, ms: Date.now() - began, error: e.message });
           console.log(
             JSON.stringify({ event: 'tool_error', model, tool: c.name, error: e.message }),
           );

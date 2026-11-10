@@ -16,7 +16,9 @@
  * artifacts (artifactList), so later turns can find earlier ones; a
  * coding session's arno writes files that ../code/collect.mjs brings in
  * (putArtifact). HTML pages and Mermaid diagrams are shown by viewResponse,
- * sandboxed, on a page of their own. Depends on ../http.mjs. Leaves out
+ * sandboxed, on a page of their own; an HTML page reports its errors to the
+ * viewer (REPORTER), which sends them back to be kept beside the artifact
+ * (artifact-errors:<id>) for read_artifact and the log. Depends on ../http.mjs. Leaves out
  * public share links: artifacts stay inside the signed-in app.
  */
 /** The kinds an artifact may be, and the file extension each downloads as. */
@@ -219,8 +221,10 @@ export async function artifactTool(storage, name, args, touched) {
   if (name === 'read_artifact') {
     const a = await find(storage, args.id);
     if (a.kind === 'image')
-      return { id: a.id, title: a.title, kind: a.kind, content: '(an image)' };
-    const content = String(a.content);
+      if (a.kind === 'image')
+        return { id: a.id, title: a.title, kind: a.kind, content: '(an image)' };
+    const content = String(a.content),
+      seen = await storage.get('artifact-errors:' + a.id);
     return {
       id: a.id,
       title: a.title,
@@ -228,6 +232,7 @@ export async function artifactTool(storage, name, args, touched) {
       version: a.version,
       content: content.slice(0, MAX_READ),
       ...(content.length > MAX_READ ? { truncated: content.length + ' characters in all' } : {}),
+      ...(seen?.version === a.version ? { pageErrors: seen.errors } : {}),
     };
   }
   if (name === 'create_artifact') {
@@ -339,6 +344,46 @@ const PAGE_POLICY = [
   "base-uri 'none'",
   "frame-ancestors 'self'",
 ].join('; ');
+/** Errors a page keeps of what it showed, and the characters of each. */
+const MAX_ERRORS = 20,
+  ERROR_LENGTH = 300;
+/** Put at the top of an HTML page: tells the viewer (its parent) of the
+ * page's errors: uncaught ones, failed loads, rejected promises, console.error
+ * and what the page policy blocked. One line, so line numbers stay the page's. */
+const REPORTER =
+  '<script>(()=>{const s=new Set(),r=m=>{m=String(m).slice(0,' +
+  ERROR_LENGTH +
+  ');if(s.has(m)||s.size>=' +
+  MAX_ERRORS +
+  ")return;s.add(m);parent.postMessage({arnoPageError:m},'*')};" +
+  "addEventListener('error',e=>r(e.message?e.message+(e.lineno?' (line '+e.lineno+')':''):'Could not load '+(e.target.src||e.target.href||e.target.tagName)),true);" +
+  "addEventListener('unhandledrejection',e=>r('Unhandled: '+(e.reason&&e.reason.message||e.reason)));" +
+  "document.addEventListener('securitypolicyviolation',e=>r('Blocked by the page policy: '+e.blockedURI+' ('+e.effectiveDirective+')'));" +
+  "const c=console.error;console.error=(...a)=>{r(a.map(String).join(' '));c.apply(console,a)}})()</script>";
+/** An HTML page with REPORTER first in it: after <head>, else after the
+ * doctype (before it would put the page in quirks mode), else at the top. */
+export function withReporter(html) {
+  const at = /<head[^>]*>/i.exec(html) || /<!doctype[^>]*>/i.exec(html);
+  return at
+    ? html.slice(0, at.index + at[0].length) + REPORTER + html.slice(at.index + at[0].length)
+    : REPORTER + html;
+}
+/** Keeps the errors a version of an artifact showed when opened, the latest
+ * report replacing the one before; [] clears them. Returns what was kept. */
+export async function notePageErrors(storage, id, version, errors) {
+  const a = await load(storage, String(id));
+  if (!a) throw Error('No artifact with that id in this conversation');
+  const kept = {
+    version: Number(version) || a.version,
+    errors: (Array.isArray(errors) ? errors : [])
+      .slice(0, MAX_ERRORS)
+      .map(e => String(e).slice(0, ERROR_LENGTH)),
+    at: Date.now(),
+  };
+  if (kept.errors.length) await storage.put('artifact-errors:' + a.id, kept);
+  else await storage.delete('artifact-errors:' + a.id);
+  return { ...kept, title: a.title, kind: a.kind };
+}
 /** Escapes text for HTML. */
 const escape = s =>
   String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -373,7 +418,7 @@ export function viewResponse(v, dark, pinned) {
     'Cache-Control': pinned ? 'private, max-age=31536000, immutable' : 'no-store',
   };
   if (v.kind === 'html')
-    return new Response(v.content, {
+    return new Response(withReporter(v.content), {
       headers: { ...headers, 'Content-Type': 'text/html; charset=utf-8' },
     });
   if (v.kind === 'mermaid')

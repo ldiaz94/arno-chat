@@ -163,7 +163,10 @@ export const chatTurn = {
       await this.phase('saving', { workspace: 'chat' });
       if ((await this.ctx.storage.get('job'))?.status === 'cancelled')
         throw Object.assign(Error('Chat cancelled'), { spent: result });
+      const { toolLog } = result;
+      delete result.toolLog; // for the log line, not the saved turn
       await this.saveTurn(result, prompt, null, sources, editAt);
+      logTurn(session, job, result, toolLog);
       const current = await this.ctx.storage.get('session');
       if (
         current.title === 'General chat' &&
@@ -190,3 +193,35 @@ export const chatTurn = {
 /** What the model is told when a chat has MCP tools. */
 const MCP_INSTRUCTIONS =
   'Tools named <connection>__<tool> reach services the user connected (MCP). Use them when the question is about those services. A tool that changes something waits for the user to allow it; if the user does not, say so and do not try again.';
+
+/** One line in the Worker's log for each finished chat turn: what it ran on,
+ * how long and how much, the tools it called (by name, with failures), the
+ * artifacts it made or changed and the size of the answer. */
+function logTurn(session, job, result, toolLog = []) {
+  const tools = {};
+  for (const t of toolLog) {
+    const n = (tools[t.tool] ||= { calls: 0, failed: 0, ms: 0 });
+    n.calls++;
+    n.failed += Number(!t.ok);
+    n.ms += t.ms;
+  }
+  console.log(
+    JSON.stringify({
+      event: 'turn_done',
+      session: session.id,
+      model: session.model,
+      options: job?.options,
+      ms: result.timing.totalMs,
+      calls: result.usage.calls,
+      inputTokens: result.usage.inputTokens,
+      outputTokens: result.usage.outputTokens,
+      cost: result.usage.cost,
+      searches: result.webUsage?.searches,
+      reads: result.webUsage?.reads,
+      tools,
+      artifacts: result.artifacts.map(a => ({ id: a.id, kind: a.kind, version: a.version })),
+      answerChars: result.summary.length,
+      cutShort: /research limit/.test(result.summary.slice(-160)),
+    }),
+  );
+}

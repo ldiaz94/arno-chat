@@ -19,7 +19,7 @@ import { LIMITS } from './probe/attachments.mjs';
 /** A conversation id (a UUID) as a regular-expression source. */
 const ID = '[0-9a-f-]{36}';
 /** /api/sessions/<id>[/<part>[/<item>]]: the id, the action and an optional attachment or artifact id. */
-const PATH = new RegExp('^/api/sessions/(' + ID + ')(?:/([a-z]+))?(?:/(' + ID + '))?$');
+const PATH = new RegExp('^/api/sessions/(' + ID + ')(?:/([a-z-]+))?(?:/(' + ID + '))?$');
 
 /** Requests passed on as they are: "METHOD part" → the object's own path, and
  * the query parameters it takes. A POST's JSON body goes along, bounded. */
@@ -114,6 +114,15 @@ const HANDLERS = {
       pass = new URLSearchParams({ id: item });
     for (const k of ['v', 'view', 'theme']) if (q.has(k)) pass.set(k, q.get(k));
     return object.fetch('https://internal/artifacts/get?' + pass);
+  },
+  /** The errors an artifact's page showed when opened: {version, errors}. */
+  async 'POST artifact-errors'(request, object, { item }) {
+    if (!item) return null;
+    const { version, errors } = await boundedJson(request);
+    return object.fetch('https://internal/artifacts/errors', {
+      method: 'POST',
+      body: JSON.stringify({ id: item, version, errors }),
+    });
   },
   /** Makes an earlier version of an artifact its newest: {version}. */
   async 'POST artifacts'(request, object, { item }) {

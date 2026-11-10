@@ -17,7 +17,7 @@
 import { markdown, tableResize, diffHtml } from './render.mjs';
 import { highlight, detect } from './highlight.mjs';
 import { lineDiff } from './linediff.mjs';
-import { $, state, esc, icon, api, copy, showError, toast } from './core.js';
+import { $, state, esc, icon, api, copy, showError, toast, prompt } from './core.js';
 import { ago } from './today.mjs';
 import { resume } from './sessions.js';
 
@@ -225,6 +225,8 @@ function paint() {
 async function body() {
   const a = cur.art,
     box = $('#artifact-content');
+  cur.errors = []; // a page loaded afresh reports afresh
+  problems();
   if (cur.view === 'source')
     box.innerHTML =
       '<pre class="artifact-code"><code>' + highlight(languageOf(a), a.content) + '</code></pre>';
@@ -531,3 +533,61 @@ $('#gallery-grid').addEventListener('click', e => {
   openArtifact(sid, id, undefined, true);
 });
 gallery.addEventListener('close', () => ($('#gallery-grid').innerHTML = ''));
+
+/** Most errors one page load reports. */
+const MAX_PAGE_ERRORS = 20;
+// An HTML artifact's page tells of its errors (REPORTER, server/probe/artifacts.mjs):
+// they show above it, and go to the server a moment later, together, for the
+// log and for the model's read_artifact.
+addEventListener('message', e => {
+  const frame = $('#artifact-content .artifact-frame'),
+    m = e.data?.arnoPageError;
+  if (!cur || !frame || e.source !== frame.contentWindow || typeof m !== 'string') return;
+  if (cur.errors.includes(m) || cur.errors.length >= MAX_PAGE_ERRORS) return;
+  cur.errors.push(m);
+  problems();
+  clearTimeout(cur.reportTimer);
+  const { sid, art, errors } = cur;
+  cur.reportTimer = setTimeout(
+    () =>
+      api('/api/sessions/' + sid + '/artifact-errors/' + art.id, {
+        method: 'POST',
+        body: JSON.stringify({ version: art.version, errors }),
+      }).catch(() => {}), // best effort: the strip has shown them
+    1500,
+  );
+});
+/** The strip above a page that reported errors: how many, the list, and, in
+ * the artifact's own conversation, a button that asks Arno to fix them. */
+function problems() {
+  const box = $('#artifact-problems'),
+    errors = cur?.errors || [];
+  box.hidden = !errors.length;
+  if (!errors.length) return (box.innerHTML = '');
+  const here = cur.sid === state.session?.id;
+  box.innerHTML =
+    '<details><summary>' +
+    errors.length +
+    (errors.length === 1 ? ' problem' : ' problems') +
+    ' on this page</summary><ul>' +
+    errors.map(m => '<li>' + esc(m) + '</li>').join('') +
+    '</ul></details>' +
+    (here ? '<button type="button" class="ghost" id="artifact-fix">Fix with Arno</button>' : '');
+  if (here) $('#artifact-fix').onclick = fix;
+}
+/** Puts a request to fix the page's errors in the composer, to read and send. */
+function fix() {
+  const a = cur.art;
+  prompt.value =
+    'Fix the artifact "' +
+    a.title +
+    '" (' +
+    a.id +
+    ', v' +
+    a.version +
+    '). When opened, its page showed:\n' +
+    cur.errors.map(m => '- ' + m).join('\n');
+  prompt.dispatchEvent(new Event('input')); // resizes it and keeps the draft
+  if (dialog.matches(':modal')) dialog.close();
+  prompt.focus();
+}

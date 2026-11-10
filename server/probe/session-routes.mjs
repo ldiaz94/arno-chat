@@ -8,7 +8,13 @@ import { SECURITY, json } from '../http.mjs';
 import { hostCommand } from '../code/code-routes.mjs';
 import { modelAllowed, contextWindow, acceptsImages } from '../models.mjs';
 import { attachmentsFor, saveAttachment, readAttachment } from './attachments.mjs';
-import { listArtifacts, getArtifact, restoreArtifact, viewResponse } from './artifacts.mjs';
+import {
+  listArtifacts,
+  getArtifact,
+  restoreArtifact,
+  viewResponse,
+  notePageErrors,
+} from './artifacts.mjs';
 import { checkOptions } from '../../web/options.mjs';
 
 export const sessionRoutes = {
@@ -179,6 +185,31 @@ export const sessionRoutes = {
       const artifact = await restoreArtifact(this.ctx.storage, String(id), version);
       await this.relist();
       return json({ id: artifact.id, version: artifact.version });
+    } catch (e) {
+      return json({ error: e.message }, 404);
+    }
+  },
+  /** Keeps the errors an artifact's page showed when opened ({id, version,
+   * errors}) and logs them. */
+  async 'POST /artifacts/errors'(request) {
+    const { id, version, errors } = await request.json();
+    try {
+      const kept = await notePageErrors(this.ctx.storage, id, version, errors);
+      const session = await this.ctx.storage.get('session');
+      if (kept.errors.length)
+        console.log(
+          JSON.stringify({
+            event: 'artifact_error',
+            session: session?.id,
+            model: session?.model,
+            artifact: id,
+            version: kept.version,
+            kind: kept.kind,
+            title: kept.title,
+            errors: kept.errors,
+          }),
+        );
+      return new Response(null, { status: 204 });
     } catch (e) {
       return json({ error: e.message }, 404);
     }

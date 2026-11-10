@@ -3015,3 +3015,32 @@ test('an artifact edit finds its text with the whitespace misremembered, once on
   assert.throws(() => applyEdits(svg, [{ find: 'id="moon"', replace: '' }]), /not found/);
   assert.throws(() => applyEdits('a b a  b', [{ find: 'a\nb', replace: '' }]), /more than once/);
 });
+test('an html artifact page reports its errors; read_artifact gives the latest version’s', async () => {
+  const { withReporter, notePageErrors, artifactTool } =
+    await import('../server/probe/artifacts.mjs');
+  // After the doctype and <head>, never before the doctype (quirks mode).
+  const page = withReporter('<!doctype html><html><head><title>t</title></head></html>');
+  assert.match(page, /^<!doctype html><html><head><script>/);
+  assert.match(withReporter('<!DOCTYPE html><p>x'), /^<!DOCTYPE html><script>/);
+  assert.match(withReporter('<p>x'), /^<script>/);
+  assert.equal(withReporter('<p>x').split('\n').length, 1, 'one line: line numbers stay');
+  const map = new Map(),
+    storage = {
+      get: async k => map.get(k),
+      put: async (k, v) => map.set(k, structuredClone(v)),
+      delete: async k => map.delete(k),
+      list: async ({ prefix }) => new Map([...map].filter(([k]) => k.startsWith(prefix))),
+    };
+  const made = await artifactTool(
+    storage,
+    'create_artifact',
+    { title: 'Moon', kind: 'html', content: '<p>1</p>' },
+    [],
+  );
+  await notePageErrors(storage, made.id, 1, ['THREE is not defined (line 3)']);
+  const read = () => artifactTool(storage, 'read_artifact', { id: made.id }, []);
+  assert.deepEqual((await read()).pageErrors, ['THREE is not defined (line 3)']);
+  // A new version's page has not been seen yet: the old errors are not its.
+  await artifactTool(storage, 'update_artifact', { id: made.id, content: '<p>2</p>' }, []);
+  assert.equal((await read()).pageErrors, undefined);
+});

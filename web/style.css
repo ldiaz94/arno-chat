@@ -2763,6 +2763,37 @@ body.light,
   padding: 4px 10px;
   font-size: 13px;
 }
+/* What an HTML artifact's page reported going wrong, above it. */
+.artifact-problems {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 18px;
+  font-size: 13px;
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 9%, var(--panel));
+  border-bottom: 1px solid color-mix(in srgb, var(--red) 30%, var(--line));
+}
+.artifact-problems summary {
+  cursor: pointer;
+  font-weight: 600;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+}
+.artifact-problems ul {
+  margin: 4px 0 6px;
+  padding-left: 18px;
+  color: var(--text);
+  font: 12px/1.5 var(--mono);
+  overflow-wrap: anywhere;
+}
+.artifact-problems button {
+  flex: none;
+  min-height: 32px;
+  color: var(--text);
+}
 .artifact-old {
   display: flex;
   align-items: center;
