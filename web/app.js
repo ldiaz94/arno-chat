@@ -31,19 +31,18 @@ import {
   newChat,
   switchMode,
   home,
-  exportChat,
   renameConversation,
   deleteConversation,
   toggleEdit,
   togglePick,
   deleteSelected,
-  anotherSession,
 } from './sessions.js';
-import { openCode, browse, reviewPublish, showCommit, pull } from './code.js';
+import { openCode, browse, showCommit, pull } from './code.js';
 import { submit, resizePrompt } from './turns.js';
 import './attach.js'; // wires the paperclip, paste and drop
 import './options.js'; // wires the options button, its popover and chips
 import './complete.js'; // slash-command suggestions in the composer
+import { openActions } from './actions.js'; // the ⋯ sheet
 import { mcpReturn } from './settings.js'; // also wires the account settings dialog
 import { register, warm, clearData } from './offline.js';
 import { startOutbox, flush } from './outbox.js';
@@ -62,15 +61,11 @@ $('#title').onkeydown = e => {
     openInfo();
   }
 };
-$('#export').onclick = exportChat;
 $('#model-button').onclick = () => openModels('session');
 $('#model-search').oninput = renderModels;
 $('#composer').onsubmit = submit;
 $('#jump-bottom').onclick = () => scrollDown(true);
-$('#publish').onclick = reviewPublish;
 $('#new-chat').onclick = () => newChat();
-$('#rename-conversation').onclick = () => renameConversation();
-$('#delete-conversation').onclick = () => deleteConversation();
 $('#list-rename').onclick = () => renameConversation(state.menuTarget);
 $('#list-delete').onclick = () => deleteConversation(state.menuTarget);
 $('#list-edit').onclick = toggleEdit;
@@ -83,22 +78,7 @@ $('#history-tab').onclick = () => openCode('history');
 $('#code-dialog').addEventListener('close', () => {
   if (!$('#code-dialog').open) document.body.classList.remove('code-open');
 });
-$('#actions').onclick = () => {
-  // A coding session's actions start another session on its repository.
-  $('#another-session').hidden = !state.session?.repo || state.session.kind === 'chat';
-  $('#actions-dialog').showModal();
-};
-$('#another-session').onclick = () => {
-  $('#actions-dialog').close();
-  anotherSession();
-};
-for (const id of ['export', 'publish']) {
-  const b = $('#' + id);
-  b.className = 'model-option';
-  b.innerHTML =
-    id === 'export' ? 'Export conversation as Markdown' : 'Review changes & publish to GitHub';
-  $('#action-items').append(b);
-}
+$('#actions').onclick = openActions;
 $('#stop').onclick = async () => {
   if (
     !state.session ||

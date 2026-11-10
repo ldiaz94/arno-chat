@@ -66,6 +66,7 @@ the most recently active first.
 | --- | --- |
 | Chat home, **New chat** | A conversation with web research, artifacts and your connected MCP tools; no container |
 | Code home, a repository's **Open** | A new coding session: a clone of the repository in a container of its own |
+| ⋯ | The repository's actions (changes and pull request, pull, a new session on it) and the conversation's (rename, export, delete) |
 | ⋯ → **New session on this repository** | Another session on the same repository, from its current branch |
 | The title | Conversation details: artifacts, context, usage and cost, sources, links, images |
 | `</>` | The session's files, its changes, and its commit history |
@@ -104,8 +105,8 @@ In a session the model can `git push` when you ask it to (it never commits
 or pushes on its own): the clone's origin goes through the Worker, which adds
 your GitHub token on the way out. **Changes** show only what GitHub does not
 have yet, so pushed work, pulled work and other sessions' pushes stay out of
-them. **Review & publish**
-(⋯) opens a pull request from what you reviewed instead.
+them. The Changes tab's **Pull request…** opens a pull request from exactly
+what you reviewed, on a new branch, instead.
 
 **Settings** (your name, bottom left) hold provider keys (Ollama Cloud,
 OpenAI, Anthropic, Gemini, DeepSeek, Kimi, Mistral, Meta), instructions and

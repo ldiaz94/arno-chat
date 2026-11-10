@@ -2,13 +2,13 @@
  * the review-and-publish flow. Depends on core, render.mjs, highlight.mjs and
  * today.mjs.
  */
-import { diffHtml } from './render.mjs';
+import { diffHtml, diffCounts } from './render.mjs';
 import { highlight, detect } from './highlight.mjs';
 import { $, state, esc, icon, num, api, toast, copy } from './core.js';
 import { ago } from './today.mjs';
 // Opens the code dialog (docked beside the thread on wide screens) on a tab: files, diff or
 // history.
-export function openCode(tab = 'files') {
+export function openCode(tab = 'files', publish = false) {
   if (!state.session || state.session.kind === 'chat')
     return toast('Open a repository to browse its code');
   const dialog = $('#code-dialog');
@@ -21,27 +21,137 @@ export function openCode(tab = 'files') {
   for (const t of ['files', 'diff', 'history'])
     $('#' + t + '-tab').setAttribute('aria-pressed', String(t === tab));
   if (tab === 'history') history();
-  else if (tab === 'diff') changes();
+  else if (tab === 'diff') changes(publish);
   else browse('');
 }
 /** The Changes tab: what GitHub does not have yet, read from the workspace
- * now: the session's commits not pushed and its uncommitted edits. Work
- * pulled from upstream, and other sessions' pushes, are not in it. */
-async function changes() {
+ * now (the session's commits not pushed and its edits not committed; work
+ * pulled from upstream and other sessions' pushes are not in it), with a bar
+ * to pull and to open a pull request from them, in place. */
+async function changes(publish = false) {
   const id = state.session.id;
   $('#code-body').innerHTML = '<div class="loading">Reading the changes…</div>';
   try {
     const d = await api('/api/sessions/' + id + '/diff');
     if (state.session?.id !== id || !$('#diff-tab').matches('[aria-pressed="true"]')) return;
-    $('#code-body').innerHTML = d.diff.trim()
-      ? '<p class="history-note">Not yet on GitHub (' +
-        esc(d.ref || 'this branch') +
-        '): commits not pushed and edits not committed</p><div class="diff-view panel-diff">' +
-        diffHtml(d.diff) +
-        '</div>'
-      : '<div class="empty">Nothing to push: the branch matches GitHub.</div>';
+    const c = diffCounts(d.diff),
+      any = !!d.diff.trim();
+    $('#code-body').innerHTML =
+      '<div class="changes-bar"><div class="changes-sum"><strong>' +
+      (any ? num(c.files) + (c.files === 1 ? ' file' : ' files') + ' to push' : 'Nothing to push') +
+      '</strong>' +
+      (any ? ' <span class="tag">+' + num(c.add) + ' −' + num(c.remove) + '</span>' : '') +
+      '<small>' +
+      (any
+        ? 'On ' + esc(d.ref || 'this branch') + ', not on GitHub yet'
+        : 'The branch matches GitHub') +
+      '</small></div><div class="changes-actions"><button type="button" class="ghost" data-pull>' +
+      icon('download') +
+      ' Pull</button>' +
+      (any
+        ? '<button type="button" class="primary" data-pr>' +
+          icon('branch') +
+          ' Pull request…</button>'
+        : '') +
+      '</div></div><div id="pr-form" hidden></div>' +
+      (any ? '<div class="diff-view panel-diff">' + diffHtml(d.diff) + '</div>' : '');
+    $('#code-body [data-pr]')?.addEventListener('click', prForm);
+    if (publish && any) prForm();
   } catch (e) {
     $('#code-body').innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
+  }
+}
+/** A branch name from a title: arno/ and the title's words, short. */
+function branchFor(title) {
+  const slug = title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48)
+    .replace(/-+$/, '');
+  return 'arno/' + (slug || 'change-' + Date.now().toString(36));
+}
+/** The pull request form, above the diff: the files that will go (exactly
+ * those reviewed: the server checks their digest), a title, and the branch,
+ * named after the title until edited. Opens a new branch and pull request on
+ * the commit the changes start from. */
+async function prForm() {
+  const form = $('#pr-form'),
+    id = state.session.id;
+  if (!form) return;
+  if (state.busy) return toast('Wait for the turn to finish');
+  form.hidden = false;
+  form.innerHTML = '<p class="caption">Reading the files to publish…</p>';
+  $('#code-body [data-pr]')?.setAttribute('disabled', '');
+  try {
+    const d = await api('/api/sessions/' + id + '/changes');
+    if (state.session?.id !== id) return;
+    form.innerHTML =
+      '<div class="pr-head"><strong>New pull request</strong><span class="caption">into ' +
+      esc(d.ref) +
+      ' on ' +
+      esc(d.repo) +
+      '</span></div><label>Title<input id="publish-title" class="field" maxlength="200" placeholder="What this change does"></label><label>Branch<input id="publish-branch" class="field" maxlength="76" value="' +
+      esc(branchFor('')) +
+      '"></label><ul class="pr-files">' +
+      d.files
+        .map(
+          f =>
+            '<li><code>' +
+            esc(f.path) +
+            '</code><span class="caption">' +
+            (f.deleted ? 'deleted' : num(f.bytes) + ' bytes') +
+            '</span></li>',
+        )
+        .join('') +
+      '</ul><div class="pr-actions"><button type="button" class="primary" id="publish-confirm" disabled>Create pull request</button><button type="button" class="ghost" id="publish-cancel">Cancel</button></div><p class="caption" id="publish-status" role="status">A new branch from ' +
+      esc(d.sourceSha.slice(0, 7)) +
+      ', so nothing on ' +
+      esc(d.ref) +
+      ' changes until the pull request is merged.</p>';
+    const title = $('#publish-title'),
+      branch = $('#publish-branch'),
+      go = $('#publish-confirm');
+    let named = false; // the branch was edited by hand
+    branch.oninput = () => (named = true);
+    title.oninput = () => {
+      if (!named) branch.value = branchFor(title.value);
+      go.disabled = !title.value.trim();
+    };
+    title.focus();
+    $('#publish-cancel').onclick = () => {
+      form.hidden = true;
+      $('#code-body [data-pr]')?.removeAttribute('disabled');
+    };
+    go.onclick = async () => {
+      go.disabled = true;
+      $('#publish-status').textContent = 'Opening the pull request…';
+      try {
+        const r = await api('/api/sessions/' + id + '/publish', {
+          method: 'POST',
+          body: JSON.stringify({ digest: d.digest, branch: branch.value, title: title.value }),
+        });
+        form.innerHTML =
+          '<div class="pr-done">' +
+          icon('check') +
+          '<div><strong>Pull request opened</strong><small>' +
+          esc(r.branch) +
+          ' · ' +
+          esc(r.commit.slice(0, 7)) +
+          '</small>' +
+          (r.warning ? '<small>' + esc(r.warning) + '</small>' : '') +
+          '</div><a class="button primary" target="_blank" rel="noopener noreferrer" href="' +
+          esc(r.url) +
+          '">Open on GitHub ↗</a></div>';
+        toast('Pull request opened');
+      } catch (e) {
+        $('#publish-status').textContent = e.message;
+        go.disabled = false;
+      }
+    };
+  } catch (e) {
+    form.innerHTML = '<p class="caption">' + esc(e.message) + '</p>';
+    $('#code-body [data-pr]')?.removeAttribute('disabled');
   }
 }
 /** Brings GitHub's new commits on the session's branch into its workspace
@@ -253,62 +363,3 @@ function fileView(d, path) {
 }
 // The digest binds the action to reviewed file contents. The server re-exports
 // and rechecks it; a model edit between review and click cannot be published.
-export async function reviewPublish() {
-  if (!state.session || state.session.kind === 'chat' || state.busy)
-    return toast('Open an idle coding session first');
-  $('#publish-body').innerHTML = '<p class="muted">Reading your working tree…</p>';
-  $('#publish-dialog').showModal();
-  try {
-    const id = state.session.id,
-      d = await api('/api/sessions/' + id + '/changes');
-    $('#publish-body').innerHTML =
-      '<p>Create a new branch and pull request in <strong>' +
-      esc(d.repo) +
-      '</strong>.</p><p class="caption">Base: ' +
-      esc(d.ref) +
-      ' · ' +
-      esc(d.sourceSha.slice(0, 7)) +
-      '</p><div class="publish-files">' +
-      d.files
-        .map(
-          f =>
-            '<details class="details" style="margin-left:0"><summary>' +
-            esc(f.path) +
-            ' <span class="tag">' +
-            (f.deleted ? 'deleted' : num(f.bytes) + ' bytes') +
-            '</span></summary><pre>' +
-            esc(f.deleted ? 'This file will be deleted.' : f.content || '') +
-            '</pre></details>',
-        )
-        .join('') +
-      '</div><label class="caption">Branch<input id="publish-branch" value="arno/change-' +
-      Date.now().toString(36) +
-      '" class="field"></label><label class="caption">Commit and pull request title<input id="publish-title" maxlength="200" placeholder="Describe this change" class="field"></label><p class="caption">This creates a new GitHub branch. Review the diff in the conversation before publishing.</p><button id="publish-confirm" class="primary">Create branch & pull request</button><p id="publish-status" role="status"></p>';
-    $('#publish-confirm').onclick = async () => {
-      const b = $('#publish-confirm');
-      b.disabled = true;
-      $('#publish-status').textContent = 'Publishing reviewed changes…';
-      try {
-        const r = await api('/api/sessions/' + id + '/publish', {
-          method: 'POST',
-          body: JSON.stringify({
-            digest: d.digest,
-            branch: $('#publish-branch').value,
-            title: $('#publish-title').value,
-          }),
-        });
-        $('#publish-status').innerHTML =
-          '<a target="_blank" rel="noopener noreferrer" href="' +
-          esc(r.url) +
-          '">Open on GitHub ↗</a>' +
-          (r.warning ? '<p>' + esc(r.warning) + '</p>' : '');
-        toast('Branch and commit created');
-      } catch (e) {
-        $('#publish-status').textContent = e.message;
-        b.disabled = false;
-      }
-    };
-  } catch (e) {
-    $('#publish-body').innerHTML = '<p class="banner">' + esc(e.message) + '</p>';
-  }
-}

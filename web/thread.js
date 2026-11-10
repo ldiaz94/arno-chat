@@ -1,7 +1,7 @@
 /** The conversation thread: message rendering, follow-the-stream scrolling, source
  * previews and the starter suggestions. Depends on core, turns and render.mjs.
  */
-import { markdown, cleanOutput, diffHtml } from './render.mjs';
+import { markdown, cleanOutput, diffHtml, diffCounts } from './render.mjs';
 import {
   $,
   state,
@@ -19,15 +19,6 @@ import { editMessage, retry } from './turns.js';
 import { attachmentsHtml } from './attach.js';
 import { artifactCard } from './artifacts.js';
 import { optionTags } from './options.mjs';
-// Lines added, lines removed and files changed in a unified diff.
-function diffCounts(diff) {
-  const lines = (diff || '').split('\n');
-  return {
-    add: lines.filter(l => l.startsWith('+') && !l.startsWith('+++')).length,
-    remove: lines.filter(l => l.startsWith('-') && !l.startsWith('---')).length,
-    files: lines.filter(l => l.startsWith('diff --git')).length,
-  };
-}
 // Draws one message in the thread, with its tools, sources, artifacts and footer, and returns
 // the node.
 export function message(role, text, result = {}) {

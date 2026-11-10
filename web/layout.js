@@ -115,10 +115,10 @@ export function title(name, subtitle) {
       '</span>'
     : esc(subtitle);
   $('#subtitle').title = coding ? 'Branch, starting commit and workspace' : '';
-  // Header buttons that only mean something in a conversation (actions, export,
-  // details) or only in a coding one (code browser, publish).
-  for (const id of ['actions', 'export', 'usage']) $('#' + id).hidden = !state.session;
-  for (const id of ['code', 'publish']) $('#' + id).hidden = !coding;
+  // Header buttons that only mean something in a conversation (actions,
+  // details) or only in a coding one (the code browser).
+  for (const id of ['actions', 'usage']) $('#' + id).hidden = !state.session;
+  $('#code').hidden = !coding;
 }
 // Redraws the sidebar: the account button, the Chat | Code switch and the conversation list.
 export function sidebar() {

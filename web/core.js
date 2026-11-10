@@ -58,6 +58,8 @@ const paths = {
   close: 'm6 6 12 12M6 18 18 6',
   code: 'm8 7-5 5 5 5m8-10 5 5-5 5m-3-13-2 16',
   dots: 'M5 12h.01M12 12h.01M19 12h.01',
+  pencil: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4',
+  trash: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
   panel: 'M3 4h18v16H3zM15 4v16M18 8h.01M18 12h.01',
   commit: 'M12 3v6m0 6v6M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0',
   download: 'M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4',

@@ -86,12 +86,6 @@
           </div>
           <div class="topbar-actions">
             <button
-              id="publish"
-              class="ghost icon"
-              aria-label="Review and publish"
-              title="Review and publish"
-            ></button>
-            <button
               id="code"
               class="ghost icon"
               aria-label="Browse code and changes"
@@ -102,12 +96,6 @@
               class="ghost icon"
               aria-label="Session actions"
               title="Session actions"
-            ></button>
-            <button
-              id="export"
-              class="ghost icon"
-              aria-label="Export conversation"
-              title="Export conversation"
             ></button>
             <button
               id="usage"
@@ -293,27 +281,12 @@
       </div>
       <div id="account-body" class="modal-body"></div>
     </dialog>
-    <dialog id="actions-dialog" class="modal" aria-label="Session actions">
+    <dialog id="actions-dialog" class="modal" aria-labelledby="actions-heading">
       <div class="modal-head">
-        <h2>Session actions</h2>
+        <h2 id="actions-heading">Conversation</h2>
         <button data-close class="ghost icon" aria-label="Close actions">×</button>
       </div>
-      <div id="action-items" class="modal-body">
-        <button
-          id="another-session"
-          class="model-option"
-          type="button"
-          data-online="Reconnect to start a coding session"
-        >
-          New session on this repository
-        </button>
-        <button id="rename-conversation" class="model-option" type="button">
-          Rename conversation
-        </button>
-        <button id="delete-conversation" class="model-option danger" type="button">
-          Delete conversation
-        </button>
-      </div>
+      <div id="action-items" class="modal-body action-sheet"></div>
     </dialog>
     <dialog id="code-dialog" class="modal code-dialog" aria-label="Code and changes">
       <div class="modal-head">
@@ -326,13 +299,6 @@
         <button id="history-tab" aria-pressed="false">History</button>
       </div>
       <div id="code-body" class="code-body"></div>
-    </dialog>
-    <dialog id="publish-dialog" class="modal" aria-labelledby="publish-heading">
-      <div class="modal-head">
-        <h2 id="publish-heading">Review & publish</h2>
-        <button data-close class="ghost icon" aria-label="Close publishing">×</button>
-      </div>
-      <div id="publish-body" class="modal-body"></div>
     </dialog>
     <dialog id="sources-dialog" class="modal" aria-labelledby="sources-heading">
       <div class="modal-head">

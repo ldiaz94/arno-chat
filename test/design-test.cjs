@@ -466,7 +466,11 @@ const { chromium } = require('playwright'),
       else if (u.pathname.endsWith('/publish')) {
         published = true;
         assert.equal(route.request().postDataJSON().digest, 'reviewed');
-        d = { url: 'https://github.com/ldiaz94/rlsp/pull/1' };
+        d = {
+          url: 'https://github.com/ldiaz94/rlsp/pull/1',
+          branch: route.request().postDataJSON().branch,
+          commit: 'c'.repeat(40),
+        };
       } else if (u.pathname === '/api/sessions')
         d = {
           sessions: [
@@ -667,14 +671,28 @@ const { chromium } = require('playwright'),
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(300);
     assert.deepEqual(await covered(), []);
+    // The ⋯ sheet: the repository's actions first, then the conversation's.
     await page.getByRole('button', { name: 'Session actions' }).click();
-    await page.getByRole('button', { name: 'Review and publish' }).click();
+    assert.deepEqual(await page.locator('#action-items .action-text strong').allInnerTexts(), [
+      'Changes & pull request',
+      'Pull from GitHub',
+      'New session on this repository',
+      'Rename',
+      'Export as Markdown',
+      'Delete',
+    ]);
+    await page.screenshot({ path: '/tmp/arno-actions-mobile.png' });
+    await page.locator('[data-action="changes"]').click();
+    // The Changes tab: counts, Pull, and the pull request form in place.
+    await page.locator('.changes-bar', { hasText: '1 file to push' }).waitFor();
+    await page.getByRole('button', { name: 'Pull request…' }).click();
     await page.locator('#publish-title').fill('Improve example');
-    await page.getByRole('button', { name: 'Create branch & pull request' }).click();
-    await page.getByRole('link', { name: 'Open on GitHub' }).waitFor();
+    assert.equal(await page.locator('#publish-branch').inputValue(), 'arno/improve-example');
+    await page.screenshot({ path: '/tmp/arno-pull-request-mobile.png' });
+    await page.getByRole('button', { name: 'Create pull request' }).click();
+    await page.getByRole('link', { name: 'Open on GitHub ↗' }).waitFor();
     assert.ok(published);
-    await page.getByRole('button', { name: 'Close publishing' }).click();
-    await page.getByRole('button', { name: 'Close actions' }).click();
+    await page.getByRole('button', { name: 'Close code' }).click();
     await page.getByLabel('Message', { exact: true }).fill('Continue with the fix');
     await page.getByRole('button', { name: 'Send', exact: true }).click();
     await page.getByText('Recovered after lost response', { exact: true }).waitFor();
@@ -827,7 +845,7 @@ const { chromium } = require('playwright'),
     assert.deepEqual(await listed(), ['22222222-2222-2222-2222-222222222222', oldChat]);
     await page.getByRole('button', { name: 'Session actions' }).click();
     page.once('dialog', d => d.accept('Research notes'));
-    await page.getByRole('button', { name: 'Rename conversation', exact: true }).click();
+    await page.getByRole('button', { name: /^Rename/ }).click();
     await page.waitForFunction(
       () => document.querySelector('#title').textContent === 'Research notes',
     );

@@ -299,3 +299,13 @@ export function tableResize(root) {
     table.querySelectorAll('th').forEach(h => (h.style.width = ''));
   });
 }
+
+/** Lines added, lines removed and files changed in a unified diff. */
+export function diffCounts(diff) {
+  const lines = (diff || '').split('\n');
+  return {
+    add: lines.filter(l => l.startsWith('+') && !l.startsWith('+++')).length,
+    remove: lines.filter(l => l.startsWith('-') && !l.startsWith('---')).length,
+    files: lines.filter(l => l.startsWith('diff --git')).length,
+  };
+}

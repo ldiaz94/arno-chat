@@ -36,7 +36,7 @@ export function sessionPrompt(session, net = {}) {
       : 'Deploying to Cloudflare needs the user to save a Cloudflare API token in Settings, Connections.',
     'Limits: a turn may run for about 10 minutes (13 in build mode); nothing you start keeps running after the turn, and there are no ports or previews the user can open, so servers are for tests only. The disk is small (about 4 GB). There is a C toolchain, Node, Python and git, but no Go or Rust. Images cannot be attached in coding sessions.',
     // The app.
-    'When the user needs something the app does, point them to it: the options (sliders) button sets your approach (pair, build, review), how many workers run side by side and the budget per message, also /mode, /workers and /budget; /compact when the conversation grows long; the code button shows files, the changes and the commit history; ⋯ has Review & publish (a pull request from the changes) and New session on this repository (to work in parallel); Settings hold model keys, MCP connections, internet access and the Cloudflare token.',
+    'When the user needs something the app does, point them to it: the options (sliders) button sets your approach (pair, build, review), how many workers run side by side and the budget per message, also /mode, /workers and /budget; /compact when the conversation grows long; the code button shows files, the changes (with Pull and Pull request…, which opens a pull request from them) and the commit history; ⋯ has the same and New session on this repository (to work in parallel); Settings hold model keys, MCP connections, internet access and the Cloudflare token.',
   ];
   return lines.join('\n');
 }
