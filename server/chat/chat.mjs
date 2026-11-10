@@ -1,7 +1,7 @@
 import { WEB_TOOLS } from './research.mjs';
 import { displayDelta, mistralDeltas } from '../gateways/model.mjs';
 import { tokens } from '../prices.mjs';
-import { PROVIDERS, requestFields } from '../account.mjs';
+import { PROVIDERS, requestFields } from '../providers.mjs';
 import { attachedNote } from '../probe/attachments.mjs';
 
 /** Gemini streams its thoughts as a leading <thought>…</thought> in the text;

@@ -4,14 +4,9 @@
  * GitGateway (git.mjs). */
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { modelRequest } from './model.mjs';
-import {
-  profile,
-  credential,
-  instructions,
-  providerModel,
-  unseal,
-  searchConnection,
-} from '../account.mjs';
+import { profile, credential, instructions, searchConnection } from '../account.mjs';
+import { providerModel } from '../providers.mjs';
+import { unseal } from '../secrets.mjs';
 import { proxyMcp } from './mcp.mjs';
 import { WEB_INSTRUCTIONS, webMcp } from '../chat/research.mjs';
 import { turnPlan } from '../chat/plan.mjs';

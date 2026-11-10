@@ -4,7 +4,9 @@
  * the clone's origin, the owner's name on commits, and the checkout following a
  * branch the model pushed. */
 import { json } from '../http.mjs';
-import { profile, providerModel, seal } from '../account.mjs';
+import { profile } from '../account.mjs';
+import { providerModel } from '../providers.mjs';
+import { seal } from '../secrets.mjs';
 import { gitRemote } from './git.mjs';
 import { SANDBOX_HOSTS, publicSandbox } from './sandbox.mjs';
 import { codeSettings } from '../chat/plan.mjs';

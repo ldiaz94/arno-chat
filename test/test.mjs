@@ -18,15 +18,9 @@ import { hostCommand } from '../server/code/code-routes.mjs';
 import { encode, decoderOf } from '../server/code/serve.mjs';
 import { plainChat } from '../server/chat/chat.mjs';
 import { validPath } from '../server/code/files.mjs';
-import {
-  seal,
-  unseal,
-  publicProfile,
-  instructions,
-  validMcpUrl,
-  accountRoute,
-  requestFields,
-} from '../server/account.mjs';
+import { publicProfile, instructions, validMcpUrl, accountRoute } from '../server/account.mjs';
+import { requestFields } from '../server/providers.mjs';
+import { seal, unseal } from '../server/secrets.mjs';
 import { testMcp } from '../server/gateways/mcp.mjs';
 import { startSignIn, mcpCallback, mcpBearer } from '../server/gateways/mcp-oauth.mjs';
 import { registryProxy, cloudflareProxy, sandboxEnv } from '../server/code/sandbox.mjs';
@@ -1404,7 +1398,7 @@ test('coding gateway: Mistral gets no stream_options and its thinking chunks bec
   });
 });
 test('model discovery keeps chat models of DeepSeek, Kimi, Mistral and Meta', async () => {
-  const { providerModels } = await import('../server/account.mjs');
+  const { providerModels } = await import('../server/providers.mjs');
   const lists = {
     'https://api.deepseek.com/models': [
       { id: 'deepseek-flash', object: 'model', owned_by: 'deepseek', name: 'DeepSeek-V4.1-Flash' },
@@ -2057,7 +2051,7 @@ test('deleting the account wipes the index, every session and every recorded sig
     assert.equal((await objects.get(name).ctx.storage.list({})).size, 0, name + ' emptied');
 });
 test('models that let the provider train on your data are never offered or run', async () => {
-  const { TRAINS_ON_DATA } = await import('../server/account.mjs');
+  const { TRAINS_ON_DATA } = await import('../server/providers.mjs');
   const { modelAllowed } = await import('../server/models.mjs');
   assert.ok(TRAINS_ON_DATA.test('meta/muse-spark-1.3-contributor'));
   assert.equal(await modelAllowed('meta/muse-spark-1.3-contributor'), false);

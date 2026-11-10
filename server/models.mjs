@@ -1,4 +1,4 @@
-import { MODEL_ID, TRAINS_ON_DATA, providerModel, effortModel } from './account.mjs';
+import { MODEL_ID, TRAINS_ON_DATA, providerModel, effortModel } from './providers.mjs';
 import { prices, priceKey } from './prices.mjs';
 export const DEFAULT_MODEL = 'mistral-large-4:cloud';
 export const FALLBACK_MODELS = [

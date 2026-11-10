@@ -17,7 +17,8 @@
  * a random UUID used once, and names the account it is for. Depends on
  * account.mjs (sealing, the profile) and web.mjs (public URLs). Leaves out
  * servers that need a pre-registered client: those take a pasted token. */
-import { seal, unseal, profile } from '../account.mjs';
+import { profile } from '../account.mjs';
+import { seal, unseal } from '../secrets.mjs';
 import { publicWebUrl } from '../chat/research.mjs';
 import { SECURITY } from '../http.mjs';
 

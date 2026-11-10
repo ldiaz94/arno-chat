@@ -4,7 +4,8 @@
 import { json } from '../http.mjs';
 import { plainChat } from './chat.mjs';
 import { modelInput } from '../probe/attachments.mjs';
-import { profile, credential, instructions, providerModel, searchConnection } from '../account.mjs';
+import { profile, credential, instructions, searchConnection } from '../account.mjs';
+import { providerModel } from '../providers.mjs';
 import { chatMcpTools, callChatMcp } from './chat-mcp.mjs';
 import { WEB_INSTRUCTIONS, WEB_TOOLS, research, citedSources } from './research.mjs';
 import { turnPlan } from './plan.mjs';

@@ -4,15 +4,8 @@
 import { COOKIE, SECURITY, json, boundedJson, cookie, sessionCookie } from './http.mjs';
 import { github, authObject } from './auth.mjs';
 import { catalog, modelAllowed } from './models.mjs';
-import {
-  PROVIDERS,
-  profile,
-  credential,
-  providerModels,
-  providerModel,
-  effortModel,
-  accountRoute,
-} from './account.mjs';
+import { profile, credential, accountRoute } from './account.mjs';
+import { PROVIDERS, providerModels, providerModel, effortModel } from './providers.mjs';
 import { testMcp } from './gateways/mcp.mjs';
 import { startSignIn, mcpBearer } from './gateways/mcp-oauth.mjs';
 import { sandboxRoute } from './code/sandbox.mjs';
