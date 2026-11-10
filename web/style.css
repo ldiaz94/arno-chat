@@ -2113,6 +2113,41 @@ body.light,
   border-radius: 6px;
   min-height: 28px;
 }
+/* On the Code home, from a chat: which chat comes along, and a way out. */
+.handoff {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 18px 0;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line));
+  border-radius: 14px;
+  background: var(--accent-bg);
+}
+.handoff p {
+  margin: 2px 0 0;
+}
+/* Refresh: a small icon beside Edit, turning while it works. */
+.list-refresh {
+  margin-left: auto;
+  width: 28px;
+  min-height: 28px;
+  padding: 0;
+  color: var(--muted);
+}
+.list-refresh svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.list-refresh.turning svg {
+  animation: spin 0.8s linear infinite;
+}
 .list-edit:hover {
   background: var(--line);
   color: var(--text);

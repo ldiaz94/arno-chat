@@ -190,6 +190,48 @@ async function make(draft) {
     busy(false);
   }
 }
+/** The most of a chat carried into a coding session's first message, which
+ * may hold 8,000 characters: its latest turns, with room to add to it. */
+const HANDOFF = 7000;
+/** Carries the open chat into a coding session: the Code home asks for a
+ * repository (state.handoff), and the new session opens with the chat in its
+ * message box, to read, add to and send. */
+export function continueInCode() {
+  const s = state.session;
+  $('#actions-dialog').close();
+  const turns = (s?.history || [])
+    .filter(t => !t.failed)
+    .map(t => '**Me:** ' + t.prompt + '\n\n**Arno:** ' + cleanOutput(t.summary));
+  if (!turns.length) return toast('Say something in this chat first');
+  let text = turns.join('\n\n---\n\n');
+  if (text.length > HANDOFF) text = '…' + text.slice(-HANDOFF);
+  state.handoff = {
+    title: s.title || 'a chat',
+    text: 'Carrying on from our chat “' + (s.title || 'a chat') + '”:\n\n' + text + '\n\n---\n\n',
+  };
+  switchMode('code');
+}
+/** Fetches the conversations again, and reopens the open one if it changed
+ * elsewhere (another device, or while the app slept). Runs on coming back to
+ * the app and from the list's refresh button (`said`: tell the outcome). */
+export async function refresh(said = false) {
+  const button = $('#list-refresh');
+  if (state.offline || button.classList.contains('turning')) return;
+  button.classList.add('turning');
+  try {
+    const { sessions } = await api('/api/sessions');
+    state.sessions = [...state.sessions.filter(s => isLocal(s.id)), ...sessions];
+    sidebar();
+    const open = state.session,
+      fresh = open?.id && sessions.find(s => s.id === open.id);
+    if (fresh && !state.busy && activeAt(fresh) !== activeAt(open)) await resume(open.id);
+    if (said) toast('Up to date');
+  } catch (e) {
+    if (said) showError(e);
+  } finally {
+    button.classList.remove('turning');
+  }
+}
 /** On the Code home: a note when private repositories can't be reached, saying
  * what to change on GitHub. Nothing when every repository is reachable, or
  * when GitHub couldn't be asked. */
@@ -339,11 +381,21 @@ function codeHome() {
         '</div>'
       : '') +
     repoBanner() +
+    (state.handoff
+      ? '<div class="handoff"><div><strong>Continue “' +
+        esc(state.handoff.title) +
+        '” in code</strong><p class="caption">Open a repository below: the chat comes along as your first message.</p></div><button type="button" class="ghost" id="handoff-cancel">Cancel</button></div>'
+      : '') +
     '<div class="section-title"><h2>Start from a repository</h2>' +
     modelChip() +
     '</div><div class="searchbox">' +
     icon('search') +
     '<input id="search" type="search" placeholder="Search all accessible repositories" aria-label="Search repositories" autocomplete="off"></div><div id="repo-progress" class="search-progress" role="status"></div><div id="repos" class="repo-grid"></div><div id="more-repos"></div><p><a class="caption" href="/auth/github?repos=1">Connect / refresh GitHub repository access ↗</a></p></div>';
+  if (state.handoff)
+    $('#handoff-cancel').onclick = () => {
+      state.handoff = null;
+      home();
+    };
   let timer;
   $('#search').oninput = () => {
     state.search++;
@@ -497,6 +549,13 @@ async function openRepo(repo) {
     });
     state.sessions.unshift({ id: s.id, ...s });
     if (gen === state.generation) await resume(s.id);
+    // From a chat: it waits in the message box, to add to and send.
+    if (state.handoff && state.session?.id === s.id) {
+      prompt.value = state.handoff.text.slice(0, 8000);
+      prompt.dispatchEvent(new Event('input')); // resizes it and keeps the draft
+      prompt.focus();
+    }
+    state.handoff = null;
   } catch (e) {
     if (gen === state.generation) {
       main.innerHTML =

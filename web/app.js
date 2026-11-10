@@ -29,6 +29,7 @@ import { artifactClick, openGallery } from './artifacts.js';
 import {
   resume,
   newChat,
+  refresh,
   switchMode,
   home,
   renameConversation,
@@ -68,6 +69,14 @@ $('#new-chat').onclick = () => newChat();
 $('#list-rename').onclick = () => renameConversation(state.menuTarget);
 $('#list-delete').onclick = () => deleteConversation(state.menuTarget);
 $('#list-edit').onclick = toggleEdit;
+$('#list-refresh').onclick = () => refresh(true);
+$('#list-refresh').innerHTML = icon('refresh');
+// Back in the app after a while (an installed app has no reload): catch up.
+let away = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) away = Date.now();
+  else if (away && Date.now() - away > 30000) refresh();
+});
 $('#bulk-done').onclick = toggleEdit;
 $('#bulk-delete').onclick = deleteSelected;
 $('#code').onclick = () => openCode();

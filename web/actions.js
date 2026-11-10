@@ -3,13 +3,19 @@
  * starts with its repository's actions.
  *
  *   Repository    Changes & pull request · Pull from GitHub · New session
- *   Conversation  Rename · Export as Markdown · Delete
+ *   Conversation  (a chat: Continue in a coding session) · Rename · Export · Delete
  *
  * Depends on core, sessions (rename, delete, export, another session) and
  * code (the Changes tab, pull).
  */
 import { $, state, esc, icon } from './core.js';
-import { renameConversation, deleteConversation, exportChat, anotherSession } from './sessions.js';
+import {
+  renameConversation,
+  deleteConversation,
+  exportChat,
+  anotherSession,
+  continueInCode,
+} from './sessions.js';
 import { openCode, pull, behindNow, checkBehind } from './code.js';
 
 /** The rows: [key, icon, title, what it says more (a function of the open
@@ -45,6 +51,14 @@ const ACTIONS = [
     s => 'Work in parallel, from ' + (s.ref || 'its branch'),
     anotherSession,
     'code',
+  ],
+  [
+    'tocode',
+    'code',
+    'Continue in a coding session',
+    () => 'Pick a repository; this chat comes along as your first message',
+    continueInCode,
+    'chat',
   ],
   [
     'rename',
@@ -120,7 +134,7 @@ function draw(s) {
       : '') +
     group(
       'Conversation',
-      ACTIONS.filter(a => !a[5]),
+      ACTIONS.filter(a => !a[5] || (a[5] === 'chat' && !coding)),
     );
 }
 

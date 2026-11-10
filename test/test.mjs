@@ -3143,3 +3143,8 @@ test('a turn yields between rounds and goes on from its saved state', async () =
   assert.equal(r.usage.calls, 2, "the first run's call is counted");
   assert.deepEqual(bodies[1].messages.length, state.messages.length);
 });
+test('markdown: a table straight after a line of text is a table', () => {
+  const html = markdown('**DIY per-minute**\n| Item | $/min |\n|---|---|\n| SIP | 0.003 |');
+  assert.match(html, /^<p><strong>DIY per-minute<\/strong><\/p><div class="table-wrap"><table>/);
+  assert.match(html, /<td>SIP<\/td><td class="num">0.003<\/td>/);
+});

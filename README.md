@@ -68,6 +68,8 @@ the most recently active first.
 | Code home, a repository's **Open** | A new coding session: a clone of the repository in a container of its own |
 | ◐ | Theme: dark or light, and a palette (Arno, Duck, Catppuccin, Cyberpunk, Phosphor, Gruvbox), kept on this device |
 | ⋯ | The repository's actions (changes and pull request, pull, a new session on it) and the conversation's (rename, export, delete) |
+| ⋯ → **Continue in a coding session** (a chat) | Pick a repository; the new session opens with the chat in its message box (its latest turns, up to 7,000 characters) |
+| ↻ beside Edit | Refresh the conversations (also on coming back to the app after 30 s) |
 | ⋯ → **New session on this repository** | Another session on the same repository, from its current branch |
 | The title | Conversation details: artifacts, context, usage and cost, sources, links, images |
 | An artifact's card | The artifact beside the chat: a document, an HTML page that runs, a drawing, a diagram, a code file; its source, what each version changed, restore, download |

@@ -228,7 +228,9 @@ export function markdown(source, sources = []) {
     while (
       i < lines.length &&
       lines[i].trim() &&
-      !/^(#{1,4}\s|\s*\x60{3}|>\s|\s*[-*+]\s|\s*\d+\.\s)/.test(lines[i])
+      !/^(#{1,4}\s|\s*\x60{3}|>\s|\s*[-*+]\s|\s*\d+\.\s)/.test(lines[i]) &&
+      // A table may start straight after a line of text, as in GFM.
+      !(lines[i].includes('|') && i + 1 < lines.length && isDelimiter(lines[i + 1]))
     )
       paragraph.push(lines[i++]);
     out += '<p>' + inline(paragraph.join('\n')).replace(/\n/g, '<br>') + '</p>';
