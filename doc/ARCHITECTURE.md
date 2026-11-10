@@ -36,7 +36,7 @@ Arno Chat turns a GitHub repository clone into a resumable remote coding workspa
 | server/code/serve.mjs | Drives `arno --serve` for one turn: hello, /load, the line, streamed entries, reply and transcript |
 | server/code/git.mjs | Git over HTTP for the container: smart-HTTP request matching, push-command check, forwarding to GitHub with the owner's token |
 | server/code/sandbox.mjs | Coding sessions' network: read-only npm and PyPI proxies, the Cloudflare API gateway (owner's token), full-internet setting, the turn's environment |
-| server/code/publish.mjs | Worktree export, host-side validation, cumulative diff including new files; `changesDigest` and `publishChanges` |
+| server/code/publish.mjs | The changes GitHub does not have yet: base = merge-base of HEAD with its upstream (or origin/<session branch>; else the starting commit), diff to the work tree (WORKTREE_DIFF), files for review (EXPORT_FILES), changesDigest, publishChanges (a branch and pull request on the base commit) |
 | server/code/files.mjs | Read-only directory and UTF-8 code navigation |
 | server/code/context.mjs | Repository provenance and bounded conversation context for every Arno invocation |
 | server/gateways/gateways.mjs | ModelGateway, McpGateway and GitGateway entrypoints the container's traffic is routed through |
@@ -153,7 +153,9 @@ All API routes require the GitHub-authenticated session cookie except GET /api/m
 | PATCH | /api/sessions/:id | Rename a conversation |
 | DELETE | /api/sessions/:id | Delete an idle conversation and its saved workspace reference |
 | GET | /api/sessions/:id/files?path=... | Browse directories or preview a regular UTF-8 file |
-| GET | /api/sessions/:id/history | The checkout's newest 100 commits, which are not on GitHub yet, and how many files are uncommitted |
+| GET | /api/sessions/:id/history | The checkout's newest 100 commits, which are not on GitHub yet, how many files are uncommitted, and how many commits GitHub has that it does not (fetched now) |
+| GET | /api/sessions/:id/diff | The changes GitHub does not have yet, read from the workspace now (the Changes tab) |
+| POST | /api/sessions/:id/pull | Fetch and merge the branch from GitHub into the checkout; a conflict is backed out and its files named (409); then a snapshot |
 | GET | /api/sessions/:id/commit?sha=... | One commit's message and patch (up to 120 KB); a partial clone may fetch its files through the git gateway |
 | POST | /api/sessions/:id/messages | Save a task from id and prompt; returns HTTP 202 |
 | GET | /api/sessions/:id/job | Latest durable task state and completed result |

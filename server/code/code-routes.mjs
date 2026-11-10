@@ -4,7 +4,7 @@
  * commands stay out of arno. Called with this = the ArnoProbe instance. */
 import { json } from '../http.mjs';
 import { modelAllowed } from '../models.mjs';
-import { EXPORT_FILES, validateFiles } from './publish.mjs';
+import { EXPORT_FILES, validateFiles, WORKTREE_DIFF } from './publish.mjs';
 import { READ_FILE, validPath } from './files.mjs';
 import { gitRemote } from './git.mjs';
 
@@ -15,12 +15,26 @@ export function hostCommand(prompt) {
   const name = /^\/([a-z]+)/.exec(prompt.trim())?.[1];
   if (['model', 'models', 'provider'].includes(name))
     return 'Change the model with the model button';
+  if (name === 'pull') return 'Use /pull from the app';
   if (['budget', 'workers', 'mode'].includes(name))
     return 'Set /' + name + ' in the options (sliders) button';
   if (['safety', 'quit', 'exit', 'attach', 'paste', 'stage'].includes(name))
     return '/' + name + ' is not available here';
   return '';
 }
+/** The pull's script, run in the checkout with REF, the session's branch: says
+ * "up-to-date", "merged N" or "conflict FILE ...". A shallow clone (a session
+ * from before clones) first gets its history, without file contents. */
+const PULL = String.raw`set -e
+[ "$(git rev-parse --is-shallow-repository)" = true ] && git fetch -q --filter=blob:none --unshallow origin
+git fetch -q origin "+refs/heads/$REF:refs/remotes/origin/$REF"
+behind=$(git rev-list --count "HEAD..origin/$REF")
+if [ "$behind" = 0 ]; then echo up-to-date; exit 0; fi
+if git merge -q --no-edit "origin/$REF" >/dev/null; then echo "merged $behind"; exit 0; fi
+files=$(git diff --name-only --diff-filter=U | tr '\n' ' ')
+[ -n "$files" ] && git merge --abort && echo "conflict $files" && exit 3
+exit 1
+`;
 /** git log's fields for a commit, parted by unit separators. */
 const LOG_FORMAT = '%H%x1f%an%x1f%at%x1f%s%x1f%D';
 
@@ -31,7 +45,26 @@ export const codeRoutes = {
   async 'GET /session/history'() {
     const refused = await this.wake();
     if (refused) return refused;
-    const cwd = { cwd: '/workspace/repo' };
+    const cwd = { cwd: '/workspace/repo' },
+      session = await this.ctx.storage.get('session');
+    // What GitHub has that the checkout does not: fetched now, so the tab can
+    // offer a pull. A failed fetch (offline, signed out) shows no count.
+    this.gitOpen = { repo: session.repo, ownerId: session.ownerId };
+    let behind = null;
+    try {
+      const f = await this.exec(
+        [
+          'sh',
+          '-c',
+          'git fetch -q origin "+refs/heads/$REF:refs/remotes/origin/$REF" && git rev-list --count "HEAD..origin/$REF"',
+        ],
+        { ...cwd, env: { REF: session.ref || 'main' } },
+        30,
+      );
+      if (f.exitCode === 0) behind = Number(f.stdout.trim()) || 0;
+    } finally {
+      this.gitOpen = null;
+    }
     const [log, local, status] = await Promise.all([
       this.exec(['git', 'log', '-n', '100', '--format=' + LOG_FORMAT, 'HEAD'], cwd, 20),
       this.exec(['git', 'rev-list', '-n', '100', 'HEAD', '--not', '--remotes'], cwd, 20),
@@ -46,7 +79,54 @@ export const codeRoutes = {
         const [sha, author, at, subject, refs] = line.split('\x1f');
         return { sha, author, at: Number(at) * 1000, subject, refs, local: only.has(sha) };
       });
-    return json({ commits, uncommitted: status.stdout.split('\n').filter(Boolean).length });
+    return json({
+      commits,
+      uncommitted: status.stdout.split('\n').filter(Boolean).length,
+      behind,
+      ref: session.ref,
+    });
+  },
+  /** Brings GitHub's new commits on the session's branch into its checkout:
+   * fetch, then merge (a fast-forward when it can). A conflict is backed out
+   * and its files named; the workspace is then snapshotted, as after a turn.
+   * The app does this, not the model: arno works in a copy of the project,
+   * and a merge there would come back as edits, not as upstream's commits. */
+  async 'POST /session/pull'() {
+    const job = await this.ctx.storage.get('job');
+    if (this.inFlight || (job && ['queued', 'running'].includes(job.status)))
+      return json({ error: 'Wait for the turn to finish before pulling' }, 409);
+    const refused = await this.wake();
+    if (refused) return refused;
+    const session = await this.ctx.storage.get('session');
+    this.inFlight = true;
+    this.gitOpen = { repo: session.repo, ownerId: session.ownerId };
+    try {
+      const r = await this.exec(
+        ['sh', '-c', PULL],
+        { cwd: '/workspace/repo', env: { REF: session.ref || 'main' } },
+        150,
+      );
+      const [status, ...rest] = r.stdout.trim().split(' '),
+        detail = rest.join(' ');
+      if (r.exitCode !== 0 && status !== 'conflict')
+        return json(
+          { error: 'Could not pull: ' + (r.stderr.trim().split('\n').pop() || 'git failed') },
+          409,
+        );
+      if (status === 'merged') {
+        const snapshot = await this.ctx.container.snapshotContainer({});
+        await this.ctx.storage.put('snapshot', snapshot);
+      }
+      return json(
+        status === 'conflict'
+          ? { status, files: detail.split(' ').filter(Boolean) }
+          : { status, commits: Number(detail) || 0 },
+        status === 'conflict' ? 409 : 200,
+      );
+    } finally {
+      this.gitOpen = null;
+      this.inFlight = false;
+    }
   },
   /** One commit: its message and its patch, cut at 120 KB. Its files' contents
    * may still be on GitHub (a partial clone), so git may fetch them. */
@@ -101,6 +181,19 @@ export const codeRoutes = {
   },
   /** Every file changed since the pinned source commit, with its content, for
    * review before publishing (publish.mjs). Refused while a task runs. */
+  /** The changes GitHub does not have yet, as a diff, now: for the Changes tab. */
+  async 'GET /session/diff'() {
+    const refused = await this.wake();
+    if (refused) return refused;
+    const session = await this.ctx.storage.get('session'),
+      r = await this.exec(
+        ['node', '-e', WORKTREE_DIFF],
+        { cwd: '/workspace/repo', env: { ARNO_REF: session.ref || '' } },
+        30,
+      );
+    if (r.exitCode !== 0) return json({ error: 'Could not read the changes' }, 500);
+    return json({ diff: r.stdout, ref: session.ref });
+  },
   async 'GET /session/changes'() {
     const job = await this.ctx.storage.get('job');
     if (this.inFlight || (job && ['queued', 'running'].includes(job.status)))
@@ -120,6 +213,7 @@ export const codeRoutes = {
       await this.start(session.model);
       const p = await this.ctx.container.exec(['node', '-e', EXPORT_FILES], {
         cwd: '/workspace/repo',
+        env: { ARNO_REF: session.ref || '' },
       });
       const output = await p.output();
       if (output.exitCode !== 0)
@@ -130,12 +224,13 @@ export const codeRoutes = {
           400,
         );
       if (output.stdout.byteLength > 2000000) return json({ error: 'Changes too large' }, 413);
-      const { files } = JSON.parse(new TextDecoder().decode(output.stdout));
+      const { files, base } = JSON.parse(new TextDecoder().decode(output.stdout));
       return json({
         files: validateFiles(files),
         repo: session.repo,
         ref: session.ref,
-        sourceSha: session.sourceSha,
+        // The publish's parent: where the branch meets GitHub (publish.mjs).
+        sourceSha: /^[0-9a-f]{40}$/.test(base || '') ? base : session.sourceSha,
       });
     } finally {
       this.inFlight = false;

@@ -137,7 +137,7 @@ export async function api(path, opt = {}) {
   } catch {
     throw Error('The server could not complete this request. Please try again.');
   }
-  if (!r.ok) throw Object.assign(Error(d.error || 'Request failed'), { status: r.status });
+  if (!r.ok) throw Object.assign(Error(d.error || 'Request failed'), { status: r.status, data: d });
   return d;
 }
 // Shows a short message at the bottom of the page for a few seconds.

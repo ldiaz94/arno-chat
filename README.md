@@ -97,10 +97,14 @@ the most recently active first.
 | `/notes`, `/remember`, `/forget`, `/my-memory` | The model's notes on the project; facts kept across conversations |
 | `/test [command]` | Run the project's tests; a failure goes to the model |
 | `/tools`, `/mcp`, `/system`, `/list`, `/load`, `/help` | What arno offers, its MCP servers, its system prompt, other conversations |
+| `/pull` | Bring GitHub's new commits on the branch into the session (also **Pull** in the History tab) |
 | `/mode`, `/budget`, `/workers` | Set this conversation's options, as the sliders do |
 
-In a session the model can `git push`: the clone's origin goes through the
-Worker, which adds your GitHub token on the way out. **Review & publish**
+In a session the model can `git push` when you ask it to (it never commits
+or pushes on its own): the clone's origin goes through the Worker, which adds
+your GitHub token on the way out. **Changes** show only what GitHub does not
+have yet, so pushed work, pulled work and other sessions' pushes stay out of
+them. **Review & publish**
 (⋯) opens a pull request from what you reviewed instead.
 
 **Settings** (your name, bottom left) hold provider keys (Ollama Cloud,

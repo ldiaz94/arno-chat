@@ -180,9 +180,15 @@ const { chromium } = require('playwright'),
       await page.getByRole('button', { name: 'History', exact: true }).click();
       await page.locator('.commit-row').first().waitFor();
       assert.equal(await page.locator('.commit-row .local-tag').count(), 1);
-      assert.match(await page.locator('.history-note').innerText(), /2 files/);
+      assert.match(
+        await page.locator('.pull-note').innerText(),
+        /2 new commits on GitHub \(main\)/,
+      );
+      assert.match(await page.locator('.history-note').last().innerText(), /2 files/);
       assert.ok(await fits());
       await shot('code-history-' + width);
+      await page.locator('.pull-note [data-pull]').click();
+      await page.getByText('Pulled 2 commits from GitHub').first().waitFor();
       await page.locator('.commit-row').first().click();
       await page.locator('.commit-view h3', { hasText: 'Add the framing tests' }).waitFor();
       await page.locator('.panel-diff .add').first().waitFor();
@@ -315,8 +321,12 @@ const { chromium } = require('playwright'),
           title: 'General chat',
           model,
         };
-      } else if (u.pathname.endsWith('/history'))
+      } else if (u.pathname.endsWith('/diff')) d = { diff, ref: 'main' };
+      else if (u.pathname.endsWith('/pull')) d = { status: 'merged', commits: 2 };
+      else if (u.pathname.endsWith('/history'))
         d = {
+          behind: 2,
+          ref: 'main',
           uncommitted: 2,
           commits: [
             {
@@ -637,6 +647,26 @@ const { chromium } = require('playwright'),
     await page.locator('.today-tile').first().waitFor();
     await page.evaluate(sid => document.querySelector('[data-session="' + sid + '"]').click(), id);
     await page.locator('#thread .turn').first().waitFor();
+    // Rotating the phone and back leaves every control tappable: nothing
+    // invisible may cover the page.
+    const covered = () =>
+      page.evaluate(() =>
+        ['#prompt', '#menu', '#options-button', '#actions'].flatMap(sel => {
+          const el = document.querySelector(sel);
+          if (!el || el.hidden || !el.getClientRects().length) return [];
+          const r = el.getBoundingClientRect(),
+            top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          return top && (top === el || el.contains(top))
+            ? []
+            : [sel + ' under ' + (top ? top.outerHTML.slice(0, 120) : 'nothing')];
+        }),
+      );
+    assert.deepEqual(await covered(), []);
+    await page.setViewportSize({ width: 844, height: 390 });
+    await page.waitForTimeout(300);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(300);
+    assert.deepEqual(await covered(), []);
     await page.getByRole('button', { name: 'Session actions' }).click();
     await page.getByRole('button', { name: 'Review and publish' }).click();
     await page.locator('#publish-title').fill('Improve example');

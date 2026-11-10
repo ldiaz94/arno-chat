@@ -126,8 +126,9 @@ export function message(role, text, result = {}) {
       node.innerHTML +=
         '<details class="details"><summary>' +
         counts.files +
-        ' changed file' +
-        (counts.files === 1 ? '' : 's') +
+        // What GitHub does not have yet, after this turn (server/code/publish.mjs).
+        (counts.files === 1 ? ' file' : ' files') +
+        ' to push' +
         ' <span class="tag">+' +
         counts.add +
         ' −' +

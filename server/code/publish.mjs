@@ -1,18 +1,38 @@
-/** Export only regular UTF-8 worktree files. Credentials never enter this code:
- * it executes inside the untrusted container, and the host validates the result.
- * Publishing creates a new branch from the pinned GitHub source commit.
+/** A coding session's changes, and publishing them. The changes are those
+ * GitHub does not have yet: from the base, where the branch meets its
+ * upstream (or, never pushed, the branch it came from), to the files as they
+ * stand. Commits pushed, and work pulled from upstream, are not in them; so
+ * parallel sessions and upstream changes do not show up as this session's.
+ *
+ *   upstream ──●──●──●              (pulled in: not the session's)
+ *               \        \
+ *   HEAD      base──●──●──merge──[uncommitted]
+ *                   └ the session's, not yet pushed: the changes
+ *
+ * The scripts run in the untrusted container (credentials never enter them),
+ * and the host checks what they print. Publishing makes a new branch from the
+ * base commit, which GitHub has.
  * Depends on auth.mjs (the GitHub API call). Used by code-routes.mjs and
  * turn.mjs. Leaves out merging, force pushes and binary files.
  */
 import { github } from '../auth.mjs';
 
-/** Node script run in the container: prints, as JSON, every file changed since
- * the pinned source commit (tracked or new; at most 50 files, 1 MB of text) with
- * its content and mode, or {deleted: true}. */
-export const EXPORT_FILES = String.raw`
+/** Node script code, run in the container before the others, that finds base
+ * (see above). ARNO_REF names the branch the session tracks, for a branch with
+ * no upstream yet; a session from before clones falls back to its first commit. */
+const BASE = String.raw`
+const gitq=args=>{try{return require('child_process').execFileSync('git',args,{cwd:'/workspace/repo',encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim()}catch{return ''}};
+const upstream=gitq(['rev-parse','--abbrev-ref','--symbolic-full-name','@{u}'])||(process.env.ARNO_REF?'origin/'+process.env.ARNO_REF:'');
+const base=(upstream&&gitq(['merge-base','HEAD',upstream]))||gitq(['config','arno.sourceCommit'])||gitq(['rev-list','--max-parents=0','HEAD']).split('\n')[0];
+`;
+
+/** Node script run in the container: prints, as JSON, the base and every file
+ * changed since it (tracked or new; at most 50 files, 1 MB of text) with its
+ * content and mode, or {deleted: true}. */
+export const EXPORT_FILES =
+  BASE +
+  String.raw`
 const fs=require('fs'),cp=require('child_process'),path=require('path'),root='/workspace/repo';
-const git=args=>{try{return cp.execFileSync('git',args,{cwd:root,encoding:'utf8'}).trim()}catch{return ''}};
-const base=git(['config','arno.sourceCommit'])||git(['rev-list','--max-parents=0','HEAD']).split('\n')[0];
 const tracked=cp.execFileSync('git',['diff','--name-only','-z',base],{cwd:root}).toString().split('\0');
 const others=cp.execFileSync('git',['ls-files','--others','--exclude-standard','-z'],{cwd:root}).toString().split('\0');
 const names=[...new Set([...tracked,...others].filter(Boolean))];if(names.length>50)throw Error('Review at most 50 files per publish');
@@ -24,7 +44,7 @@ let size=0;const files=names.map(name=>{
  const bytes=fs.readFileSync(full);size+=bytes.length;if(size>1000000||bytes.includes(0))throw Error('Publish supports up to 1 MB of text changes');
  const content=new TextDecoder('utf-8',{fatal:true}).decode(bytes);
  return {path:name,content,mode:info.mode&0o111?'100755':'100644'};
-});process.stdout.write(JSON.stringify({files}));
+});process.stdout.write(JSON.stringify({base,files}));
 `;
 /** Host-side validation is necessary even though the export script is fixed:
  * repository code can change the runtime and all files inside its container.
@@ -54,14 +74,14 @@ export function validateFiles(files) {
   if (size > 1000000) throw Error('Changes exceed 1 MB');
   return files;
 }
-/** Include newly created files as well as tracked edits in the review UI.
- * git diff alone omits untracked files. Arguments are passed without a shell.
- */
-export const WORKTREE_DIFF = String.raw`
+/** Node script run in the container: the diff from base to the files as they
+ * stand, new (untracked) files included, cut at 60 KB. Arguments are passed
+ * without a shell. */
+export const WORKTREE_DIFF =
+  BASE +
+  String.raw`
 const cp=require('child_process');let out='';
 const run=args=>{try{return cp.execFileSync('git',args,{encoding:'utf8',maxBuffer:2000000})}catch(e){if(e.status===1)return e.stdout||'';throw e}};
-// The session started from arno.sourceCommit; a session made before clones has a synthetic root.
-const base=run(['config','arno.sourceCommit']).trim()||run(['rev-list','--max-parents=0','HEAD']).trim().split('\n')[0];
 out+=run(['diff',base,'--','.']);
 for(const file of run(['ls-files','--others','--exclude-standard','-z']).split('\0').filter(Boolean).slice(0,50)){if(out.length>60000)break;out+=run(['diff','--no-index','--','/dev/null',file])}
 process.stdout.write(out.slice(0,60000));

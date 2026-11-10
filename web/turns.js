@@ -13,6 +13,7 @@ import { warm } from './offline.js';
 import { queueMessage, waiting } from './outbox.js';
 import { isLocal } from './queue.mjs';
 import { messageOptions, optionCommand } from './options.js';
+import { pull } from './code.js';
 /** A chat's question before an MCP action (approve in server/chat/turn.mjs): what would
  * run, with its arguments, and Allow or Deny. Shown while the job waits. */
 function approval(job) {
@@ -281,6 +282,12 @@ export async function submit(e) {
   if (!state.session || state.busy || !prompt.value.trim()) return;
   if (uploading()) return toast('Wait for the uploads to finish');
   const text = prompt.value.trim();
+  // /pull is the app's: it updates the workspace without a turn (code.js).
+  if (text === '/pull' && state.session.kind !== 'chat') {
+    prompt.value = '';
+    resizePrompt();
+    return pull();
+  }
   const set = optionCommand(text);
   if (set) {
     prompt.value = '';

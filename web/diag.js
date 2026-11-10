@@ -85,6 +85,22 @@ function measure() {
       document.documentElement.clientHeight + ' ' + document.documentElement.scrollHeight,
     ],
     ['visual', v ? Math.round(v.height) + ' at ' + Math.round(v.offsetTop) : '-'],
+    // Scrolled or zoomed behind the fixed layout, taps miss (layout.js settle).
+    [
+      'scroll zoom',
+      Math.round(scrollX) +
+        ',' +
+        Math.round(scrollY) +
+        ' ×' +
+        (v
+          ? v.scale.toFixed(2) + ' at ' + Math.round(v.offsetLeft) + ',' + Math.round(v.offsetTop)
+          : '-'),
+    ],
+    [
+      'orientation',
+      screen.orientation?.type ||
+        (matchMedia('(orientation: portrait)').matches ? 'portrait' : 'landscape'),
+    ],
     ['vh dvh lvh svh', [units('vh'), units('dvh'), units('lvh'), units('svh')].join(' ')],
     ['insets top bottom', insets.join(' ')],
     ['shell', span('#shell')],

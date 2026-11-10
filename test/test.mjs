@@ -8,7 +8,7 @@ import { highlight, detect } from '../web/highlight.mjs';
 import { Outbox, conflicted, isLocal } from '../web/queue.mjs';
 import { moon, byRecent, ago, daily, weatherText } from '../web/today.mjs';
 import { QUOTES, FACTS } from '../web/home-content.js';
-import { buildPrompt } from '../server/code/context.mjs';
+import { buildPrompt, sessionPrompt } from '../server/code/context.mjs';
 import { validateFiles } from '../server/code/publish.mjs';
 import { usageStream, modelRequest, displayDelta } from '../server/gateways/model.mjs';
 import { checkOptions, optionTags, DEFAULTS } from '../web/options.mjs';
@@ -2777,4 +2777,12 @@ test('slash commands: suggested in coding sessions only, by prefix, none refused
   // handled in the browser (options.js) and refused if they reach the host.
   for (const [name, , , where] of COMMANDS)
     assert.equal(!!hostCommand('/' + name), where === 'app', name);
+});
+test('coding instructions: no commit or push unasked, /pull for upstream, the limits', () => {
+  const p = sessionPrompt({ repo: 'o/r', ref: 'main' }, {});
+  assert.match(p, /Never commit or push unless the user asks/);
+  assert.match(p, /send \/pull/);
+  assert.match(p, /only what GitHub does not have yet/);
+  assert.match(p, /no internet, but npm, npx and pip/);
+  assert.match(sessionPrompt({ repo: 'o/r', ref: 'main' }, { internet: true }), /internet is open/);
 });

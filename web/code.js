@@ -21,14 +21,54 @@ export function openCode(tab = 'files') {
   for (const t of ['files', 'diff', 'history'])
     $('#' + t + '-tab').setAttribute('aria-pressed', String(t === tab));
   if (tab === 'history') history();
-  else if (tab === 'diff') {
-    const diff = state.session.history?.filter(t => t.diff).at(-1)?.diff;
-    $('#code-body').innerHTML = diff
-      ? '<div class="caption" style="padding:12px">Cumulative working-tree changes from the last completed turn</div><div class="diff-view panel-diff">' +
-        diffHtml(diff) +
+  else if (tab === 'diff') changes();
+  else browse('');
+}
+/** The Changes tab: what GitHub does not have yet, read from the workspace
+ * now: the session's commits not pushed and its uncommitted edits. Work
+ * pulled from upstream, and other sessions' pushes, are not in it. */
+async function changes() {
+  const id = state.session.id;
+  $('#code-body').innerHTML = '<div class="loading">Reading the changes…</div>';
+  try {
+    const d = await api('/api/sessions/' + id + '/diff');
+    if (state.session?.id !== id || !$('#diff-tab').matches('[aria-pressed="true"]')) return;
+    $('#code-body').innerHTML = d.diff.trim()
+      ? '<p class="history-note">Not yet on GitHub (' +
+        esc(d.ref || 'this branch') +
+        '): commits not pushed and edits not committed</p><div class="diff-view panel-diff">' +
+        diffHtml(d.diff) +
         '</div>'
-      : '<div class="empty">No recorded changes yet. Ask Arno to make a change first.</div>';
-  } else browse('');
+      : '<div class="empty">Nothing to push: the branch matches GitHub.</div>';
+  } catch (e) {
+    $('#code-body').innerHTML = '<div class="empty">' + esc(e.message) + '</div>';
+  }
+}
+/** Brings GitHub's new commits on the session's branch into its workspace
+ * (server/code/code-routes.mjs pull), and says how it went. */
+export async function pull() {
+  if (!state.session || state.session.kind === 'chat') return;
+  toast('Pulling from GitHub…');
+  try {
+    const d = await api('/api/sessions/' + state.session.id + '/pull', {
+      method: 'POST',
+      body: '{}',
+    });
+    toast(
+      d.status === 'up-to-date'
+        ? 'Already up to date with GitHub'
+        : 'Pulled ' + d.commits + ' commit' + (d.commits === 1 ? '' : 's') + ' from GitHub',
+    );
+    if ($('#history-tab').matches('[aria-pressed="true"]')) openCode('history');
+  } catch (e) {
+    toast(
+      e.data?.status === 'conflict'
+        ? 'Not pulled: GitHub’s changes conflict with yours in ' +
+            e.data.files.join(', ') +
+            '. Ask Arno to merge and resolve them.'
+        : e.message,
+    );
+  }
 }
 /** The History tab: the checkout's newest commits, newest first; those not
  * yet on GitHub are marked. */
@@ -39,6 +79,15 @@ async function history() {
     const d = await api('/api/sessions/' + id + '/history');
     if (state.session?.id !== id) return;
     $('#code-body').innerHTML =
+      (d.behind
+        ? '<p class="history-note pull-note">' +
+          num(d.behind) +
+          ' new commit' +
+          (d.behind === 1 ? '' : 's') +
+          ' on GitHub (' +
+          esc(d.ref || 'this branch') +
+          ') <button type="button" class="primary" data-pull>Pull</button></p>'
+        : '') +
       (d.uncommitted
         ? '<p class="history-note">' +
           num(d.uncommitted) +

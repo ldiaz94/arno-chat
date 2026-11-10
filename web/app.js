@@ -39,7 +39,7 @@ import {
   deleteSelected,
   anotherSession,
 } from './sessions.js';
-import { openCode, browse, reviewPublish, showCommit } from './code.js';
+import { openCode, browse, reviewPublish, showCommit, pull } from './code.js';
 import { submit, resizePrompt } from './turns.js';
 import './attach.js'; // wires the paperclip, paste and drop
 import './options.js'; // wires the options button, its popover and chips
@@ -157,6 +157,7 @@ document.addEventListener('click', e => {
   if (model) chooseModel(model.dataset.model);
   const file = e.target.closest('[data-file]');
   if (file) browse(file.dataset.file);
+  if (e.target.closest('[data-pull]')) pull();
   const commit = e.target.closest('[data-commit]');
   if (commit) showCommit(commit.dataset.commit);
   const citation = e.target.closest('[data-citation]');

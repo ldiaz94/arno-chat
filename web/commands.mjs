@@ -22,6 +22,7 @@ export const COMMANDS = [
   ['system', '[text | -]', 'This conversation’s own system prompt', 'arno'],
   ['list', '[word]', 'Recent conversations in this workspace', 'arno'],
   ['load', 'n | id | word', 'Resume another conversation', 'arno'],
+  ['pull', '', 'Bring GitHub’s new commits on this branch into the session', 'app'],
   ['mode', 'auto | pair | build | review', 'This conversation’s approach', 'app'],
   ['budget', 'dollars | auto', 'What a message may spend', 'app'],
   ['workers', 'off | 1-4', 'Workers side by side', 'app'],

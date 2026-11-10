@@ -30,9 +30,11 @@ const FORWARD = {
   'GET files': ['/session/files', 'path'],
   'GET history': ['/session/history'],
   'GET commit': ['/session/commit', 'sha'],
+  'GET diff': ['/session/diff'],
   'POST cancel': ['/session/cancel'],
   'POST approve': ['/session/approve'],
   'POST model': ['/session/model'],
+  'POST pull': ['/session/pull'],
 };
 
 /** The GitHub identity a coding session fetches and pushes with: the token,

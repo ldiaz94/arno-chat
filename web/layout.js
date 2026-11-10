@@ -43,6 +43,30 @@ document.addEventListener('focusout', () => setTimeout(fitHeight, 50));
 window.visualViewport?.addEventListener('scroll', fit);
 window.addEventListener('resize', fit);
 fit();
+/** After the phone turns, an installed iPhone app can be left scrolled or
+ * zoomed behind its fixed layout: it draws in place, but taps land off their
+ * targets, so nothing but scrolling works. Each turn puts the page back at
+ * the top and at scale 1 (pinning the viewport's scale for a moment is the
+ * only way a page can undo a zoom), and fits again once iOS has settled. */
+const viewport = document.querySelector('meta[name="viewport"]'),
+  viewportContent = viewport?.content || '';
+function settle() {
+  window.scrollTo(0, 0);
+  document.documentElement.scrollTop = document.body.scrollTop = 0;
+  if (viewport && window.visualViewport && Math.abs(window.visualViewport.scale - 1) > 0.01) {
+    viewport.content = viewportContent + ',maximum-scale=1';
+    setTimeout(() => (viewport.content = viewportContent), 300);
+  }
+  fit();
+}
+function turned() {
+  settle();
+  // iOS reports the new sizes late; fit again once they have arrived.
+  setTimeout(settle, 350);
+  setTimeout(settle, 1000);
+}
+matchMedia('(orientation: portrait)').addEventListener('change', turned);
+window.addEventListener('orientationchange', turned);
 // Opens or closes the sidebar drawer (small screens).
 export function drawer(open) {
   shell.classList.toggle('drawer-open', open);

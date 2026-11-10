@@ -122,9 +122,13 @@ export const codeTurn = {
       const pushed = await this.followPush(refsBefore);
       const reply = replyOf(turn),
         failed = !reply && !turn.entries.length;
+      // What GitHub does not have yet, after the turn (publish.mjs).
       const diffResult = await this.exec(
         ['node', '-e', WORKTREE_DIFF],
-        { cwd: '/workspace/repo' },
+        {
+          cwd: '/workspace/repo',
+          env: { ARNO_REF: (await this.ctx.storage.get('session')).ref || '' },
+        },
         30,
       );
       const result = {
