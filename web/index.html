@@ -52,7 +52,10 @@
           <button id="bulk-delete" class="danger" type="button" disabled>Delete selected</button>
           <button id="bulk-done" class="ghost" type="button">Done</button>
         </div>
-        <button id="usage-view" class="ghost" type="button">Usage</button>
+        <div class="sidebar-links">
+          <button id="gallery-view" class="ghost" type="button">Artifacts</button>
+          <button id="usage-view" class="ghost" type="button">Usage</button>
+        </div>
         <div class="sidebar-foot">
           <button
             id="account-settings"
@@ -308,23 +311,68 @@
       <div id="sources-body" class="modal-body"></div>
     </dialog>
     <dialog id="artifact-dialog" class="modal artifact-dialog" aria-labelledby="artifact-heading">
-      <div class="modal-head">
-        <h2 id="artifact-heading">Artifact</h2>
+      <div class="artifact-head">
+        <span id="artifact-kind" class="artifact-thumb" aria-hidden="true"></span>
+        <div class="artifact-title">
+          <h2 id="artifact-heading">Artifact</h2>
+          <small id="artifact-meta"></small>
+        </div>
+        <button
+          id="artifact-wide"
+          class="ghost icon artifact-wide"
+          type="button"
+          aria-label="Full width"
+          aria-pressed="false"
+        >
+          ⤢
+        </button>
         <button data-close class="ghost icon" aria-label="Close artifact">×</button>
       </div>
-      <div class="modal-body">
-        <div class="artifact-bar">
-          <small id="artifact-meta" class="muted"></small>
-          <select id="artifact-versions" aria-label="Version" hidden></select>
+      <div class="artifact-toolbar">
+        <div class="segmented" role="group" aria-label="View">
+          <button type="button" data-view="preview">Preview</button>
+          <button type="button" data-view="source">Source</button>
+          <button type="button" data-view="changes">Changes</button>
         </div>
-        <div class="artifact-actions">
-          <button id="artifact-copy" type="button">Copy</button>
-          <button id="artifact-md" type="button">Download .md</button>
-          <button id="artifact-csv" type="button" hidden>Download .csv</button>
-          <button id="artifact-print" type="button">Print</button>
+        <div id="artifact-versions" class="artifact-versions" role="group" aria-label="Versions">
+          <button id="artifact-older" class="ghost icon" type="button" aria-label="Older version">
+            ‹
+          </button>
+          <span id="artifact-version"></span>
+          <button id="artifact-newer" class="ghost icon" type="button" aria-label="Newer version">
+            ›
+          </button>
         </div>
-        <div id="artifact-content" class="prose"></div>
+        <div class="artifact-tools">
+          <button id="artifact-copy" class="ghost" type="button">Copy</button>
+          <button id="artifact-download" class="ghost" type="button">Download</button>
+          <button id="artifact-csv" class="ghost" type="button" hidden>CSV</button>
+          <button id="artifact-tab" class="ghost" type="button" hidden>Open in a tab</button>
+          <button id="artifact-print" class="ghost" type="button" hidden>Print</button>
+          <button id="artifact-goto" class="ghost" type="button" hidden>Go to conversation</button>
+        </div>
       </div>
+      <div id="artifact-old" class="artifact-old" hidden>
+        <span>An earlier version</span>
+        <button id="artifact-restore" class="primary" type="button">Restore as newest</button>
+      </div>
+      <div id="artifact-content" class="artifact-content"></div>
+    </dialog>
+    <dialog id="gallery-dialog" class="modal gallery-dialog" aria-labelledby="gallery-heading">
+      <div class="modal-head">
+        <h2 id="gallery-heading">Artifacts</h2>
+        <button data-close class="ghost icon" aria-label="Close the gallery">×</button>
+      </div>
+      <div class="gallery-tools">
+        <input
+          id="gallery-search"
+          type="search"
+          placeholder="Search artifacts"
+          aria-label="Search artifacts"
+        />
+        <div id="gallery-kinds" class="chips" role="group" aria-label="Kind"></div>
+      </div>
+      <div id="gallery-grid" class="gallery-grid"></div>
     </dialog>
     <dialog id="conversation-dialog" class="modal" aria-labelledby="conversation-menu-heading">
       <div class="modal-head">

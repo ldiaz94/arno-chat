@@ -8,7 +8,7 @@ import { SECURITY, json } from '../http.mjs';
 import { hostCommand } from '../code/code-routes.mjs';
 import { modelAllowed, contextWindow, acceptsImages } from '../models.mjs';
 import { attachmentsFor, saveAttachment, readAttachment } from './attachments.mjs';
-import { listArtifacts } from './artifacts.mjs';
+import { listArtifacts, getArtifact, restoreArtifact, viewResponse } from './artifacts.mjs';
 import { checkOptions } from '../../web/options.mjs';
 
 export const sessionRoutes = {
@@ -154,12 +154,34 @@ export const sessionRoutes = {
   },
   /** The session's artifacts, without contents. */
   async 'GET /artifacts'() {
-    return json({ artifacts: await listArtifacts(this.ctx.storage) });
+    const before = (await this.ctx.storage.get('session'))?.artifacts,
+      artifacts = await listArtifacts(this.ctx.storage);
+    if (!before) await this.relist(); // the summaries were just made
+    return json({ artifacts });
   },
-  /** One artifact with its content and earlier versions. */
+  /** One version of an artifact (v, by default the newest), with the list of
+   * its versions; with view, the page that shows it (artifacts.mjs). */
   async 'GET /artifacts/get'(request, url) {
-    const artifact = await this.ctx.storage.get('artifact:' + (url.searchParams.get('id') || ''));
-    return artifact ? json(artifact) : json({ error: 'Artifact not found' }, 404);
+    const q = url.searchParams,
+      artifact = await getArtifact(this.ctx.storage, q.get('id') || '', q.get('v'));
+    if (!artifact) return json({ error: 'Artifact not found' }, 404);
+    if (!q.has('view')) return json(artifact);
+    return (
+      viewResponse(artifact, q.get('theme') === 'dark', q.has('v')) ||
+      json({ error: 'This kind is drawn by the app' }, 400)
+    );
+  },
+  /** Makes an earlier version of an artifact its newest; the owner's list
+   * learns of it. */
+  async 'POST /artifacts/restore'(request) {
+    const { id, version } = await request.json();
+    try {
+      const artifact = await restoreArtifact(this.ctx.storage, String(id), version);
+      await this.relist();
+      return json({ id: artifact.id, version: artifact.version });
+    } catch (e) {
+      return json({ error: e.message }, 404);
+    }
   },
   /** Validate a message and queue it as the session's job, to be run by alarm() (probe.mjs).
    * Repeating the same id returns the existing job. */

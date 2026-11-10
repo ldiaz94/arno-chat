@@ -51,8 +51,10 @@ const artifact = {
   version: 1,
   createdAt: now,
   updatedAt: now,
+  kind: 'markdown',
   content: '# Packing\n\n| Item | Qty |\n| --- | --- |\n| Tent | 1 |',
-  previous: [],
+  latest: 1,
+  versions: [{ version: 1, title: 'Packing list', updatedAt: now }],
 };
 const sessions = {
   [one]: { ...row(one, 'First chat', now - 1), history: [] },

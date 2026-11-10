@@ -209,6 +209,16 @@ export const records = {
       console.error(JSON.stringify({ event: 'push_failed', error: String(e) }));
     }
   },
+  /** Lists the session again in the owner's list as it now is (its artifacts
+   * changed), without stamping it active. */
+  async relist() {
+    const session = await this.ctx.storage.get('session');
+    if (!session?.ownerId || !session.id) return;
+    await this.env.PROBE.getByName('index:' + session.ownerId).fetch('https://internal/index/add', {
+      method: 'POST',
+      body: JSON.stringify(session),
+    });
+  },
   /** Stamps the session and its entry in the owner's list with the time of its
    * last turn, so an offline copy on another device knows it is stale. */
   async touch() {

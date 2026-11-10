@@ -1798,36 +1798,130 @@ test('attachments: chunked round trip, kind and size checks, model input per pro
       });
   }
 });
-test('artifacts: create, update keeps earlier versions, bad input refused', async () => {
-  const { artifactTool, listArtifacts } = await import('../server/probe/artifacts.mjs');
-  const map = new Map();
+test('artifacts: kinds, edits, versions kept apart, restore, old records moved', async () => {
+  const { artifactTool, listArtifacts, getArtifact, restoreArtifact } =
+    await import('../server/probe/artifacts.mjs');
+  const map = new Map([['session', { id: 's' }]]);
   const storage = {
     get: async k => map.get(k),
-    put: async (k, v) => map.set(k, v),
+    put: async (k, v) => map.set(k, structuredClone(v)),
+    delete: async k => map.delete(k),
     list: async ({ prefix }) => new Map([...map].filter(([k]) => k.startsWith(prefix))),
   };
   const touched = [];
   const made = await artifactTool(
     storage,
     'create_artifact',
-    { title: 'List', content: '- a' },
+    { title: 'Clock', kind: 'html', content: '<h1>Time</h1><p>now</p>' },
     touched,
   );
-  await artifactTool(storage, 'update_artifact', { id: made.id, content: '- a\n- b' }, touched);
-  const stored = map.get('artifact:' + made.id);
-  assert.equal(stored.version, 2);
-  assert.equal(stored.title, 'List');
-  assert.deepEqual(
-    stored.previous.map(p => p.content),
-    ['- a'],
+  assert.equal(made.kind, 'html');
+  await artifactTool(
+    storage,
+    'update_artifact',
+    { id: made.id, edits: [{ find: 'now', replace: 'later' }] },
+    touched,
   );
-  assert.deepEqual(touched, [{ id: made.id, title: 'List', version: 2 }]);
+  // Each version whole, the older ones under keys of their own.
+  assert.equal(map.get('artifact:' + made.id).content, '<h1>Time</h1><p>later</p>');
+  assert.equal(map.get('artifact-v:' + made.id + ':1').content, '<h1>Time</h1><p>now</p>');
+  assert.equal(touched.length, 1);
+  assert.equal(touched[0].version, 2);
+  assert.equal(touched[0].preview, 'Time now'.replace('now', 'later'));
+  const v1 = await getArtifact(storage, made.id, 1);
+  assert.equal(v1.version, 1);
+  assert.equal(v1.latest, 2);
   assert.deepEqual(
-    (await listArtifacts(storage)).map(a => a.title),
-    ['List'],
+    v1.versions.map(v => v.version),
+    [2, 1],
+  );
+  await restoreArtifact(storage, made.id, 1);
+  assert.equal((await getArtifact(storage, made.id)).content, '<h1>Time</h1><p>now</p>');
+  assert.equal((await getArtifact(storage, made.id)).version, 3);
+  // The session keeps summaries for the list and the gallery.
+  assert.equal(map.get('session').artifacts[made.id].version, 3);
+  // An edit must find its text exactly once.
+  await assert.rejects(
+    artifactTool(
+      storage,
+      'update_artifact',
+      { id: made.id, edits: [{ find: 'x', replace: 'y' }] },
+      [],
+    ),
+    /not found/,
+  );
+  await assert.rejects(
+    artifactTool(
+      storage,
+      'update_artifact',
+      { id: made.id, edits: [{ find: 'h1', replace: 'y' }] },
+      [],
+    ),
+    /more than once/,
   );
   await assert.rejects(artifactTool(storage, 'create_artifact', { title: '', content: 'x' }, []));
   await assert.rejects(artifactTool(storage, 'update_artifact', { id: 'nope', content: 'x' }, []));
+  // A record from before: its versions move out, its kind is Markdown.
+  map.set('artifact:old', {
+    id: 'old',
+    title: 'List',
+    content: '- a\n- b',
+    version: 2,
+    createdAt: 1,
+    updatedAt: 2,
+    previous: [{ version: 1, title: 'List', content: '- a', updatedAt: 1 }],
+  });
+  assert.deepEqual(
+    (await listArtifacts(storage)).map(a => a.kind + ' ' + a.title),
+    ['markdown List', 'html Clock'],
+  );
+  assert.equal((await getArtifact(storage, 'old', 1)).content, '- a');
+  assert.equal(map.get('artifact:old').previous, undefined);
+});
+test('artifact pages: sandboxed, framed only by the app, no network', async () => {
+  const { viewResponse } = await import('../server/probe/artifacts.mjs');
+  const page = viewResponse({ kind: 'html', content: '<p>hi</p>' }, false, true),
+    policy = page.headers.get('Content-Security-Policy');
+  assert.match(policy, /^sandbox allow-scripts/);
+  assert.doesNotMatch(policy, /allow-same-origin/);
+  assert.match(policy, /connect-src 'none'/);
+  assert.match(policy, /frame-ancestors 'self'/);
+  assert.match(page.headers.get('Cache-Control'), /immutable/);
+  const diagram = await viewResponse(
+    { kind: 'mermaid', content: 'graph TD; A-->B</pre>' },
+    true,
+  ).text();
+  assert.match(diagram, /A--&gt;B&lt;\/pre&gt;/);
+  assert.match(diagram, /theme:"dark"/);
+  assert.equal(viewResponse({ kind: 'markdown', content: 'x' }), null);
+});
+test('line diff: hunks with context; applying it gives the new text', async () => {
+  const { lineDiff } = await import('../web/linediff.mjs');
+  assert.equal(lineDiff('a\nb', 'a\nb'), '');
+  // Applies a unified diff to a's lines.
+  const apply = (a, diff) => {
+    const out = [],
+      old = a.split('\n');
+    let at = 0;
+    for (const line of diff.split('\n').slice(2)) {
+      const h = /^@@ -(\d+)/.exec(line);
+      if (h) {
+        while (at < +h[1] - 1) out.push(old[at++]);
+      } else if (line[0] === '+') out.push(line.slice(1));
+      else (at++, line[0] === ' ' && out.push(old[at - 1]));
+    }
+    return [...out, ...old.slice(at)].join('\n');
+  };
+  for (let t = 0; t < 200; t++) {
+    const words = () =>
+      Array.from({ length: (t * 7) % 40 }, (_, i) => 'abcdef'[(i * t + i * i) % 6]);
+    const a = words().join('\n'),
+      b = words()
+        .map((w, i) => (i % 5 === t % 5 ? w + '!' : w))
+        .filter((w, i) => i % 7 !== t % 7)
+        .join('\n');
+    if (a !== b) assert.equal(apply(a, lineDiff(a, b)), b);
+  }
 });
 test('artifact links render as buttons only for a uuid', () => {
   const id = '3f2b8c1e-5a4d-4e6f-9a1b-2c3d4e5f6a7b';
@@ -2785,4 +2879,51 @@ test('coding instructions: no commit or push unasked, /pull for upstream, the li
   assert.match(p, /only what GitHub does not have yet/);
   assert.match(p, /no internet, but npm, npx and pip/);
   assert.match(sessionPrompt({ repo: 'o/r', ref: 'main' }, { internet: true }), /internet is open/);
+});
+test('coding artifacts: arno’s files become artifacts once, a change a new version', async () => {
+  const { collectArtifacts } = await import('../server/code/collect.mjs');
+  const { execFileSync } = await import('node:child_process');
+  const fs = await import('node:fs/promises');
+  const os = await import('node:os');
+  const root = await fs.mkdtemp(os.tmpdir() + '/arts-');
+  await fs.mkdir(root + '/c1');
+  await fs.writeFile(root + '/c1/plan.md', '# The plan\n\n- one\n');
+  await fs.writeFile(root + '/c1/logo.svg', '<svg xmlns="http://www.w3.org/2000/svg"/>');
+  await fs.writeFile(root + '/c1/report.docx', Buffer.from([0, 1, 2, 3]));
+  const map = new Map([['session', { id: 's' }]]);
+  const probe = {
+    ctx: {
+      storage: {
+        get: async k => map.get(k),
+        put: async (k, v) => map.set(k, structuredClone(v)),
+        delete: async k => map.delete(k),
+        list: async ({ prefix }) => new Map([...map].filter(([k]) => k.startsWith(prefix))),
+      },
+      // The container: runs the command here, under the test's directory.
+      container: {
+        exec: async (argv, { env }) => ({
+          output: async () => ({
+            exitCode: 0,
+            stdout: execFileSync(argv[2], argv.slice(3), {
+              env: { ...process.env, ...env, ROOT: root },
+            }),
+          }),
+        }),
+      },
+    },
+  };
+  const first = await collectArtifacts(probe);
+  assert.deepEqual(first.map(a => a.kind + ' ' + a.title).sort(), [
+    'markdown The plan',
+    'svg logo.svg',
+  ]);
+  assert.deepEqual(await collectArtifacts(probe), []); // nothing changed
+  await fs.writeFile(root + '/c1/plan.md', '# The plan\n\n- one\n- two\n');
+  await fs.utimes(root + '/c1/plan.md', new Date(), new Date(Date.now() + 5000));
+  const again = await collectArtifacts(probe);
+  assert.deepEqual(
+    again.map(a => a.title + ' v' + a.version),
+    ['The plan v2'],
+  );
+  await fs.rm(root, { recursive: true });
 });

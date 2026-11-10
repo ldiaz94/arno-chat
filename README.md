@@ -69,6 +69,8 @@ the most recently active first.
 | ⋯ | The repository's actions (changes and pull request, pull, a new session on it) and the conversation's (rename, export, delete) |
 | ⋯ → **New session on this repository** | Another session on the same repository, from its current branch |
 | The title | Conversation details: artifacts, context, usage and cost, sources, links, images |
+| An artifact's card | The artifact beside the chat: a document, an HTML page that runs, a drawing, a diagram, a code file; its source, what each version changed, restore, download |
+| **Artifacts** in the sidebar | Every conversation's artifacts, searchable, by kind |
 | `</>` | The session's files, its changes, and its commit history |
 | Model button | The model for this conversation, from every provider you have a key for |
 | Sliders button | This conversation's options (below) |
@@ -99,6 +101,7 @@ the most recently active first.
 | `/test [command]` | Run the project's tests; a failure goes to the model |
 | `/tools`, `/mcp`, `/system`, `/list`, `/load`, `/help` | What arno offers, its MCP servers, its system prompt, other conversations |
 | `/pull` | Bring GitHub's new commits on the branch into the session (also **Pull** in the History tab) |
+| `/open [name]` | Open an artifact (arno's, in a coding session), the newest if none is named |
 | `/mode`, `/budget`, `/workers` | Set this conversation's options, as the sliders do |
 
 In a session the model can `git push` when you ask it to (it never commits

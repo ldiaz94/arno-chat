@@ -15,7 +15,7 @@ export function hostCommand(prompt) {
   const name = /^\/([a-z]+)/.exec(prompt.trim())?.[1];
   if (['model', 'models', 'provider'].includes(name))
     return 'Change the model with the model button';
-  if (name === 'pull') return 'Use /pull from the app';
+  if (name === 'pull' || name === 'open') return 'Use /' + name + ' from the app';
   if (['budget', 'workers', 'mode'].includes(name))
     return 'Set /' + name + ' in the options (sliders) button';
   if (['safety', 'quit', 'exit', 'attach', 'paste', 'stage'].includes(name))

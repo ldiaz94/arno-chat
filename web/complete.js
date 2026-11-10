@@ -31,7 +31,7 @@ function render() {
   at = Math.min(at, shown.length - 1);
   box.innerHTML = shown
     .map(
-      ([name, hint, what, where], i) =>
+      ([name, hint, what], i) =>
         '<div role="option" id="command-' +
         name +
         '" data-command="' +
@@ -43,7 +43,7 @@ function render() {
         (hint ? ' <span class="command-hint">' + esc(hint) + '</span>' : '') +
         '</span><span class="command-what">' +
         esc(what) +
-        (where === 'app' ? ' · this conversation’s options' : '') +
+        (['mode', 'budget', 'workers'].includes(name) ? ' · this conversation’s options' : '') +
         '</span></div>',
     )
     .join('');

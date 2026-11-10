@@ -381,6 +381,33 @@ export const apiRoutes = {
   async 'GET /api/sessions'(request, env, url, auth) {
     return env.PROBE.getByName('index:' + auth.user.id).fetch('https://internal/index/list');
   },
+  /** Every artifact of the owner's conversations, newest first, each with its
+   * conversation: from the summaries the index keeps; a conversation listed
+   * before they were kept is asked once, which lists it again with them. */
+  async 'GET /api/artifacts'(request, env, url, auth) {
+    const index = env.PROBE.getByName('index:' + auth.user.id);
+    let { sessions } = await (await index.fetch('https://internal/index/list')).json();
+    const unknown = sessions.filter(s => !s.artifacts).slice(0, 100);
+    if (unknown.length) {
+      await Promise.allSettled(
+        unknown.map(s =>
+          env.PROBE.getByName('code:' + auth.user.id + ':' + s.id).fetch(
+            'https://internal/artifacts',
+          ),
+        ),
+      );
+      ({ sessions } = await (await index.fetch('https://internal/index/list')).json());
+    }
+    const artifacts = sessions.flatMap(s =>
+      Object.values(s.artifacts || {}).map(a => ({
+        ...a,
+        sessionId: s.id,
+        sessionTitle: s.title || s.repo || 'Conversation',
+        sessionKind: s.kind,
+      })),
+    );
+    return json({ artifacts: artifacts.sort((a, b) => b.updatedAt - a.updatedAt) });
+  },
   /** Creates a coding session: checks the repository, ref and model, pins the
    * ref to a commit, starts the session's object and lists it. */
   async 'POST /api/sessions'(request, env, url, auth) {

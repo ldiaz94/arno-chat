@@ -2,13 +2,15 @@
  * started or restored, arno's configuration written, git set up, and the
  * user's line given to `arno --serve` (serve.mjs), whose entries stream to the
  * live view while the model gateway counts the requests; then the diff, the
- * checkout following a pushed branch, a snapshot, and the turn saved. */
+ * checkout following a pushed branch, the artifacts arno made (collect.mjs),
+ * a snapshot, and the turn saved. */
 import { json } from '../http.mjs';
 import { readAttachment } from '../probe/attachments.mjs';
 import { WORKTREE_DIFF } from './publish.mjs';
 import { buildPrompt, sessionPrompt } from './context.mjs';
 import { serveTurn, replyOf, transcriptOf, activityOf } from './serve.mjs';
 import { sandboxEnv } from './sandbox.mjs';
+import { collectArtifacts } from './collect.mjs';
 import { citedSources } from '../chat/research.mjs';
 import { turnPlan, codeLimits } from '../chat/plan.mjs';
 
@@ -120,6 +122,11 @@ export const codeTurn = {
       const executionMs = Date.now() - modelBegan;
       await this.phase('checkpointing', { workspace, startupMs, executionMs });
       const pushed = await this.followPush(refsBefore);
+      // What arno made in its artifacts directory, kept where the app shows it.
+      const artifacts = await collectArtifacts(this).catch(e => {
+        console.error(JSON.stringify({ event: 'collect_failed', error: String(e) }));
+        return [];
+      });
       const reply = replyOf(turn),
         failed = !reply && !turn.entries.length;
       // What GitHub does not have yet, after the turn (publish.mjs).
@@ -161,6 +168,7 @@ export const codeTurn = {
       result.requestLog = q?.requestLog || [];
       result.sources = citedSources(result.summary, q?.sources || [], previous);
       result.attachments = attached;
+      result.artifacts = artifacts;
       result.webUsage = q?.webCounts || { searches: 0, reads: 0 };
       result.options = options;
       const checkpointBegan = Date.now();

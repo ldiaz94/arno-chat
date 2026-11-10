@@ -5,6 +5,7 @@
  * thread (source preview) and attach. Artifacts are listed from the server and open in the artifact dialog.
  */
 import { $, state, esc, num, duration, money, api } from './core.js';
+import { artifactRow } from './artifacts.js';
 import { openSources } from './thread.js';
 import { attachmentsHtml } from './attach.js';
 
@@ -281,23 +282,6 @@ function attachmentsSection(history) {
       (files.length ? '<div class="attach-files">' + html(files) + '</div>' : ''),
   );
 }
-// Artifacts of the conversation, from the list route; rows open the artifact dialog.
-function artifactRows(list) {
-  return list
-    .map(
-      a =>
-        '<button type="button" class="info-row artifact-row" data-artifact="' +
-        esc(a.id) +
-        '"><strong>' +
-        esc(a.title) +
-        '</strong><span>v' +
-        a.version +
-        ' · ' +
-        new Date(a.updatedAt).toLocaleString() +
-        '</span></button>',
-    )
-    .join('');
-}
 // Fills the Artifacts section once the list arrives; absent when there are none.
 async function loadArtifacts(sessionId) {
   try {
@@ -305,7 +289,7 @@ async function loadArtifacts(sessionId) {
     if (artifacts.length && state.session?.id === sessionId)
       $('#info-artifacts').innerHTML = section(
         'Artifacts',
-        artifactRows(artifacts),
+        artifacts.map(artifactRow).join(''),
         artifacts.length,
       );
   } catch {

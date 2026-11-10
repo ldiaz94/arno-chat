@@ -5,6 +5,7 @@
  */
 import { markdown } from './render.mjs';
 import { $, state, esc, duration, api, toast, showError, prompt, sendKey } from './core.js';
+import { openNamed } from './artifacts.js';
 import { busy, title, bump } from './layout.js';
 import { message, failure, scrollDown, place } from './thread.js';
 import { resume } from './sessions.js';
@@ -287,6 +288,13 @@ export async function submit(e) {
     prompt.value = '';
     resizePrompt();
     return pull();
+  }
+  // /open is the app's too: it shows an artifact (artifacts.js).
+  const open = /^\/open(?:\s+(.*))?$/.exec(text);
+  if (open) {
+    prompt.value = '';
+    resizePrompt();
+    return openNamed(open[1] || '');
   }
   const set = optionCommand(text);
   if (set) {

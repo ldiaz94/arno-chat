@@ -23,6 +23,7 @@ export const COMMANDS = [
   ['list', '[word]', 'Recent conversations in this workspace', 'arno'],
   ['load', 'n | id | word', 'Resume another conversation', 'arno'],
   ['pull', '', 'Bring GitHub’s new commits on this branch into the session', 'app'],
+  ['open', '[name]', 'Open an artifact, the newest if none is named', 'app'],
   ['mode', 'auto | pair | build | review', 'This conversation’s approach', 'app'],
   ['budget', 'dollars | auto', 'What a message may spend', 'app'],
   ['workers', 'off | 1-4', 'Workers side by side', 'app'],

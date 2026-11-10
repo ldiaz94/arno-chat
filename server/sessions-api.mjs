@@ -9,7 +9,7 @@
  *   POST  /api/sessions/<id>/cancel | approve   stop it, answer its question
  *   GET   /api/sessions/<id>/files | history | behind | commit | changes, POST publish
  *   POST  /api/sessions/<id>/attachments, GET .../attachments/<file>
- *   GET   /api/sessions/<id>/artifacts[/<artifact>]
+ *   GET   /api/sessions/<id>/artifacts[/<artifact>[?v=&view]], POST …/<artifact> (restore)
  *
  * Depends on http.mjs, code/publish.mjs and probe/attachments.mjs. */
 import { SECURITY, json, boundedJson } from './http.mjs';
@@ -107,8 +107,22 @@ const HANDLERS = {
   async 'GET attachments'(request, object, { item }) {
     return item ? object.fetch('https://internal/attachments/get?id=' + item) : null;
   },
+  /** The artifacts, or one (?v= a version, ?view the page showing it). */
   async 'GET artifacts'(request, object, { item }) {
-    return object.fetch('https://internal/artifacts' + (item ? '/get?id=' + item : ''));
+    if (!item) return object.fetch('https://internal/artifacts');
+    const q = new URL(request.url).searchParams,
+      pass = new URLSearchParams({ id: item });
+    for (const k of ['v', 'view', 'theme']) if (q.has(k)) pass.set(k, q.get(k));
+    return object.fetch('https://internal/artifacts/get?' + pass);
+  },
+  /** Makes an earlier version of an artifact its newest: {version}. */
+  async 'POST artifacts'(request, object, { item }) {
+    if (!item) return null;
+    const { version } = await boundedJson(request);
+    return object.fetch('https://internal/artifacts/restore', {
+      method: 'POST',
+      body: JSON.stringify({ id: item, version }),
+    });
   },
   /** The changes for review, with the digest a publish must name. */
   async 'GET changes'(request, object) {

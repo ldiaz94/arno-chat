@@ -55,18 +55,52 @@ const { chromium } = require('playwright'),
     const demoRaz =
       '(* Demo: a module to show the file view.\n   Its comment runs over two lines. *)\nmodule Demo;\nimport Out;\n\nconst Greeting = "hello, <world> & friends";\n\nproc main*;\nvar i: INT; ok: BOOL;\nbegin\n    for i := 0 to 9 do\n        Out.str(Greeting); Out.int(i); Out.ln(); (* a long line that must scroll sideways while its number stays put, even on the widest of desktop screens we test *)\n    end;\n    ok := LEN(Greeting) > 0;\nend main;\n\nend Demo.\n';
     const artId = '33333333-3333-4333-8333-333333333333';
-    const artifact = {
+    // An artifact with two versions, as GET …/artifacts/<id>[?v=] gives them.
+    const versions = [
+      { version: 2, title: 'Packing list', updatedAt: Date.now() },
+      { version: 1, title: 'Packing list', updatedAt: Date.now() - 9e5 },
+    ];
+    const artifactAt = v => ({
       id: artId,
       title: 'Packing list',
-      version: 2,
+      kind: 'markdown',
+      version: v,
+      latest: 2,
+      versions,
       createdAt: Date.now() - 9e5,
-      updatedAt: Date.now(),
+      updatedAt: versions[2 - v].updatedAt,
       content:
-        '# Packing\n\n| Item | Qty |\n| --- | --- |\n| Tent, 2-person | 1 |\n| Socks | 4 |\n',
-      previous: [
-        { version: 1, title: 'Packing list', content: 'First draft', updatedAt: Date.now() - 9e5 },
-      ],
-    };
+        v === 2
+          ? '# Packing\n\n| Item | Qty |\n| --- | --- |\n| Tent, 2-person | 1 |\n| Socks | 4 |\n'
+          : 'First draft',
+    });
+    const artifact = artifactAt(2);
+    // A page and a drawing from another conversation, for the gallery.
+    const pageId = '44444444-4444-4444-8444-444444444444',
+      drawingId = '55555555-5555-4555-8555-555555555555';
+    const others = [
+      {
+        id: pageId,
+        title: 'Tip calculator',
+        kind: 'html',
+        version: 1,
+        updatedAt: Date.now() - 6e4,
+        preview: 'Tip calculator Bill Tip',
+      },
+      {
+        id: drawingId,
+        title: 'Logo sketch',
+        kind: 'svg',
+        version: 1,
+        updatedAt: Date.now() - 12e4,
+        preview: '',
+      },
+    ].map(a => ({
+      ...a,
+      createdAt: a.updatedAt,
+      sessionId: 'other',
+      sessionTitle: 'Side projects',
+    }));
     const turn = {
       prompt: 'What does this repo do?',
       summary:
@@ -256,7 +290,29 @@ const { chromium } = require('playwright'),
         deleted = route.request().postDataJSON();
         return route.fulfill({ json: { deleted: true } });
       }
-      if (u.pathname.endsWith('/artifacts/' + artId)) d = artifact;
+      if (u.searchParams.has('view'))
+        return route.fulfill(
+          u.pathname.endsWith(drawingId)
+            ? {
+                contentType: 'image/svg+xml',
+                body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><circle cx="20" cy="20" r="16" fill="#d9468f"/></svg>',
+              }
+            : { contentType: 'text/html', body: '<h1>Tip calculator</h1>' },
+        );
+      if (route.request().method() === 'POST' && u.pathname.endsWith('/artifacts/' + artId))
+        d = { id: artId, version: 3 };
+      else if (others.some(o => u.pathname.endsWith('/artifacts/' + o.id))) {
+        const o = others.find(o => u.pathname.endsWith('/artifacts/' + o.id));
+        d = { ...o, latest: 1, versions: [o], content: '<h1>Tip calculator</h1>' };
+      } else if (u.pathname.endsWith('/artifacts/' + artId))
+        d = artifactAt(Number(u.searchParams.get('v')) || 2);
+      else if (u.pathname === '/api/artifacts')
+        d = {
+          artifacts: [
+            ...others,
+            { ...artifact, preview: 'Packing Item Qty', sessionId: 'x', sessionTitle: 'Trip' },
+          ],
+        };
       else if (u.pathname.endsWith('/artifacts')) d = { artifacts: [artifact] };
       else if (u.pathname === '/api/usage/requests')
         d = {
@@ -554,19 +610,36 @@ const { chromium } = require('playwright'),
     assert.equal(await page.locator('.prose strong').first().textContent(), 'rlsp');
     await chatCode('390');
     assert.equal(await page.locator('.prose script').count(), 0);
-    assert.equal(await page.locator('.artifact-card').textContent(), 'Packing listv2');
+    assert.equal(await page.locator('.artifact-card strong').textContent(), 'Packing list');
+    assert.equal(await page.locator('.artifact-card small').textContent(), 'Document · v2');
     await page.locator('.prose .artifact-link').click();
     await page.locator('#artifact-content table').waitFor();
-    await page.getByRole('button', { name: 'Download .csv' }).waitFor();
+    await page.getByRole('button', { name: 'CSV' }).waitFor();
+    assert.equal(await page.locator('#artifact-version').textContent(), 'v2 of 2');
+    // Changes: what v2 changed from v1.
+    await page.locator('#artifact-dialog [data-view="changes"]').click();
+    await page.locator('#artifact-content .diff-line.remove', { hasText: 'First draft' }).waitFor();
+    await page.locator('#artifact-dialog [data-view="preview"]').click();
     assert.equal(await page.locator('#artifact-heading').textContent(), 'Packing list');
     assert.ok(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= document.documentElement.clientWidth,
       ),
     );
-    await page.locator('#artifact-versions').selectOption('1');
+    await page.getByRole('button', { name: 'Older version' }).click();
     await page.getByText('First draft').waitFor();
-    assert.ok(await page.getByRole('button', { name: 'Download .csv' }).isHidden());
+    assert.ok(await page.getByRole('button', { name: 'CSV' }).isHidden());
+    assert.ok(await page.locator('#artifact-dialog [data-view="changes"]').isDisabled());
+    await page.getByRole('button', { name: 'Restore as newest' }).click();
+    await page.getByText('Restored as v3').first().waitFor();
+    await page.locator('#artifact-content table').waitFor();
+    await page.screenshot({ path: '/tmp/arno-artifact-doc.png' });
+    const small = page.viewportSize();
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: '/tmp/arno-artifact-docked.png' });
+    await page.setViewportSize(small);
+    await page.waitForTimeout(400);
     await page.getByRole('button', { name: 'Close artifact' }).click();
     await page.locator('.artifact-card').click();
     await page.locator('#artifact-content table').waitFor();
@@ -603,6 +676,32 @@ const { chromium } = require('playwright'),
     await info.locator('[data-artifact]').click();
     await page.locator('#artifact-content table').waitFor();
     await page.getByRole('button', { name: 'Close artifact' }).click();
+    // The gallery: every conversation's artifacts, by kind and searchable; a
+    // page opens framed from its sandboxed address.
+    await page.evaluate(() => document.querySelector('#gallery-view').click());
+    await page.locator('.gallery-tile').nth(2).waitFor();
+    await page.locator('.gallery-thumb img').waitFor();
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('.gallery-thumb img')].every(i => i.complete),
+    );
+    await page.waitForTimeout(800);
+    await page.screenshot({ path: '/tmp/arno-gallery.png' });
+    await page.locator('#gallery-kinds [data-kind="html"]').click();
+    assert.equal(await page.locator('.gallery-tile').count(), 1);
+    await page.locator('#gallery-kinds [data-kind=""]').click();
+    await page.locator('#gallery-search').fill('logo');
+    assert.equal(await page.locator('.gallery-tile').count(), 1);
+    await page.locator('#gallery-search').fill('');
+    await page.locator('.gallery-tile', { hasText: 'Tip calculator' }).click();
+    const frame = page.locator('#artifact-content iframe.artifact-frame');
+    await frame.waitFor();
+    assert.match(await frame.getAttribute('sandbox'), /allow-scripts/);
+    assert.doesNotMatch(await frame.getAttribute('sandbox'), /allow-same-origin/);
+    await page.frameLocator('#artifact-content iframe').getByText('Tip calculator').waitFor();
+    await page.getByRole('button', { name: 'Go to conversation' }).waitFor();
+    await page.screenshot({ path: '/tmp/arno-artifact-page.png' });
+    await page.getByRole('button', { name: 'Close artifact' }).click();
+    await page.getByRole('button', { name: 'Close the gallery' }).click();
     await info.getByRole('heading', { name: 'Repository identity' }).waitFor();
     assert.match(await info.locator('.cost-table').innerText(), /Web searches\s+\$0\.02/);
     await page.screenshot({ path: '/tmp/arno-usage-mobile.png', fullPage: true });

@@ -25,7 +25,7 @@ import { openSources, scrollDown } from './thread.js';
 import { startDiagnostics } from './diag.js';
 import { openInfo } from './info.js';
 import { openUsage } from './usage.js';
-import { artifactClick } from './artifacts.js';
+import { artifactClick, openGallery } from './artifacts.js';
 import {
   resume,
   newChat,
@@ -79,6 +79,7 @@ $('#code-dialog').addEventListener('close', () => {
   if (!$('#code-dialog').open) document.body.classList.remove('code-open');
 });
 $('#actions').onclick = openActions;
+$('#gallery-view').onclick = openGallery;
 $('#stop').onclick = async () => {
   if (
     !state.session ||
