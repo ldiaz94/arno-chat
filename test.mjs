@@ -804,7 +804,7 @@ test('home page picks one quote and fact a day, and reads weather codes', () => 
   assert.equal(daily(QUOTES, day), daily(QUOTES, evening));
   assert.notEqual(daily(QUOTES, day), daily(QUOTES, new Date(2026, 10, 10, 8)));
   assert.notEqual(daily(FACTS, day), daily(FACTS, day, 1));
-  assert.ok(QUOTES.length >= 80 && FACTS.length >= 60);
+  assert.ok(QUOTES.length >= 450 && FACTS.length >= 450);
   assert.ok(QUOTES.every(([text, author]) => text && typeof author === 'string'));
   assert.equal(weatherText(0).text, 'Clear sky');
   assert.equal(weatherText(63).text, 'Rain');
