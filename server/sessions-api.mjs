@@ -15,6 +15,8 @@
 import { SECURITY, json, boundedJson } from './http.mjs';
 import { changesDigest, publishChanges } from './code/publish.mjs';
 import { LIMITS } from './probe/attachments.mjs';
+import { github } from './auth.mjs';
+import { REPO_NAME } from './code/extras.mjs';
 
 /** A conversation id (a UUID) as a regular-expression source. */
 const ID = '[0-9a-f-]{36}';
@@ -123,6 +125,40 @@ const HANDLERS = {
       method: 'POST',
       body: JSON.stringify({ id: item, version, errors }),
     });
+  },
+  /** Adds an extra repository to a coding session, or takes one out:
+   * {repo, remove}. It is looked up on GitHub with the owner's token (its
+   * default branch), and remembered for the session's main repository, so
+   * the next session on it gets it too (code/extras.mjs). */
+  async 'POST extras'(request, object, { env, auth }) {
+    const { repo, remove } = await boundedJson(request);
+    if (!REPO_NAME.test(repo || '')) return json({ error: 'Name a repository as owner/name' }, 400);
+    let r;
+    if (remove)
+      r = await object.fetch('https://internal/session/extras/remove', {
+        method: 'POST',
+        body: JSON.stringify({ repo }),
+      });
+    else {
+      const found = await github('/repos/' + repo, auth.token);
+      if (!found.ok)
+        return json(
+          { error: 'GitHub has no ' + repo + ' you can reach' },
+          found.status === 404 ? 404 : 502,
+        );
+      const { default_branch: ref } = await found.json();
+      r = await object.fetch('https://internal/session/extras', {
+        method: 'POST',
+        body: JSON.stringify({ repo, ref }),
+      });
+    }
+    const meta = await r.json();
+    if (!r.ok) return json(meta, r.status);
+    await index(env, auth).fetch('https://internal/companions', {
+      method: 'POST',
+      body: JSON.stringify({ repo: meta.repo, extra: repo, keep: !remove }),
+    });
+    return json(meta);
   },
   /** Makes an earlier version of an artifact its newest: {version}. */
   async 'POST artifacts'(request, object, { item }) {

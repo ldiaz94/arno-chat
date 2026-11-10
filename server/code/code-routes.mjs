@@ -323,6 +323,17 @@ export const codeRoutes = {
       10,
     );
     await this.gitSetup(meta);
+    // The extra repositories remembered for this one (extras.mjs); one that
+    // will not clone is left out rather than failing the session.
+    meta.extras = [];
+    for (const { repo: extra, ref: at } of JSON.parse(request.headers.get('X-Arno-Extras') || '[]'))
+      try {
+        meta.extras.push(await this.cloneExtra(meta, extra, at));
+      } catch (e) {
+        console.error(
+          JSON.stringify({ event: 'extra_clone_failed', repo: extra, error: e.message }),
+        );
+      }
     const snapshot = await this.ctx.container.snapshotContainer({});
     await this.ctx.storage.put({ session: meta, snapshot });
     return json(meta);

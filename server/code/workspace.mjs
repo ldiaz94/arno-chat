@@ -195,7 +195,7 @@ export const workspace = {
 };
 
 /** gitSetup's script, run in the clone with REMOTE, REF, SHA, NAME, EMAIL. */
-const GIT_SETUP = String.raw`set -e
+export const GIT_SETUP = String.raw`set -e
 git config user.name "$NAME"
 git config user.email "$EMAIL"
 git remote remove origin 2>/dev/null || true

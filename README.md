@@ -70,6 +70,7 @@ the most recently active first.
 | ⋯ | The repository's actions (changes and pull request, pull, a new session on it) and the conversation's (rename, export, delete) |
 | ⋯ → **Continue in a coding session** (a chat) | Pick a repository; the new session opens with the chat in its message box (its latest turns, up to 7,000 characters) |
 | ↻ beside Edit | Refresh the conversations (also on coming back to the app after 30 s) |
+| ⋯ → **Add a repository** (coding) | Clone another beside the project, at /workspace/<name> (e.g. ldiaz94/raz at /workspace/raz); arno may edit, commit and push it when asked. Remembered for the project's repository: later sessions on it get it too. Tap it under *Also checked out* to take it out |
 | ⋯ → **New session on this repository** | Another session on the same repository, from its current branch |
 | The title | Conversation details: artifacts, context, usage and cost, sources, links, images |
 | An artifact's card | The artifact beside the chat: a document, an HTML page that runs, a drawing, a diagram, a code file; its source, what each version changed, restore, download |

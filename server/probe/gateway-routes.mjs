@@ -47,16 +47,30 @@ export const gatewayRoutes = {
       options: (await this.ctx.storage.get('modelQuota'))?.options || null,
     });
   },
-  /** The session's repository and its owner's sealed GitHub token, for the
-   * git gateway (GitGateway in ../gateways/gateways.mjs); only while a turn runs or the workspace is made. */
+  /** The session's repositories (the project, its extras, one being added)
+   * and its owner's sealed GitHub token, for the git gateway (GitGateway in
+   * ../gateways/gateways.mjs); only while a turn runs or the workspace is made. */
   async '* /git-account'() {
-    const session = this.gitOpen || (await this.ctx.storage.get('session')),
+    const stored = await this.ctx.storage.get('session'),
+      session = this.gitOpen || stored,
       github = await this.ctx.storage.get('github'),
       q = await this.ctx.storage.get('modelQuota');
     if (!session?.repo || session.kind === 'chat') return json({ error: 'No repository' }, 404);
     if (!this.gitOpen && !(q && q.deadline >= Date.now()))
       return json({ error: 'No running turn' }, 403);
-    return json({ repo: session.repo, ownerId: session.ownerId, token: github?.token || null });
+    const repos = [
+      ...new Set([
+        session.repo,
+        ...(stored?.extras || []).map(e => e.repo),
+        ...(this.gitOpen?.extra ? [this.gitOpen.extra] : []),
+      ]),
+    ];
+    return json({
+      repo: session.repo,
+      repos,
+      ownerId: session.ownerId,
+      token: github?.token || null,
+    });
   },
   /** The owner, while a turn runs: for the Cloudflare gateway. */
   async '* /turn-owner'() {

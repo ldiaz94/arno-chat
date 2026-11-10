@@ -190,6 +190,39 @@ async function make(draft) {
     busy(false);
   }
 }
+/** Adds a repository beside the open session's project (asking which), or,
+ * given one, takes it out; either way it is remembered, or forgotten, for the
+ * project's repository, so later sessions on it match (server/code/extras.mjs). */
+export async function changeExtras(remove) {
+  const s = state.session;
+  $('#actions-dialog').close();
+  const repo =
+    remove ||
+    window.prompt('Repository to check out beside ' + s.repo + ' (owner/name)', '')?.trim();
+  if (!repo) return;
+  if (
+    remove &&
+    !confirm(
+      'Take ' + repo + ' out of this session? Its clone goes, with anything in it not pushed.',
+    )
+  )
+    return;
+  toast(remove ? 'Taking out ' + repo + '…' : 'Cloning ' + repo + '…');
+  try {
+    const d = await api('/api/sessions/' + s.id + '/extras', {
+      method: 'POST',
+      body: JSON.stringify({ repo, remove: !!remove }),
+    });
+    if (state.session?.id === s.id) state.session = { ...state.session, ...d };
+    toast(
+      remove
+        ? repo + ' is out; new sessions on ' + s.repo + ' leave it out too'
+        : repo + ' is at ' + d.extras.at(-1).path + '; new sessions on ' + s.repo + ' get it too',
+    );
+  } catch (e) {
+    showError(e);
+  }
+}
 /** The most of a chat carried into a coding session's first message, which
  * may hold 8,000 characters: its latest turns, with room to add to it. */
 const HANDOFF = 7000;

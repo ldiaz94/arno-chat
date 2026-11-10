@@ -110,9 +110,9 @@ export class GitGateway extends WorkerEntrypoint {
     const task = this.env.PROBE.get(this.env.PROBE.idFromString(this.ctx.props.task)),
       r = await task.fetch('https://internal/git-account');
     if (!r.ok) return new Response('No repository for this session\n', { status: 403 });
-    const { repo, ownerId, token } = await r.json();
+    const { repo, repos, ownerId, token } = await r.json();
     return gitProxy(request, {
-      repo,
+      repos: repos || [repo],
       token: token ? await unseal(this.env, ownerId, 'github', token) : '',
     });
   }

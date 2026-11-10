@@ -45,6 +45,22 @@ export const storeRoutes = {
       await this.ctx.storage.delete([...all.keys()].slice(0, all.size - LOG_KEEP));
     return json({ logged: requests.length }, 201);
   },
+  /** The extra repositories remembered for each main repository
+   * (code/extras.mjs): {companions: {"owner/name": ["owner/other", …]}}. */
+  async 'GET /companions'() {
+    return json({ companions: (await this.ctx.storage.get('companions')) || {} });
+  },
+  /** Remembers, or forgets, an extra repository for a main one: {repo, extra, keep}. */
+  async 'POST /companions'(request) {
+    const { repo, extra, keep } = await request.json(),
+      all = (await this.ctx.storage.get('companions')) || {},
+      list = (all[repo] || []).filter(r => r !== extra);
+    if (keep) list.push(extra);
+    if (list.length) all[repo] = list.slice(0, 6);
+    else delete all[repo];
+    await this.ctx.storage.put('companions', all);
+    return json({ companions: all });
+  },
   /** The request log, newest first. */
   async 'GET /usage/list'() {
     const rows = await this.ctx.storage.list({ prefix: 'req:', reverse: true, limit: LOG_KEEP });

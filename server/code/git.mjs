@@ -93,8 +93,10 @@ async function peekPush(body) {
 }
 
 /** Forwards one of git's requests for repo to GitHub with token, or refuses it. */
-export async function gitProxy(request, { repo, token, upstream = fetch }) {
+export async function gitProxy(request, { repo: only, repos = [only], token, upstream = fetch }) {
   const url = new URL(request.url),
+    // The session's repository (the project or an extra, extras.mjs) the path names.
+    repo = repos.find(r => url.pathname.startsWith('/' + r + '.git/')) || repos[0],
     service = gitService(url, request.method, repo);
   const refuse = (text, status = 403) =>
     new Response(text + '\n', { status, headers: { 'Content-Type': 'text/plain' } });

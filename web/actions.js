@@ -2,7 +2,8 @@
  * row an icon, what it does and a line saying more. A coding session's sheet
  * starts with its repository's actions.
  *
- *   Repository    Changes & pull request · Pull from GitHub · New session
+ *   Repository    Changes & pull request · Pull from GitHub · New session ·
+ *                 Add a repository, and each extra one (tap to take it out)
  *   Conversation  (a chat: Continue in a coding session) · Rename · Export · Delete
  *
  * Depends on core, sessions (rename, delete, export, another session) and
@@ -15,6 +16,7 @@ import {
   exportChat,
   anotherSession,
   continueInCode,
+  changeExtras,
 } from './sessions.js';
 import { openCode, pull, behindNow, checkBehind } from './code.js';
 
@@ -50,6 +52,14 @@ const ACTIONS = [
     'New session on this repository',
     s => 'Work in parallel, from ' + (s.ref || 'its branch'),
     anotherSession,
+    'code',
+  ],
+  [
+    'addrepo',
+    'repo',
+    'Add a repository',
+    s => 'Check out another beside it, e.g. a library; remembered for ' + s.repo,
+    () => changeExtras(),
     'code',
   ],
   [
@@ -130,7 +140,7 @@ function draw(s) {
       ? group(
           'Repository · ' + esc(s.repo),
           ACTIONS.filter(a => a[5] === 'code'),
-        )
+        ) + extrasGroup(s)
       : '') +
     group(
       'Conversation',
@@ -138,7 +148,34 @@ function draw(s) {
     );
 }
 
+/** The session's extra repositories, each a row that takes it out. */
+function extrasGroup(s) {
+  if (!s.extras?.length) return '';
+  return (
+    '<div class="action-group"><div class="eyebrow">Also checked out</div>' +
+    s.extras
+      .map(
+        e =>
+          '<button type="button" class="action-item" data-extra="' +
+          esc(e.repo) +
+          '" data-online="Reconnect to use GitHub"><span class="action-icon">' +
+          icon('repo') +
+          '</span><span class="action-text"><strong>' +
+          esc(e.repo) +
+          '</strong><small>At ' +
+          esc(e.path) +
+          ', on ' +
+          esc(e.ref) +
+          ' · tap to take it out</small></span></button>',
+      )
+      .join('') +
+    '</div>'
+  );
+}
+
 $('#action-items').addEventListener('click', e => {
+  const extra = e.target.closest('[data-extra]')?.dataset.extra;
+  if (extra) return changeExtras(extra);
   const key = e.target.closest('[data-action]')?.dataset.action,
     action = ACTIONS.find(a => a[0] === key);
   if (!action) return;

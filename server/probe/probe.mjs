@@ -27,6 +27,7 @@ import { chatTurn } from '../chat/turn.mjs';
 import { workspace } from '../code/workspace.mjs';
 
 import { codeTurn } from '../code/turn.mjs';
+import { extras, extraRoutes } from '../code/extras.mjs';
 
 /** The most alarms one chat turn may run across (each up to 9 minutes of rounds). */
 const MAX_RUNS = 20;
@@ -38,6 +39,7 @@ const ROUTES = {
   ...gatewayRoutes,
   ...sessionRoutes,
   ...codeRoutes,
+  ...extraRoutes,
 };
 
 /** The Durable Object: one instance per session, user index or sign-in record. */
@@ -124,4 +126,4 @@ export class ArnoProbe extends DurableObject {
 }
 
 // The methods, by what they are for; each group says so at its top.
-Object.assign(ArnoProbe.prototype, live, records, chatTurn, codeTurn, workspace);
+Object.assign(ArnoProbe.prototype, live, records, chatTurn, codeTurn, workspace, extras);

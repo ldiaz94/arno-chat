@@ -433,6 +433,15 @@ export const apiRoutes = {
     if (!revision.ok) return json({ error: 'Could not resolve repository revision' }, 502);
     const { sha } = await revision.json();
     if (!/^[a-f0-9]{40}$/.test(sha)) return json({ error: 'Invalid repository revision' }, 502);
+    // The extra repositories remembered for this one (code/extras.mjs), at
+    // their default branches; one GitHub no longer has is left out.
+    const index = env.PROBE.getByName('index:' + auth.user.id),
+      { companions } = await (await index.fetch('https://internal/companions')).json(),
+      extras = [];
+    for (const extra of companions[body.repo] || []) {
+      const found = await github('/repos/' + extra, auth.token);
+      if (found.ok) extras.push({ repo: extra, ref: (await found.json()).default_branch });
+    }
     const id = crypto.randomUUID();
     const object = env.PROBE.getByName(`code:${auth.user.id}:${id}`);
     const initialized = await object.fetch('https://internal/session/init', {
@@ -444,6 +453,7 @@ export const apiRoutes = {
         'X-Arno-Sha': sha,
         'X-Arno-Owner': String(auth.user.id),
         'X-Arno-GitHub': JSON.stringify(githubOf(auth)),
+        'X-Arno-Extras': JSON.stringify(extras),
       },
     });
     const result = await initialized.json();

@@ -603,8 +603,14 @@ test('new session import pins the branch revision and hands over the sign-in', a
           if (url.endsWith('/session/init')) {
             assert.equal(opt.headers['X-Arno-Sha'], sha);
             assert.equal(JSON.parse(opt.headers['X-Arno-GitHub']).token, 'test-only');
+            // The repository remembered with this one comes along, at its default branch.
+            assert.deepEqual(JSON.parse(opt.headers['X-Arno-Extras']), [
+              { repo: 'ldiaz94/raz', ref: 'main' },
+            ]);
             return Response.json({ repo: 'test/repo', sourceSha: sha });
           }
+          if (url.endsWith('/companions'))
+            return Response.json({ companions: { 'test/repo': ['ldiaz94/raz', 'gone/away'] } });
           return new Response(null, { status: 204 });
         },
       }),
@@ -613,6 +619,9 @@ test('new session import pins the branch revision and hands over the sign-in', a
   const oldFetch = globalThis.fetch;
   globalThis.fetch = async url => {
     seen.push(url);
+    if (String(url).endsWith('/repos/ldiaz94/raz'))
+      return Response.json({ default_branch: 'main' });
+    if (String(url).endsWith('/repos/gone/away')) return new Response('', { status: 404 });
     return url.includes('/commits/') ? Response.json({ sha }) : new Response('fixture archive');
   };
   try {
@@ -3147,4 +3156,21 @@ test('markdown: a table straight after a line of text is a table', () => {
   const html = markdown('**DIY per-minute**\n| Item | $/min |\n|---|---|\n| SIP | 0.003 |');
   assert.match(html, /^<p><strong>DIY per-minute<\/strong><\/p><div class="table-wrap"><table>/);
   assert.match(html, /<td>SIP<\/td><td class="num">0.003<\/td>/);
+});
+test('git gateway serves a session’s extra repositories, and only those', async () => {
+  const seen = [];
+  const upstream = async url => (seen.push(url), new Response('ok'));
+  const opts = { repos: ['ldiaz94/concha', 'ldiaz94/raz'], token: 'ghu_x', upstream };
+  const get = path => gitProxy(new Request('http://git.internal' + path), opts);
+  assert.equal((await get('/ldiaz94/raz.git/info/refs?service=git-receive-pack')).status, 200);
+  assert.equal(seen[0], 'https://github.com/ldiaz94/raz.git/info/refs?service=git-receive-pack');
+  assert.equal((await get('/ldiaz94/other.git/info/refs?service=git-upload-pack')).status, 403);
+  const { extraPath } = await import('../server/code/extras.mjs');
+  assert.equal(extraPath('ldiaz94/raz'), '/workspace/raz');
+  assert.equal(extraPath('someone/repo'), '/workspace/someone-repo', 'repo is the project’s');
+  assert.equal(
+    extraPath('b/raz', [{ path: '/workspace/raz' }]),
+    '/workspace/b-raz',
+    'two of the same name',
+  );
 });

@@ -108,6 +108,8 @@ The clone has real history, so Arno can branch, commit, pull and push. Review an
 
 Submission stores a job and schedules an alarm, then immediately responds with HTTP 202. A repeated submission with the same ID returns the same job. An active session rejects a different concurrent job.
 
+Extra repositories (server/code/extras.mjs): a coding session may hold up to six more clones beside the project, at /workspace/<name> (<owner>-<name> when taken), kept in the session as `extras` [{repo, ref, path}] and so in every snapshot. ⋯ → Add a repository asks GitHub for the repository with the owner's token (its default branch), clones it through the git gateway (which serves the session's whole set: `/git-account` lists them, `gitProxy` picks the one a path names) and remembers it for the project's repository in the owner's index (`companions`); a new session on that repository clones the remembered ones (one GitHub no longer has is left out). arno is told where they are (`sessionPrompt`, `alsoCheckedOut` in each turn's context) and may edit, commit and push them when asked; the changes view, /pull and pull requests cover the project only.
+
 The alarm changes the job from queued to running and runs Arno for the turn, within the time limit from `codeLimits` (10 minutes; 4 in Fast; 13 with the Build approach), after which the turn is cancelled. The job records phases:
 
 - preparing: reuse of a running workspace;

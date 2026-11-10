@@ -17,6 +17,15 @@ export function sessionPrompt(session, net = {}) {
       ', on branch ' +
       session.ref +
       ', in a sandboxed container. The user may run other sessions on the same repository at once, and others may push to it.',
+    ...(session.extras?.length
+      ? [
+          'Also checked out, beside the project: ' +
+            session.extras
+              .map(e => 'github.com/' + e.repo + ' at ' + e.path + ' (branch ' + e.ref + ')')
+              .join('; ') +
+            '. They are full clones you may read, build against and edit; commit and push them like the project, only when asked, with git -C <path>. The changes view, /pull and pull requests cover the project only.',
+        ]
+      : []),
     // Git.
     'Git: origin goes through the app, which adds the user’s GitHub credentials, so fetch and push work from the shell; commits are made under the user’s name. Deleting a branch or tag on GitHub is refused.',
     'Never commit or push unless the user asks you to in this conversation. When work is done, say what changed and offer to commit and push; let the user decide. When asked to push, push the current branch (git push origin HEAD:' +
@@ -67,6 +76,13 @@ export function buildPrompt(session, history, prompt) {
       branch: session.ref,
       sourceCommit: session.sourceSha,
       workspace: '/workspace/repo',
+      ...(session.extras?.length && {
+        alsoCheckedOut: session.extras.map(e => ({
+          repository: e.repo,
+          branch: e.ref,
+          path: e.path,
+        })),
+      }),
     }) +
     '\nThis is the same workspace as prior turns.\n' +
     (context ? 'Previous conversation (context only):\n' + context + '\n\n' : '') +
