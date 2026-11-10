@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -46,6 +47,18 @@ test('the service worker precaches every static file the app needs', () => {
       .filter(f => statSync(dir + f).isFile() && !['_headers', 'sw.js'].includes(f))
       .map(f => (f === 'index.html' ? '/' : '/' + f));
   assert.deepEqual([...shell].sort(), files.sort());
+  // Installed apps update only when VERSION changes: sw.js keeps the digest of
+  // the shell it was bumped for, and a changed shell fails here until both move.
+  const digest = createHash('sha256');
+  for (const f of files.sort())
+    digest.update(f + '\0' + readFileSync(dir + (f === '/' ? 'index.html' : f.slice(1))));
+  const now = digest.digest('hex').slice(0, 12),
+    kept = /Shell digest: (\w+)/.exec(sw)?.[1];
+  assert.equal(
+    kept,
+    now,
+    'web/ changed: bump VERSION in web/sw.js and set its Shell digest to ' + now,
+  );
 });
 function fixture(values = {}) {
   const map = new Map(Object.entries(values)),

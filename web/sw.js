@@ -11,11 +11,13 @@
  * - Push: pushes carry no payload; on each one it fetches the notice with the
  *   user's cookie and shows it; a click opens its conversation.
  *
- * Deploying: bump VERSION whenever a file in SHELL changes, so installed apps
+ * Deploying: bump VERSION whenever a file in SHELL changes (the test fails until
+ * VERSION and the Shell digest move together), so installed apps
  * fetch the new shell. A new worker waits until the page's Update button
  * (update.js) sends SKIP_WAITING (test/test.mjs checks SHELL lists every web/ file).
  */
-const VERSION = 'v37';
+// Shell digest: 06e2c5c59065 (test/test.mjs: the shell this VERSION was bumped for)
+const VERSION = 'v38';
 // The name of this version's shell cache; a new VERSION makes a new cache.
 const SHELL_CACHE = 'arno-shell-' + VERSION;
 const DATA_CACHE = 'arno-data'; // cleared by offline.js on sign-out
