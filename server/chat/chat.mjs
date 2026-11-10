@@ -49,8 +49,10 @@ async function readReply(body, onProgress) {
     size = 0,
     last = 0,
     finish = null,
-    ended = false;
+    ended = false,
+    lastLine = '';
   const line = s => {
+    if (s.trim()) lastLine = s;
     if (!s.startsWith('data:')) return;
     if (s.slice(5).trim() === '[DONE]') return void (ended = true);
     let v;
@@ -131,6 +133,8 @@ async function readReply(body, onProgress) {
     usage,
     finish,
     complete: ended || !!finish,
+    bytes: size,
+    tail: (buffer || lastLine).slice(-200), // the stream's last line, for a cut one's log
   };
 }
 
@@ -138,10 +142,16 @@ async function readReply(body, onProgress) {
  * provider adapter supports Ollama/OpenAI function calls and Anthropic tools.
  * The last of its `rounds` model requests offers no tools and asks for the
  * answer; if none comes, the latest text said is the answer, marked as cut
- * short. `effort` and
- * `maxOutput` come from the turn's plan (plan.mjs). runTool(name, args) runs
- * one tool call; onRound and onProgress report the turn as it goes; upstream
- * stands in for fetch in tests. Returns the answer, usage and request log. */
+ * short. `effort` and `maxOutput` come from the turn's plan (plan.mjs).
+ * runTool(name, args) runs one tool call; onRound and onProgress report the
+ * turn as it goes; upstream stands in for fetch in tests. Returns the answer,
+ * usage and request log.
+ *
+ * Resumable: before each round the loop hands its state to checkpoint (the
+ * messages so far, the counts, the round), and from yieldAt on (or once the
+ * signal is aborted) it stops there, throwing an error marked yielded, rather
+ * than start another. Called again with that state as resume, it carries on
+ * from the same round; a round cut off mid-call is asked again. */
 export async function plainChat({
   model,
   rounds = 12,
@@ -159,54 +169,63 @@ export async function plainChat({
   onRound = async () => {},
   onProgress = async () => {},
   upstream = fetch,
+  resume = null,
+  checkpoint = async () => {},
+  yieldAt = Infinity,
 }) {
-  const messages = [],
-    replay = PROVIDERS[provider].replay;
-  let size = 0;
-  for (const t of history.slice(-20).reverse()) {
-    const sourceContext = t.sources?.length
-      ? '\nSources for this earlier answer: ' +
-        t.sources.map(s => '[' + s.id + '] ' + s.title + ' ' + s.url).join('; ')
-      : '';
-    const pair = [
-      { role: 'user', content: t.prompt + attachedNote(t.attachments) },
-      {
-        role: 'assistant',
-        content: t.summary + sourceContext,
-        ...(replay ? { reasoning_content: t.reasoning || '' } : {}),
-      },
-    ];
-    const length = pair.reduce(
-      (n, m) => n + m.content.length + (m.reasoning_content?.length || 0),
-      0,
-    );
-    if (size + length > 32000) break;
-    messages.unshift(...pair);
-    size += length;
+  const replay = PROVIDERS[provider].replay,
+    messages = resume ? resume.messages : opening();
+  // The conversation the turn opens with: earlier turns (up to 32,000
+  // characters of them), this message with its images, the instructions.
+  function opening() {
+    const messages = [];
+    let size = 0;
+    for (const t of history.slice(-20).reverse()) {
+      const sourceContext = t.sources?.length
+        ? '\nSources for this earlier answer: ' +
+          t.sources.map(s => '[' + s.id + '] ' + s.title + ' ' + s.url).join('; ')
+        : '';
+      const pair = [
+        { role: 'user', content: t.prompt + attachedNote(t.attachments) },
+        {
+          role: 'assistant',
+          content: t.summary + sourceContext,
+          ...(replay ? { reasoning_content: t.reasoning || '' } : {}),
+        },
+      ];
+      const length = pair.reduce(
+        (n, m) => n + m.content.length + (m.reasoning_content?.length || 0),
+        0,
+      );
+      if (size + length > 32000) break;
+      messages.unshift(...pair);
+      size += length;
+    }
+    // Images ride with this message only, in each provider's own format.
+    messages.push({
+      role: 'user',
+      content: !images.length
+        ? prompt
+        : provider === 'anthropic'
+          ? [
+              ...images.map(i => ({
+                type: 'image',
+                source: { type: 'base64', media_type: i.type, data: i.data },
+              })),
+              { type: 'text', text: prompt },
+            ]
+          : [
+              { type: 'text', text: prompt },
+              ...images.map(i => ({
+                type: 'image_url',
+                image_url: { url: 'data:' + i.type + ';base64,' + i.data },
+              })),
+            ],
+    });
+    if (instructions && provider !== 'anthropic')
+      messages.unshift({ role: 'system', content: instructions });
+    return messages;
   }
-  // Images ride with this message only, in each provider's own format.
-  messages.push({
-    role: 'user',
-    content: !images.length
-      ? prompt
-      : provider === 'anthropic'
-        ? [
-            ...images.map(i => ({
-              type: 'image',
-              source: { type: 'base64', media_type: i.type, data: i.data },
-            })),
-            { type: 'text', text: prompt },
-          ]
-        : [
-            { type: 'text', text: prompt },
-            ...images.map(i => ({
-              type: 'image_url',
-              image_url: { url: 'data:' + i.type + ';base64,' + i.data },
-            })),
-          ],
-  });
-  if (instructions && provider !== 'anthropic')
-    messages.unshift({ role: 'system', content: instructions });
   if (!key) throw Error('Save an API key for ' + provider + ' in Account settings');
   const endpoint = PROVIDERS[provider].base + PROVIDERS[provider].chat;
   const total = {
@@ -236,7 +255,28 @@ export async function plainChat({
   };
   let fields = fieldsAt(effort),
     rethought = false, // whether a round was asked again with less thinking
-    recut = false; // whether a round cut short by the provider was asked again
+    recut = false, // whether a round cut short by the provider was asked again
+    said = ''; // the latest text the model wrote beside its tool calls
+  if (resume) {
+    Object.assign(total, resume.total);
+    requestLog.push(...resume.requestLog);
+    toolLog.push(...resume.toolLog);
+    for (const t of resume.spentTools) spentTools.add(t);
+    ({ rethought, recut, said } = resume);
+    if (rethought) fields = fieldsAt('off');
+  }
+  // What a later call needs to carry on from round: everything above that changes.
+  const state = round => ({
+    round,
+    messages,
+    total,
+    requestLog,
+    toolLog,
+    spentTools: [...spentTools],
+    rethought,
+    recut,
+    said,
+  });
   // The answer, with the turn's usage: on a cut-short turn, what was said last.
   const answer = (summary, reasoning) => ({
     exitCode: 0,
@@ -252,19 +292,20 @@ export async function plainChat({
       outputTokens: total.measuredCalls ? total.outputTokens : null,
     },
   });
-  let said = ''; // the latest text the model wrote beside its tool calls
   try {
     return await loop();
   } catch (e) {
-    // Out of time with something said already: that is the answer, marked.
-    if (signal?.aborted && said) return answer(said + OUT_OF_TIME, '');
+    if (e.yielded) throw e; // not a failure: the turn goes on in the next call
     // What the turn spent so far rides on its error, to be charged (records.mjs).
     e.spent = answer('', '');
     throw e;
   }
   // The rounds, until an answer.
   async function loop() {
-    for (let round = 0; round < rounds; round++) {
+    for (let round = resume?.round || 0; round < rounds; round++) {
+      await checkpoint(state(round));
+      if (Date.now() >= yieldAt || signal?.aborted)
+        throw Object.assign(Error('This turn goes on in its next run'), { yielded: true });
       await onRound();
       if (runTool && round && round === rounds - 1) nudge(messages, provider);
       const offered = toolSpecs.filter(t => !spentTools.has(t.name));
@@ -281,6 +322,7 @@ export async function plainChat({
                 function: { name: t.name, description: t.description, parameters: t.inputSchema },
               }))
           : undefined;
+      const asked = Date.now();
       const response = await upstream(endpoint, {
         method: 'POST',
         redirect: 'manual',
@@ -334,6 +376,10 @@ export async function plainChat({
             round: round + 1,
             text: reply.summary.length,
             calls: reply.calls.length,
+            reasoning: reply.reasoning.length,
+            bytes: reply.bytes,
+            ms: Date.now() - asked,
+            tail: reply.tail,
             again: !recut,
           }),
         );
@@ -450,9 +496,6 @@ export async function plainChat({
 /** Added to a turn's answer when its model calls ran out before it finished. */
 const CUT_SHORT =
   '\n\n*Stopped at this turn’s research limit, so this may be incomplete. Super search allows more.*';
-/** Added to a turn's answer when its time ran out before it finished. */
-const OUT_OF_TIME =
-  '\n\n*Stopped at this turn’s time limit, so this may be incomplete. Super search allows longer.*';
 /** Before the last model request (which offers no tools): asks for the answer
  * now, from what was found. Anthropic's goes beside the tool results, in the
  * same user turn. */

@@ -1,15 +1,16 @@
 /** What a turn's composer options (web/options.mjs) change on the host: web
  * tools, thinking effort, extra instructions, output and research budgets,
- * model rounds and the time limit. Chat (turn.mjs plainTurn) and coding
+ * model rounds (a chat turn has no time limit: chat/turn.mjs), and a coding
+ * turn's time limit. Chat (turn.mjs plainTurn) and coding
  * (code/turn.mjs, code/workspace.mjs writeConfig, and the model gateway in
  * gateways/gateways.mjs) read the same plan. Depends on providers.mjs and the
  * option defaults in web/options.mjs. Leaves out the options' storage.
  *
- *   mode          effort          search   output   rounds  searches/reads  time
- *   standard      as chosen       chosen   16,384   12      6 / 12          8 min
- *   fast          off unless set  chosen   4,096    12      6 / 12          8 min
- *   deep          at least medium on       16,384   16      10 / 20         12 min
- *   super search  (any mode)      on       as mode  32      25 / 50         12 min
+ *   mode          effort          search   output   rounds  searches/reads
+ *   standard      as chosen       chosen   16,384   12      6 / 12
+ *   fast          off unless set  chosen   4,096    12      6 / 12
+ *   deep          at least medium on       16,384   16      10 / 20
+ *   super search  (any mode)      on       as mode  32      25 / 50
  */
 import { MAX_OUTPUT } from '../providers.mjs';
 import { DEFAULTS } from '../../web/options.mjs';
@@ -74,8 +75,6 @@ export function turnPlan(options = DEFAULTS) {
       : deep
         ? { searches: 10, reads: 20, sources: 60 }
         : undefined,
-    // A Durable Object alarm may run for 15 minutes; the longer turns keep 3 spare.
-    timeLimit: deep || o.superSearch ? 12 * 60000 : 8 * 60000,
     instructions: [deep ? DEEP_RESEARCH : fast ? FAST : '', STYLE[o.style]]
       .filter(Boolean)
       .join('\n\n'),

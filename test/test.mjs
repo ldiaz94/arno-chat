@@ -2344,7 +2344,7 @@ test('turn plans: fast trims, deep widens, style adds its instruction', () => {
   assert.match(fast.instructions, /briefly and directly/);
   assert.deepEqual([deep.search, deep.effort, deep.rounds], [true, 'medium', 16]);
   assert.deepEqual(deep.limits, { searches: 10, reads: 20, sources: 60 });
-  assert.ok(deep.timeLimit <= 15 * 60000); // a Durable Object alarm's wall-clock limit
+  assert.equal(deep.timeLimit, undefined); // chat turns have none: they go on across alarms
   assert.match(deep.instructions, /create_artifact[\s\S]*Research: /);
   assert.equal(turnPlan({ effort: 'high' }).effort, 'high');
   assert.match(turnPlan({ style: 'caveman' }).instructions, /caveman[\s\S]*Me check/);
@@ -2864,8 +2864,6 @@ test('chat MCP: tools listed once, named per connection, called through the prox
 });
 test('chat MCP approval: waits for the owner, then runs or not', async () => {
   const f = fixture({ job: { id: 'j1', status: 'running', stage: 'thinking' } });
-  f.obj.chatAbort = new AbortController();
-  f.obj.chatDeadline = Date.now() + 60000;
   const asked = f.obj.approve('j1', 'Linear · create_issue', { title: 't' });
   await new Promise(r => setTimeout(r, 50));
   const job = await f.ctx.storage.get('job');
@@ -2882,12 +2880,11 @@ test('chat MCP approval: waits for the owner, then runs or not', async () => {
   const after = await f.ctx.storage.get('job');
   assert.equal(after.stage, 'thinking');
   assert.equal(after.approval, undefined);
-  clearTimeout(f.obj.chatTimer);
-  // A stopped turn ends the wait as a no.
+  // A stopped turn (its job cancelled) ends the wait as a no.
   const denied = f.obj.approve('j1', 'Linear · create_issue', {});
-  f.obj.chatAbort.abort();
+  await new Promise(r => setTimeout(r, 50)); // the question is asked
+  await f.ctx.storage.put('job', { ...(await f.ctx.storage.get('job')), status: 'cancelled' });
   assert.equal(await denied, false);
-  clearTimeout(f.obj.chatTimer);
 });
 test('slash commands: suggested in coding sessions only, by prefix, none refused by the host', () => {
   assert.deepEqual(suggest('/', 'chat'), []);
@@ -3102,23 +3099,47 @@ test('a reply the provider cut off is asked again, and fails loudly if cut again
   assert.equal((await run([cut(), sse([delta({ content: 'Full moon.' })])])).summary, 'Full moon.');
   await assert.rejects(run([cut(), cut()]), /cut its reply off before it finished, twice/);
 });
-test('a turn out of time keeps what the model said, marked as stopped', async () => {
-  const abort = new AbortController();
-  const r = await plainChat({
-    model: 'kimi-k3.1-pro',
+test('a turn yields between rounds and goes on from its saved state', async () => {
+  const saved = [],
+    bodies = [];
+  const base = {
+    model: 'm',
     provider: 'ollama',
     key: 'k',
     history: [],
     prompt: 'moon',
-    signal: abort.signal,
-    runTool: async () => ({}),
+    runTool: async () => ({ ok: 1 }),
+    checkpoint: async st => saved.push(structuredClone(st)),
+  };
+  // The first run does a round with a tool call, then its share is used up.
+  let clock = 0;
+  const first = await plainChat({
+    ...base,
     upstream: async (url, init) => {
-      if (init.body.includes('"role":"tool"')) {
-        abort.abort(); // the clock runs out during the second request
-        throw Object.assign(Error('The operation was aborted'), { name: 'AbortError' });
-      }
-      return sse([delta({ content: 'The moon is waxing.' }), ...callDeltas('a'), delta({})]);
+      bodies.push(JSON.parse(init.body));
+      clock = 2; // time passes during the round
+      return sse([...callDeltas('a'), delta({})]);
+    },
+    signal: {
+      get aborted() {
+        return clock > 1;
+      },
+    },
+  }).catch(e => e);
+  assert.equal(first.yielded, true);
+  const state = saved.at(-1);
+  assert.equal(state.round, 1);
+  assert.equal(state.messages.at(-1).role, 'tool');
+  // The next run carries on from round 1 with the same messages.
+  const r = await plainChat({
+    ...base,
+    resume: state,
+    upstream: async (url, init) => {
+      bodies.push(JSON.parse(init.body));
+      return sse([delta({ content: 'Full moon.' })]);
     },
   });
-  assert.match(r.summary, /^The moon is waxing\.\n\n\*Stopped at this turn’s time limit/);
+  assert.equal(r.summary, 'Full moon.');
+  assert.equal(r.usage.calls, 2, "the first run's call is counted");
+  assert.deepEqual(bodies[1].messages.length, state.messages.length);
 });

@@ -25,7 +25,11 @@ import { live } from './live.mjs';
 import { records } from './records.mjs';
 import { chatTurn } from '../chat/turn.mjs';
 import { workspace } from '../code/workspace.mjs';
+
 import { codeTurn } from '../code/turn.mjs';
+
+/** The most alarms one chat turn may run across (each up to 9 minutes of rounds). */
+const MAX_RUNS = 20;
 
 /** Every route table, merged into one lookup by "METHOD /path". */
 const ROUTES = {
@@ -44,13 +48,22 @@ export class ArnoProbe extends DurableObject {
     const route = ROUTES[request.method + ' ' + url.pathname] ?? ROUTES['* ' + url.pathname];
     return route ? route.call(this, request, url) : new Response('Not found', { status: 404 });
   }
+  /** Whether a running job is a chat turn that may go on (chat/turn.mjs):
+   * at most MAX_RUNS alarms, so a turn that keeps ending its alarm stops. */
+  async chatGoesOn(job) {
+    return (await this.ctx.storage.get('session'))?.kind === 'chat' && (job.runs || 1) < MAX_RUNS;
+  }
   /** Alarms own the long-running turn, not the submitting browser request.
-   * Mark running before execution; an interrupted alarm must not silently replay
-   * commands with side effects. Cancelled jobs remain cancelled on every path. */
+   * Mark running before execution; an interrupted coding turn must not
+   * silently replay commands with side effects. A chat turn found running
+   * goes on from its saved state (chat/turn.mjs): it yielded to this alarm,
+   * or the one before ended early. Cancelled jobs remain cancelled on every path. */
   async alarm() {
-    const job = await this.ctx.storage.get('job');
-    if (job?.status === 'queued') {
-      await this.ctx.storage.put('job', { ...job, status: 'running' });
+    let job = await this.ctx.storage.get('job');
+    const goesOn = job?.status === 'running' && (await this.chatGoesOn(job));
+    if (goesOn) await this.ctx.storage.put('job', (job = { ...job, runs: (job.runs || 1) + 1 }));
+    if (job?.status === 'queued' || goesOn) {
+      if (!goesOn) await this.ctx.storage.put('job', { ...job, status: 'running' });
       try {
         const r = await this.fetch(
           new Request('https://internal/session/run', {
@@ -76,6 +89,9 @@ export class ArnoProbe extends DurableObject {
           await this.notify(result);
         }
       } catch (e) {
+        // The turn yielded: the next alarm carries it on, at once.
+        if (e.yielded) return this.ctx.storage.setAlarm(Date.now() + 100);
+        await this.clearResume();
         const current = await this.ctx.storage.get('job');
         if (current?.status === 'cancelled') {
           if (this.ctx.container?.running) await this.ctx.container.destroy();
