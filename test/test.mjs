@@ -1799,7 +1799,7 @@ test('attachments: chunked round trip, kind and size checks, model input per pro
   }
 });
 test('artifacts: kinds, edits, versions kept apart, restore, old records moved', async () => {
-  const { artifactTool, listArtifacts, getArtifact, restoreArtifact } =
+  const { artifactTool, artifactList, listArtifacts, getArtifact, restoreArtifact } =
     await import('../server/probe/artifacts.mjs');
   const map = new Map([['session', { id: 's' }]]);
   const storage = {
@@ -1828,6 +1828,12 @@ test('artifacts: kinds, edits, versions kept apart, restore, old records moved',
   assert.equal(touched.length, 1);
   assert.equal(touched[0].version, 2);
   assert.equal(touched[0].preview, 'Time now'.replace('now', 'later'));
+  // A later turn finds it: listed with its id, and read whole.
+  const read = await artifactTool(storage, 'read_artifact', { id: made.id }, []);
+  assert.equal(read.content, '<h1>Time</h1><p>later</p>');
+  assert.equal(read.version, 2);
+  assert.match(artifactList(touched), new RegExp(made.id + ' "Clock" \\(html, v2\\)'));
+  assert.equal(artifactList([]), '');
   const v1 = await getArtifact(storage, made.id, 1);
   assert.equal(v1.version, 1);
   assert.equal(v1.latest, 2);
@@ -2950,4 +2956,27 @@ test('a turn out of model calls asks for the answer, else keeps what was said; s
   assert.equal(plan.rounds, 32);
   assert.equal(plan.limits.searches, 25);
   assert.equal(checkOptions({ superSearch: true }, 'code').superSearch, false);
+});
+test('a reply that spends all its output thinking is asked again without thinking', async () => {
+  const thinkOnly = sse([
+    delta({ reasoning_content: 'hmm' }),
+    {
+      choices: [{ index: 0, delta: {}, finish_reason: 'length' }],
+      usage: { prompt_tokens: 10, completion_tokens: 16384, total_tokens: 16394 },
+    },
+  ]);
+  const bodies = [],
+    replies = [thinkOnly, sse([delta({ content: 'Full moon on the 24th.' })])];
+  const r = await plainChat({
+    model: 'deepseek-v4.1-flash:1017',
+    provider: 'ollama',
+    key: 'k',
+    history: [],
+    prompt: 'moon',
+    runTool: async () => ({ sources: [] }),
+    upstream: async (url, init) => (bodies.push(JSON.parse(init.body)), replies.shift()),
+  });
+  assert.equal(r.summary, 'Full moon on the 24th.');
+  assert.equal(bodies[0].reasoning_effort, undefined);
+  assert.equal(bodies[1].reasoning_effort, 'none');
 });

@@ -12,7 +12,13 @@ import { chatMcpTools, callChatMcp } from './chat-mcp.mjs';
 import { WEB_INSTRUCTIONS, WEB_TOOLS, research, citedSources } from './research.mjs';
 import { turnPlan } from './plan.mjs';
 import { effortSupported } from '../models.mjs';
-import { ARTIFACT_INSTRUCTIONS, ARTIFACT_TOOLS, artifactTool } from '../probe/artifacts.mjs';
+import {
+  ARTIFACT_INSTRUCTIONS,
+  ARTIFACT_TOOLS,
+  artifactTool,
+  artifactList,
+  listArtifacts,
+} from '../probe/artifacts.mjs';
 
 /** The chat turn's methods, mixed into ArnoProbe (probe.mjs). */
 export const chatTurn = {
@@ -99,6 +105,7 @@ export const chatTurn = {
           instructions(p),
           plan.search ? WEB_INSTRUCTIONS : '',
           ARTIFACT_INSTRUCTIONS,
+          artifactList(await listArtifacts(this.ctx.storage)),
           mcp.specs.length ? MCP_INSTRUCTIONS : '',
           mcp.failures.length ? 'Unavailable connections: ' + mcp.failures.join('; ') : '',
           plan.instructions,

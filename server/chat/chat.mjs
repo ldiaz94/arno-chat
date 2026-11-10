@@ -12,7 +12,7 @@
 import { WEB_TOOLS } from './research.mjs';
 import { displayDelta, mistralDeltas } from '../gateways/model.mjs';
 import { tokens } from '../prices.mjs';
-import { PROVIDERS, requestFields } from '../providers.mjs';
+import { PROVIDERS, MAX_OUTPUT, requestFields, effortModel } from '../providers.mjs';
 import { attachedNote } from '../probe/attachments.mjs';
 
 /** Gemini streams its thoughts as a leading <thought>…</thought> in the text;
@@ -200,13 +200,18 @@ export async function plainChat({
   };
   // One entry per model request, for the account's request log.
   const requestLog = [];
-  const fields = requestFields(provider, { model, effort, maxOutput });
-  // Gemini's thoughts arrive in content as <thought>…</thought>, asked for
-  // beside the effort's own thinking_config.
-  if (provider === 'gemini') {
-    const config = fields.extra_body?.google?.thinking_config || {};
-    fields.extra_body = { google: { thinking_config: { ...config, include_thoughts: true } } };
-  }
+  // The request's fields at a thinking effort. Gemini's thoughts arrive in
+  // content as <thought>…</thought>, asked for beside the effort's own thinking_config.
+  const fieldsAt = level => {
+    const f = requestFields(provider, { model, effort: level, maxOutput });
+    if (provider === 'gemini') {
+      const config = f.extra_body?.google?.thinking_config || {};
+      f.extra_body = { google: { thinking_config: { ...config, include_thoughts: true } } };
+    }
+    return f;
+  };
+  let fields = fieldsAt(effort),
+    rethought = false; // whether a round was asked again with less thinking
   // The answer, with the turn's usage: on a cut-short turn, what was said last.
   const answer = (summary, reasoning) => ({
     exitCode: 0,
@@ -280,6 +285,24 @@ export async function plainChat({
       requestLog.push({ at: Date.now(), ...t });
     }
     if (reply.summary.trim() && reply.calls.length) said = reply.summary.trim();
+    // All of the output went on thinking (seen with DeepSeek's flash models at
+    // the provider's default effort): ask the same round again, not thinking (low still
+    // spent it all).
+    const spent = reply.usage && tokens(reply.usage).output >= (maxOutput || MAX_OUTPUT);
+    if (
+      !reply.calls.length &&
+      !reply.summary.trim() &&
+      spent &&
+      !rethought &&
+      effort !== 'off' &&
+      effortModel(provider, model)
+    ) {
+      console.log(JSON.stringify({ event: 'rethink', provider, model, round: round + 1 }));
+      fields = fieldsAt('off');
+      rethought = true;
+      round--;
+      continue;
+    }
     if (!reply.calls.length || round === rounds - 1) {
       if (!reply.calls.length && reply.summary.trim())
         return answer(reply.summary.trim(), reply.reasoning);
@@ -362,6 +385,11 @@ function nudge(messages, provider) {
   const text =
     'This turn has no tool calls left. Answer now from what you found, and say what you could not check.';
   const last = messages.at(-1);
+  if (
+    last?.content === text ||
+    (Array.isArray(last?.content) && last.content.at(-1)?.text === text)
+  )
+    return; // asked already, before a round asked again
   if (provider === 'anthropic' && Array.isArray(last?.content))
     last.content.push({ type: 'text', text });
   else messages.push({ role: 'user', content: text });

@@ -11,7 +11,9 @@
  *                         updatedAt, path}
  *   session.artifacts    {<id>: summary}  for the list and the gallery
  *
- * A chat's model makes and revises them with two tools (ARTIFACT_TOOLS); a
+ * A chat's model makes, reads and revises them with three tools
+ * (ARTIFACT_TOOLS), and each turn's instructions list the conversation's
+ * artifacts (artifactList), so later turns can find earlier ones; a
  * coding session's arno writes files that ../code/collect.mjs brings in
  * (putArtifact). HTML pages and Mermaid diagrams are shown by viewResponse,
  * sandboxed, on a page of their own. Depends on ../http.mjs. Leaves out
@@ -26,6 +28,10 @@ const MAX_CONTENT = 200000,
 const MAX_ARTIFACTS = 100;
 /** Earlier versions kept per artifact. */
 const KEEP_VERSIONS = 20;
+/** Most characters of content read_artifact gives back. */
+const MAX_READ = 60000;
+/** Artifacts a turn's instructions list, the latest first. */
+const MAX_LISTED = 30;
 /** Characters of text a summary previews. */
 const PREVIEW = 240;
 /** Mermaid, loaded from its CDN by a diagram's page. */
@@ -33,9 +39,9 @@ const MERMAID = 'https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.mi
 
 /** Text added to the system prompt telling the model when and how to use the artifact tools. */
 export const ARTIFACT_INSTRUCTIONS =
-  'You can make artifacts with create_artifact and revise them with update_artifact: standalone things the user may want to keep, open full screen, copy or download. Kinds: markdown (documents, plans, lists, tables, itineraries, specs), html (an interactive page, mini-app, game, calculator or chart: one self-contained file with inline CSS and JS; scripts may load from cdn.jsdelivr.net, cdnjs.cloudflare.com or unpkg.com, but the page has no network otherwise, so put its data in the page), svg (a drawing, icon or illustration), mermaid (a flowchart, sequence, class, state, gantt or ER diagram; the source only, no fence) and code (a source file; give its language). Use one for substantial content (roughly more than 15 lines), anything visual or interactive, or when asked; keep the chat reply short and refer to the artifact by title. Update an existing artifact rather than making a near-duplicate; for a small change, send edits instead of the whole content.';
+  'You can make artifacts with create_artifact, read one with read_artifact and revise it with update_artifact: standalone things the user may want to keep, open full screen, copy or download. Kinds: markdown (documents, plans, lists, tables, itineraries, specs), html (an interactive page, mini-app, game, calculator or chart: one self-contained file with inline CSS and JS; scripts may load from cdn.jsdelivr.net, cdnjs.cloudflare.com or unpkg.com, but the page has no network otherwise, so put its data in the page), svg (a drawing, icon or illustration), mermaid (a flowchart, sequence, class, state, gantt or ER diagram; the source only, no fence) and code (a source file; give its language). Use one for substantial content (roughly more than 15 lines), anything visual or interactive, or when asked; keep the chat reply short and refer to the artifact by title. Update an existing artifact rather than making a near-duplicate; for a small change, send edits instead of the whole content.';
 
-/** The two tool definitions offered to the model (name, description, JSON schema). */
+/** The tool definitions offered to the model (name, description, JSON schema). */
 export const ARTIFACT_TOOLS = [
   {
     name: 'create_artifact',
@@ -53,6 +59,16 @@ export const ARTIFACT_TOOLS = [
         content: { type: 'string', description: 'The whole content' },
       },
       required: ['title', 'kind', 'content'],
+    },
+  },
+  {
+    name: 'read_artifact',
+    description:
+      'Read an artifact of this conversation: its title, kind, version and whole content. Read one before editing it, so the edits find their text.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'The artifact id, from the list' } },
+      required: ['id'],
     },
   },
   {
@@ -183,6 +199,21 @@ export async function putArtifact(storage, id, fields) {
 export async function artifactTool(storage, name, args, touched) {
   const title = typeof args.title === 'string' ? args.title.trim().slice(0, 80) : '';
   let artifact;
+  if (name === 'read_artifact') {
+    const a = await load(storage, String(args.id || ''));
+    if (!a) throw Error('No artifact with that id in this conversation');
+    if (a.kind === 'image')
+      return { id: a.id, title: a.title, kind: a.kind, content: '(an image)' };
+    const content = String(a.content);
+    return {
+      id: a.id,
+      title: a.title,
+      kind: a.kind,
+      version: a.version,
+      content: content.slice(0, MAX_READ),
+      ...(content.length > MAX_READ ? { truncated: content.length + ' characters in all' } : {}),
+    };
+  }
   if (name === 'create_artifact') {
     if (!title) throw Error('Give the artifact a title');
     const kind = KINDS[args.kind] ? args.kind : 'markdown';
@@ -205,6 +236,17 @@ export async function artifactTool(storage, name, args, touched) {
   return { id: artifact.id, title: artifact.title, kind: artifact.kind, version: artifact.version };
 }
 
+/** The line a turn's instructions give the conversation's artifacts (summaries,
+ * oldest first): the latest MAX_LISTED, with their ids; '' when there are none. */
+export function artifactList(list) {
+  if (!list.length) return '';
+  const shown = list.slice(-MAX_LISTED).reverse();
+  return (
+    'Artifacts in this conversation, latest first (read_artifact shows one; update_artifact revises it): ' +
+    shown.map(a => a.id + ' "' + a.title + '" (' + a.kind + ', v' + a.version + ')').join('; ') +
+    (list.length > shown.length ? '; and ' + (list.length - shown.length) + ' older.' : '.')
+  );
+}
 /** All artifacts of a session, as summaries, oldest first. */
 export async function listArtifacts(storage) {
   const session = await storage.get('session');
