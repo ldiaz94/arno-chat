@@ -202,6 +202,9 @@ export async function plainChat({
   const requestLog = [];
   // One entry per tool call, {tool, ok, ms}, for the turn's log line.
   const toolLog = [];
+  // Tools whose limit this turn has reached (an error marked limit): no longer
+  // offered, as some models keep calling them anyway.
+  const spentTools = new Set();
   // The request's fields at a thinking effort. Gemini's thoughts arrive in
   // content as <thought>…</thought>, asked for beside the effort's own thinking_config.
   const fieldsAt = level => {
@@ -242,15 +245,16 @@ export async function plainChat({
     for (let round = 0; round < rounds; round++) {
       await onRound();
       if (runTool && round && round === rounds - 1) nudge(messages, provider);
+      const offered = toolSpecs.filter(t => !spentTools.has(t.name));
       const tools =
-        runTool && round < rounds - 1
+        runTool && round < rounds - 1 && offered.length
           ? provider === 'anthropic'
-            ? toolSpecs.map(t => ({
+            ? offered.map(t => ({
                 name: t.name,
                 description: t.description,
                 input_schema: t.inputSchema,
               }))
-            : toolSpecs.map(t => ({
+            : offered.map(t => ({
                 type: 'function',
                 function: { name: t.name, description: t.description, parameters: t.inputSchema },
               }))
@@ -376,6 +380,7 @@ export async function plainChat({
           toolLog.push({ tool: c.name, ok: !result?.error, ms: Date.now() - began });
         } catch (e) {
           toolLog.push({ tool: c.name, ok: false, ms: Date.now() - began, error: e.message });
+          if (e.limit) spentTools.add(c.name);
           console.log(
             JSON.stringify({ event: 'tool_error', model, tool: c.name, error: e.message }),
           );

@@ -149,10 +149,13 @@ export async function research(
     if (typeof args.query !== 'string' || !args.query.trim() || args.query.length > 500)
       throw Error('Search query must be 1–500 characters');
     if ((counts.searches || 0) + (counts.searxng || 0) >= limits.searches)
-      throw Error(
-        'This turn has reached its limit of ' +
-          limits.searches +
-          ' searches. Use existing results.',
+      throw Object.assign(
+        Error(
+          'This turn has reached its limit of ' +
+            limits.searches +
+            ' searches. Use existing results.',
+        ),
+        { limit: true }, // the tool is spent: chat.mjs stops offering it
       );
     if (search)
       try {
@@ -178,7 +181,12 @@ export async function research(
       throw Error('Reading pages needs an Ollama API key in this deployment or your account');
     if (!publicWebUrl(args.url)) throw Error('Only public HTTP(S) source URLs can be read');
     if ((counts.reads || 0) >= limits.reads)
-      throw Error('This turn has reached its limit of ' + limits.reads + ' page reads');
+      throw Object.assign(
+        Error('This turn has reached its limit of ' + limits.reads + ' page reads'),
+        {
+          limit: true,
+        },
+      );
     counts.reads = (counts.reads || 0) + 1;
     path = '/api/web_fetch';
     body = { url: args.url };

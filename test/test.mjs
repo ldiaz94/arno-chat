@@ -3044,3 +3044,27 @@ test('an html artifact page reports its errors; read_artifact gives the latest v
   await artifactTool(storage, 'update_artifact', { id: made.id, content: '<p>2</p>' }, []);
   assert.equal((await read()).pageErrors, undefined);
 });
+test('a tool whose limit the turn reached is no longer offered', async () => {
+  const bodies = [],
+    replies = [sse([...callDeltas('a'), delta({})]), sse([delta({ content: 'Done.' })])];
+  const r = await plainChat({
+    model: 'kimi-k3.1-pro',
+    provider: 'ollama',
+    key: 'k',
+    history: [],
+    prompt: 'moon',
+    toolSpecs: [
+      { name: 'web_search', description: 's', inputSchema: { type: 'object' } },
+      { name: 'create_artifact', description: 'a', inputSchema: { type: 'object' } },
+    ],
+    runTool: async () => {
+      throw Object.assign(Error('This turn has reached its limit of 6 searches.'), { limit: true });
+    },
+    upstream: async (url, init) => (bodies.push(JSON.parse(init.body)), replies.shift()),
+  });
+  assert.equal(r.summary, 'Done.');
+  assert.deepEqual(
+    bodies[1].tools.map(t => t.function.name),
+    ['create_artifact'],
+  );
+});
