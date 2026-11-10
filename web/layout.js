@@ -154,11 +154,7 @@ export function sidebar() {
       '">' +
       // In edit mode the whole row is the toggle; the round mark only shows it.
       (edit
-        ? '<span class="session-pick' +
-          (picked ? ' on' : '') +
-          '" aria-hidden="true">' +
-          (picked ? '✓' : '') +
-          '</span>'
+        ? '<span class="session-pick' + (picked ? ' on' : '') + '" aria-hidden="true"></span>'
         : '') +
       '<button class="session-item ' +
       (s.id === state.session?.id ? 'active' : '') +
