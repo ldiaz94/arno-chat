@@ -105,6 +105,14 @@ a {
   color: var(--accent);
   text-decoration: none;
 }
+/* Thin scrollbars and a selection in the theme's own colours. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+::selection {
+  background: color-mix(in srgb, var(--accent) 32%, transparent);
+}
 a:hover {
   text-decoration: underline;
 }
@@ -3066,6 +3074,29 @@ body.light,
   color: var(--muted);
 }
 /* Artifacts and Usage: two quiet tiles, each with its icon in the accent. */
+/* Sign out: an icon beside the theme button. */
+.sign-out {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  color: var(--muted);
+}
+.sign-out:hover {
+  color: var(--red);
+  background: var(--raised);
+  text-decoration: none;
+}
+.sign-out svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .sidebar-links {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -4056,10 +4087,6 @@ details.setting-card.collapsible[open] > summary {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
   flex-shrink: 0;
 }
 .topbar-actions:not(:has(> :not([hidden]))) {

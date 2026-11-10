@@ -214,6 +214,7 @@ for (const [id, name] of [
   $('#' + id).innerHTML = icon(name);
 $('#gallery-view').innerHTML = icon('page') + ' Artifacts';
 $('#usage-view').innerHTML = icon('chart') + ' Usage';
+$('#sign-out').innerHTML = icon('logout');
 $('#new-session').innerHTML = icon('plus') + ' New session';
 document.addEventListener('click', e => {
   if (e.target.id === 'reload') location.reload();
