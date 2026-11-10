@@ -53,7 +53,10 @@ export function publicWebUrl(value) {
     return false;
   }
 }
-/** Reads a response as JSON, refusing more than 2 MB. */
+/** Reads a response as JSON, refusing more than MAX_RESULT. */
+/** The largest web result read, in bytes: a long page's JSON may pass 2 MB, though
+ * only its first 12,000 characters reach the model. */
+const MAX_RESULT = 8000000;
 async function boundedJson(response) {
   const reader = response.body.getReader();
   let text = '',
@@ -64,9 +67,9 @@ async function boundedJson(response) {
       const { done, value } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > 2000000) {
+      if (size > MAX_RESULT) {
         await reader.cancel();
-        throw Error('Web result too large');
+        throw Error('That result is too large to read (over 8 MB). Try another source.');
       }
       text += decoder.decode(value, { stream: true });
     }
