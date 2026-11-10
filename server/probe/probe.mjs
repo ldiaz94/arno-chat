@@ -80,7 +80,11 @@ export class ArnoProbe extends DurableObject {
         if (current?.status === 'cancelled') {
           if (this.ctx.container?.running) await this.ctx.container.destroy();
         } else {
-          const error = 'The coding task failed. Your last checkpoint is preserved.';
+          // A chat's errors are written for the user (chat.mjs); a coding task's may not be.
+          const chat = (await this.ctx.storage.get('session'))?.kind === 'chat',
+            error = chat
+              ? e.message || 'This chat turn failed.'
+              : 'The coding task failed. Your last checkpoint is preserved.';
           await this.recordFailure(job, error, e);
           await this.ctx.storage.put('job', { ...job, status: 'failed', result: { error } });
           await this.notify({ error });
