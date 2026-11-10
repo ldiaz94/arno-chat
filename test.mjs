@@ -30,6 +30,7 @@ import {
 import { testMcp } from './mcp.mjs';
 import { startSignIn, mcpCallback, mcpBearer } from './mcp-oauth.mjs';
 import { registryProxy, cloudflareProxy, sandboxEnv } from './sandbox.mjs';
+import { chatMcpTools, callChatMcp } from './chat-mcp.mjs';
 import { research, citedSources } from './web.mjs';
 import { ArnoProbe, default as worker } from './worker.js';
 test('browser scripts parse', () => {
@@ -2682,4 +2683,88 @@ test('sandbox: registries read only, PyPI files rewritten, Cloudflare token adde
     sandboxEnv({ saved: true, accountId: 'a'.repeat(32) }).CLOUDFLARE_API_BASE_URL,
     'http://cf.internal/client/v4',
   );
+});
+test('chat MCP: tools listed once, named per connection, called through the proxy', async () => {
+  const env = {
+      ACCOUNT_ENCRYPTION_KEY: btoa(String.fromCharCode(...new Uint8Array(32).fill(3))),
+    },
+    connection = { id: 'lin', name: 'Linear', url: 'https://mcp.example.com/mcp', chats: true },
+    store = new Map(),
+    storage = { get: async k => store.get(k), put: async (k, v) => store.set(k, v) },
+    methods = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const { method, id } = JSON.parse(init.body);
+    methods.push(method);
+    const result =
+      method === 'initialize'
+        ? { protocolVersion: '2025-06-18' }
+        : method === 'tools/list'
+          ? {
+              tools: [
+                { name: 'list.issues', annotations: { readOnlyHint: true } },
+                { name: 'create_issue', inputSchema: { type: 'object' } },
+              ],
+            }
+          : { content: [{ type: 'text', text: 'ISS-1 created' }] };
+    // initialize answers as a stream, the rest as JSON
+    return method === 'initialize'
+      ? new Response(
+          'event: message\ndata: ' + JSON.stringify({ jsonrpc: '2.0', id, result }) + '\n\n',
+          {
+            headers: { 'content-type': 'text/event-stream', 'mcp-session-id': 's1' },
+          },
+        )
+      : id === undefined
+        ? new Response(null, { status: 202 })
+        : Response.json({ jsonrpc: '2.0', id, result });
+  };
+  try {
+    const p = { mcp: [connection, { ...connection, id: 'off', chats: false }] };
+    const one = await chatMcpTools(env, 1, p, storage);
+    assert.deepEqual(
+      one.specs.map(s => s.name),
+      ['lin__list_issues', 'lin__create_issue'],
+    );
+    assert.equal(one.calls.get('lin__list_issues').readOnly, true);
+    assert.equal(one.calls.get('lin__create_issue').readOnly, false);
+    const listed = methods.filter(m => m === 'tools/list').length;
+    await chatMcpTools(env, 1, p, storage); // within ten minutes: the kept list
+    assert.equal(methods.filter(m => m === 'tools/list').length, listed);
+    assert.deepEqual(
+      await callChatMcp(env, 1, one.calls.get('lin__create_issue'), { title: 't' }),
+      {
+        result: 'ISS-1 created',
+      },
+    );
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+test('chat MCP approval: waits for the owner, then runs or not', async () => {
+  const f = fixture({ job: { id: 'j1', status: 'running', stage: 'thinking' } });
+  f.obj.chatAbort = new AbortController();
+  f.obj.chatDeadline = Date.now() + 60000;
+  const asked = f.obj.approve('j1', 'Linear · create_issue', { title: 't' });
+  await new Promise(r => setTimeout(r, 50));
+  const job = await f.ctx.storage.get('job');
+  assert.equal(job.stage, 'approval');
+  assert.match(job.approval.args, /"title": "t"/);
+  const r = await f.obj.fetch(
+    new Request('https://internal/session/approve', {
+      method: 'POST',
+      body: JSON.stringify({ id: job.approval.id, allow: true }),
+    }),
+  );
+  assert.equal(r.status, 200);
+  assert.equal(await asked, true);
+  const after = await f.ctx.storage.get('job');
+  assert.equal(after.stage, 'thinking');
+  assert.equal(after.approval, undefined);
+  clearTimeout(f.obj.chatTimer);
+  // A stopped turn ends the wait as a no.
+  const denied = f.obj.approve('j1', 'Linear · create_issue', {});
+  f.obj.chatAbort.abort();
+  assert.equal(await denied, false);
+  clearTimeout(f.obj.chatTimer);
 });

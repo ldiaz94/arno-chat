@@ -515,6 +515,7 @@ export async function accountRoute(request, env, userId) {
           name: String(c.name || c.id).slice(0, 80),
           url: c.url,
           enabled: !!c.enabled,
+          chats: !!c.chats,
           token,
           oauth: !c.token && kept && !!old.oauth,
         });

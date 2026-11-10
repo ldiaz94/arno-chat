@@ -15,6 +15,7 @@ import {
   seal,
 } from './account.mjs';
 import { gitRemote } from './git.mjs';
+import { chatMcpTools, callChatMcp } from './chat-mcp.mjs';
 import { SANDBOX_HOSTS, publicSandbox } from './sandbox.mjs';
 import { codeSettings } from './plan.mjs';
 import { WEB_INSTRUCTIONS, WEB_TOOLS, research, citedSources } from './web.mjs';
@@ -47,6 +48,43 @@ export class ArnoProbe extends DurableObject {
         this.viewers.delete(c);
       }
     }
+  }
+  /** Asks the owner to allow an MCP action in a chat, and waits up to three
+   * minutes for Allow or Deny (POST /session/approve); the turn's clock stops
+   * meanwhile. The question rides on the job, which the browser polls. */
+  async approve(jobId, what, args) {
+    const id = crypto.randomUUID(),
+      asked = Date.now(),
+      until = asked + 3 * 60000;
+    const job = await this.ctx.storage.get('job');
+    if (job?.id !== jobId || job.status !== 'running') return false;
+    await this.ctx.storage.put('job', {
+      ...job,
+      stage: 'approval',
+      approval: { id, what, args: JSON.stringify(args, null, 2).slice(0, 4000) },
+    });
+    clearTimeout(this.chatTimer);
+    let decision = null;
+    while (decision === null && Date.now() < until && !this.chatAbort?.signal.aborted) {
+      await new Promise(r => setTimeout(r, 1000));
+      const now = await this.ctx.storage.get('job');
+      if (now?.id !== jobId || now.status !== 'running') break;
+      if (now.approval?.id === id && typeof now.approval.allow === 'boolean')
+        decision = now.approval.allow;
+    }
+    const now = await this.ctx.storage.get('job');
+    if (now?.id === jobId && now.status === 'running') {
+      const rest = { ...now, stage: 'thinking' };
+      delete rest.approval;
+      await this.ctx.storage.put('job', rest);
+    }
+    // The clock goes on from where it stopped.
+    this.chatDeadline += Date.now() - asked;
+    this.chatTimer = setTimeout(
+      () => this.chatAbort?.abort(),
+      Math.max(0, this.chatDeadline - Date.now()),
+    );
+    return decision === true;
   }
   /** What a coding turn is doing now (a tool call, a worker's step), for the
    * live view; kept with the live preview, not stored. */
@@ -302,8 +340,10 @@ export class ArnoProbe extends DurableObject {
     this.chatAbort = new AbortController();
     const job = await this.ctx.storage.get('job'),
       plan = turnPlan(job?.options),
-      timer = setTimeout(() => this.chatAbort?.abort(), plan.timeLimit),
       began = Date.now();
+    // The turn's clock; a wait for the owner's Allow (approve) stops it.
+    this.chatDeadline = began + plan.timeLimit;
+    this.chatTimer = setTimeout(() => this.chatAbort?.abort(), plan.timeLimit);
     try {
       await this.phase('thinking', { workspace: 'chat', startupMs: 0 });
       const p = await profile(this.env, session.ownerId),
@@ -317,6 +357,12 @@ export class ArnoProbe extends DurableObject {
         attached = job?.attachments || [],
         input = await modelInput(this.ctx.storage, prompt, attached),
         artifacts = [];
+      // The owner's MCP connections marked for chats, unless this message
+      // turned them off (web/options.mjs).
+      const mcp =
+        job?.options?.mcp === false
+          ? { specs: [], calls: new Map(), failures: [] }
+          : await chatMcpTools(this.env, session.ownerId, p, this.ctx.storage);
       const result = await plainChat({
         model: selected.id,
         provider: selected.provider,
@@ -326,12 +372,14 @@ export class ArnoProbe extends DurableObject {
         rounds: plan.rounds,
         maxOutput: plan.maxOutput,
         effort: (await effortSupported(session.model)) ? plan.effort : 'auto',
-        toolSpecs: [...(plan.search ? WEB_TOOLS : []), ...ARTIFACT_TOOLS],
+        toolSpecs: [...(plan.search ? WEB_TOOLS : []), ...ARTIFACT_TOOLS, ...mcp.specs],
         key: await credential(this.env, session.ownerId, p, selected.provider),
         instructions: [
           instructions(p),
           plan.search ? WEB_INSTRUCTIONS : '',
           ARTIFACT_INSTRUCTIONS,
+          mcp.specs.length ? MCP_INSTRUCTIONS : '',
+          mcp.failures.length ? 'Unavailable connections: ' + mcp.failures.join('; ') : '',
           plan.instructions,
         ]
           .filter(Boolean)
@@ -340,6 +388,14 @@ export class ArnoProbe extends DurableObject {
         onRound: () => this.phase('thinking', { workspace: 'chat', startupMs: 0 }),
         onProgress: preview => this.progress({ ...preview, jobId }),
         runTool: async (name, args) => {
+          const remote = mcp.calls.get(name);
+          if (remote) {
+            const what = remote.connection.name + ' · ' + remote.tool;
+            if (!remote.readOnly && !(await this.approve(jobId, what, args)))
+              return { error: 'The user did not allow this action. Do not try it again.' };
+            await this.activity(what);
+            return callChatMcp(this.env, session.ownerId, remote, args);
+          }
           if (/_artifact$/.test(name)) return artifactTool(this.ctx.storage, name, args, artifacts);
           await this.phase(name === 'web_search' ? 'searching' : 'reading', { workspace: 'chat' });
           const data = await research(name, args, {
@@ -392,7 +448,7 @@ export class ArnoProbe extends DurableObject {
       }
       return json(result);
     } finally {
-      clearTimeout(timer);
+      clearTimeout(this.chatTimer);
       this.chatAbort = null;
       this.inFlight = false;
     }
@@ -681,6 +737,9 @@ export class ArnoProbe extends DurableObject {
 }
 
 /** gitSetup's script, run in the clone with REMOTE, REF, SHA, NAME, EMAIL. */
+/** What the model is told when a chat has MCP tools. */
+const MCP_INSTRUCTIONS =
+  'Tools named <connection>__<tool> reach services the user connected (MCP). Use them when the question is about those services. A tool that changes something waits for the user to allow it; if the user does not, say so and do not try again.';
 const GIT_SETUP = String.raw`set -e
 git config user.name "$NAME"
 git config user.email "$EMAIL"

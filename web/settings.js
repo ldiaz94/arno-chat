@@ -73,7 +73,9 @@ function mcpCard(c = {}) {
         : 'Optional bearer token') +
     '"></label><div class="setting-row"><label class="check-label"><input class="mcp-enabled" type="checkbox" ' +
     (c.enabled ? 'checked' : '') +
-    '> Enable for coding sessions</label><span class="mcp-actions"><button class="signin-mcp ghost" type="button">' +
+    '> Enable for coding sessions</label><label class="check-label"><input class="mcp-chats" type="checkbox" ' +
+    (c.chats ? 'checked' : '') +
+    '> Use in chats</label><span class="mcp-actions"><button class="signin-mcp ghost" type="button">' +
     (c.oauth ? 'Sign in again' : 'Sign in') +
     '</button><button class="test-mcp" type="button">Test</button></span></div><label class="check-label caption"><input type="checkbox" class="mcp-clear"> ' +
     (c.oauth ? 'Sign out (remove the saved sign-in)' : 'Remove saved token') +
@@ -427,7 +429,7 @@ async function openAccount() {
       '<section data-account-panel="instructions" hidden><label>Account system prompt<textarea id="system-prompt" class="field" rows="7" maxlength="12000" placeholder="How should Arno work with you?">' +
       esc(account.systemPrompt) +
       '</textarea></label><p class="caption">Applied to new requests in both regular chats and coding sessions. Repository content does not override these account instructions.</p><h3>Reusable skills</h3><div id="skill-cards"></div><button id="add-skill" type="button" class="ghost">＋ Add skill</button></section>' +
-      '<section data-account-panel="mcp" hidden><p class="caption">Connect trusted public HTTPS Streamable HTTP MCP servers. Enabled tools are available to Arno coding sessions. Regular chats have built-in web research; custom MCP tools are currently for coding sessions. MCP servers can perform remote actions; enable only servers you trust.</p><div id="mcp-cards"></div><button id="add-mcp" type="button" class="ghost">＋ Add MCP connection</button></section>' +
+      '<section data-account-panel="mcp" hidden><p class="caption">Connect trusted public HTTPS Streamable HTTP MCP servers. Turn a connection on for coding sessions, for chats, or both. In a chat, a tool its server does not mark read-only asks you before it runs. MCP servers can perform remote actions; connect only servers you trust.</p><div id="mcp-cards"></div><button id="add-mcp" type="button" class="ghost">＋ Add MCP connection</button></section>' +
       '<section data-account-panel="connections" hidden><section class="setting-card"><div class="setting-row"><strong>GitHub</strong><span class="tag">Signed in as ' +
       esc(state.user.login) +
       '</span></div><p class="caption">Signing in does not require repository access. Coding sessions request repo scope separately.</p><a href="/auth/github?repos=1">Connect or refresh repository access ↗</a><p><a href="https://github.com/settings/applications" target="_blank" rel="noopener noreferrer">Review GitHub app and organization authorization ↗</a></p><p class="caption">Coding sessions reach the repositories the Arno GitHub App is installed on; the Code home says how to add more.</p></section>' +
@@ -564,6 +566,7 @@ async function saveAccount() {
       token: n.querySelector('.mcp-token').value || undefined,
       clearToken: n.querySelector('.mcp-clear').checked,
       enabled: n.querySelector('.mcp-enabled').checked,
+      chats: n.querySelector('.mcp-chats').checked,
     })),
     models: [...document.querySelectorAll('.custom-model')].map(n => ({
       id: n.querySelector('.custom-provider').value + '/' + n.querySelector('.custom-id').value,

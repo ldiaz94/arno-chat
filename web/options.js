@@ -112,6 +112,7 @@ export function render() {
     o.style !== 'normal' && ['style', o.style === 'concise' ? 'Concise' : 'Caveman'],
     o.effort !== 'auto' && ['effort', 'Thinking: ' + o.effort],
     !o.search && ['search', 'No search'],
+    chat && !o.mcp && ['mcp', 'No MCP tools'],
     ...(chat
       ? []
       : [
@@ -140,10 +141,11 @@ export function render() {
   button.classList.toggle('active', chips.length > 0);
   button.title = chips.length ? 'Options: ' + optionTags(o).join(', ') : 'Message options';
   $('#opt-search').checked = o.search;
+  $('#opt-mcp').checked = o.mcp;
   for (const name of ['mode', 'effort', 'style', 'approach', 'workers', 'budget'])
     for (const input of panel.querySelectorAll('input[name="' + name + '"]'))
       input.checked = input.value === o[name];
-  panel.querySelector('[data-chat-only]').hidden = !chat;
+  for (const el of panel.querySelectorAll('[data-chat-only]')) el.hidden = !chat;
   for (const el of panel.querySelectorAll('[data-code-only]')) el.hidden = chat;
   $('#opt-approach-note').textContent = {
     auto: '',
@@ -178,6 +180,7 @@ button.onclick = () => open(panel.hidden);
 panel.onchange = e => {
   const t = e.target;
   if (t.id === 'opt-search') choose('search', t.checked);
+  else if (t.id === 'opt-mcp') choose('mcp', t.checked);
   else if (t.name) choose(t.name, t.value);
 };
 $('#option-chips').onclick = e => {

@@ -1,6 +1,8 @@
 import { tokens } from './prices.mjs';
 import { PROVIDERS, requestFields } from './account.mjs';
-const MAX_BODY = 1024 * 1024;
+// A long coding conversation, sent whole each step, with its tools: arno's
+// prune keeps history near 200 KB, so this is a ceiling, not a working size.
+const MAX_BODY = 8 * 1024 * 1024;
 
 async function readBounded(body) {
   if (!body) throw new Error('missing body');
@@ -221,15 +223,19 @@ export async function modelRequest(
   } catch {
     return new Response('Invalid or oversized JSON body', { status: 400 });
   }
-  if (
-    !body ||
-    body.model !== model ||
-    !Array.isArray(body.messages) ||
-    body.messages.length > 200 ||
-    body.stream !== true
-  ) {
-    return new Response('Unsupported model or request', { status: 400 });
-  }
+  // The model is the session's, whatever the runner names: a conversation
+  // arno loads may still name the model it was started on. A long session
+  // may hold thousands of messages; the size bound above is the real limit.
+  if (!body || !Array.isArray(body.messages) || body.messages.length > 5000 || body.stream !== true)
+    return new Response(
+      'Unsupported request: ' +
+        (!Array.isArray(body?.messages)
+          ? 'no messages'
+          : body.messages.length > 5000
+            ? body.messages.length + ' messages; use /compact or /clear'
+            : 'not streamed'),
+      { status: 400 },
+    );
   const payload = {
     model,
     messages: body.messages,

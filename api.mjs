@@ -433,6 +433,12 @@ export async function sessionPaths(request, env, url, auth) {
           ? '?sha=' + encodeURIComponent(url.searchParams.get('sha') || '')
           : ''),
     );
+  const approveMatch = url.pathname.match(/^\/api\/sessions\/([0-9a-f-]{36})\/approve$/);
+  if (approveMatch && request.method === 'POST')
+    return env.PROBE.getByName('code:' + auth.user.id + ':' + approveMatch[1]).fetch(
+      'https://internal/session/approve',
+      { method: 'POST', body: JSON.stringify(await boundedJson(request)) },
+    );
   const cancelMatch = url.pathname.match(/^\/api\/sessions\/([0-9a-f-]{36})\/cancel$/);
   if (cancelMatch && request.method === 'POST')
     return env.PROBE.getByName('code:' + auth.user.id + ':' + cancelMatch[1]).fetch(

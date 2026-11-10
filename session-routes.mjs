@@ -162,6 +162,17 @@ export const sessionRoutes = {
     await this.ctx.storage.put('session', meta);
     return json(meta);
   },
+  /** The owner's answer to an MCP action a chat asked to make (approve). */
+  async 'POST /session/approve'(request) {
+    const { id, allow } = await request.json().catch(() => ({}));
+    return this.ctx.storage.transaction(async txn => {
+      const job = await txn.get('job');
+      if (job?.status !== 'running' || job.approval?.id !== id || typeof allow !== 'boolean')
+        return json({ error: 'Nothing is waiting for an answer' }, 409);
+      await txn.put('job', { ...job, approval: { ...job.approval, allow } });
+      return json({ ok: true });
+    });
+  },
   async 'POST /session/cancel'() {
     const job = await this.ctx.storage.get('job');
     if (!job || !['queued', 'running'].includes(job.status))

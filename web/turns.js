@@ -13,7 +13,47 @@ import { warm } from './offline.js';
 import { queueMessage, waiting } from './outbox.js';
 import { isLocal } from './queue.mjs';
 import { messageOptions, optionCommand } from './options.js';
+/** A chat's question before an MCP action (session.mjs approve): what would
+ * run, with its arguments, and Allow or Deny. Shown while the job waits. */
+function approval(job) {
+  const a = job.stage === 'approval' ? job.approval : null,
+    node = $('#approval');
+  if (!a) return node?.remove();
+  if (node?.dataset.id === a.id) return;
+  const card = document.createElement('div');
+  card.id = 'approval';
+  card.className = 'approval-card';
+  card.dataset.id = a.id;
+  card.setAttribute('role', 'alertdialog');
+  card.setAttribute('aria-label', 'Allow this action?');
+  card.innerHTML =
+    '<strong>Allow this action?</strong><p>' +
+    esc(a.what) +
+    '</p><pre>' +
+    esc(a.args) +
+    '</pre><div class="approval-actions"><button type="button" class="primary" data-allow="1">Allow</button><button type="button" data-allow="">Deny</button><span class="caption">Waits up to 3 minutes</span></div>';
+  card.onclick = async e => {
+    const b = e.target.closest('[data-allow]');
+    if (!b) return;
+    const allow = !!b.dataset.allow;
+    for (const x of card.querySelectorAll('button')) x.disabled = true;
+    try {
+      await api('/api/sessions/' + state.session.id + '/approve', {
+        method: 'POST',
+        body: JSON.stringify({ id: a.id, allow }),
+      });
+      card.querySelector('.caption').textContent = allow ? 'Allowed · running' : 'Denied';
+    } catch (err) {
+      card.querySelector('.caption').textContent = err.message;
+      for (const x of card.querySelectorAll('button')) x.disabled = false;
+    }
+  };
+  node?.remove();
+  place(card);
+  scrollDown();
+}
 function activity(job) {
+  approval(job);
   let node = $('#activity');
   if (!node) {
     node = document.createElement('div');
@@ -28,11 +68,13 @@ function activity(job) {
         ? 'Searching the web'
         : job.stage === 'reading'
           ? 'Reading sources'
-          : job.stage === 'saving'
-            ? 'Saving response'
-            : $('#live-response .prose')?.textContent
-              ? 'Responding'
-              : 'Thinking';
+          : job.stage === 'approval'
+            ? 'Waiting for your answer'
+            : job.stage === 'saving'
+              ? 'Saving response'
+              : $('#live-response .prose')?.textContent
+                ? 'Responding'
+                : 'Thinking';
     node.innerHTML =
       '<div class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></div><span>' +
       label +
@@ -162,6 +204,7 @@ export async function watchJob(id, gen, expected) {
       if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
         stopLive?.();
         $('#activity')?.remove();
+        $('#approval')?.remove();
         $('#live-response')?.remove();
         if (job.status === 'completed') {
           message('Arno', job.result.summary, { ...job.result, at: job.finishedAt });

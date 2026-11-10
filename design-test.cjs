@@ -42,6 +42,7 @@ const { chromium } = require('playwright'),
       model = 'mistral-large-4:cloud',
       plain = false,
       plainPolls = 0,
+      approved = null, // the chat's answer to its MCP action's question
       renamed = '',
       chatModel = null;
     const id = '11111111-1111-1111-1111-111111111111',
@@ -408,12 +409,22 @@ const { chromium } = require('playwright'),
         return;
       } else if (u.pathname.endsWith('/job'))
         d = submitted
-          ? plain && plainPolls++ < 2
+          ? plain && (plainPolls++ < 2 || approved === null)
             ? {
                 id: submitted.id,
                 prompt: submitted.prompt,
                 status: 'running',
-                stage: 'thinking',
+                // After two polls the chat asks to run an MCP action.
+                ...(plainPolls > 2
+                  ? {
+                      stage: 'approval',
+                      approval: {
+                        id: 'ap1',
+                        what: 'Linear · create_issue',
+                        args: '{\n  "title": "Fix"\n}',
+                      },
+                    }
+                  : { stage: 'thinking' }),
                 createdAt: Date.now(),
               }
             : {
@@ -428,7 +439,10 @@ const { chromium } = require('playwright'),
                 finishedAt: Date.now(),
               }
           : { status: 'idle' };
-      else if (u.pathname.endsWith('/model')) {
+      else if (u.pathname.endsWith('/approve')) {
+        approved = route.request().postDataJSON();
+        d = { ok: true };
+      } else if (u.pathname.endsWith('/model')) {
         model = route.request().postDataJSON().model;
         d = { model };
       } else if (u.pathname.endsWith('/changes'))
@@ -737,6 +751,7 @@ const { chromium } = require('playwright'),
       effort: 'auto',
       mode: 'deep',
       style: 'caveman',
+      mcp: true,
       approach: 'auto',
       workers: '4',
       budget: 'auto',
@@ -760,7 +775,18 @@ const { chromium } = require('playwright'),
       'Message Arno…',
     );
     await page.screenshot({ path: '/tmp/arno-plain-thinking.png', fullPage: true });
+    // The chat asks before an MCP action; Allow answers it, and the turn goes on.
+    await page.locator('#approval').waitFor();
+    assert.match(
+      await page.locator('#approval').innerText(),
+      /Linear · create_issue[\s\S]*"title": "Fix"/,
+    );
+    await page.screenshot({ path: '/tmp/arno-approval-mobile.png' });
+    await page.getByRole('button', { name: 'Allow', exact: true }).click();
+    await page.getByText('Allowed · running').waitFor();
+    assert.deepEqual(approved, { id: 'ap1', allow: true });
     await page.getByText('Recovered after lost response', { exact: true }).waitFor();
+    assert.equal(await page.locator('#approval').count(), 0);
     assert.equal(await page.locator('#live-response').count(), 0);
     if (submitted.options)
       assert.deepEqual(await page.locator('.turn-footer .option-tag').allInnerTexts(), [
