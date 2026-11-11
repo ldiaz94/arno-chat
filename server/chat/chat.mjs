@@ -147,6 +147,13 @@ async function readReply(body, onProgress) {
  * turn as it goes; upstream stands in for fetch in tests. Returns the answer,
  * usage and request log.
  *
+ * A tool's result may carry images ({type, data, caption}: a screenshot of a
+ * page it made), kept out of its JSON and shown to the model after the
+ * round's results; only the latest KEEP_SHOTS stay in the conversation.
+ * review(answer), when given, sees each answer before it is returned and may
+ * send it back with {text, images}: the model is told that and asked again,
+ * while a round is left for it to act.
+ *
  * Resumable: before each round the loop hands its state to checkpoint (the
  * messages so far, the counts, the round), and from yieldAt on (or once the
  * signal is aborted) it stops there, throwing an error marked yielded, rather
@@ -166,6 +173,7 @@ export async function plainChat({
   instructions = '',
   signal,
   runTool,
+  review = null,
   onRound = async () => {},
   onProgress = async () => {},
   upstream = fetch,
@@ -207,20 +215,8 @@ export async function plainChat({
       content: !images.length
         ? prompt
         : provider === 'anthropic'
-          ? [
-              ...images.map(i => ({
-                type: 'image',
-                source: { type: 'base64', media_type: i.type, data: i.data },
-              })),
-              { type: 'text', text: prompt },
-            ]
-          : [
-              { type: 'text', text: prompt },
-              ...images.map(i => ({
-                type: 'image_url',
-                image_url: { url: 'data:' + i.type + ';base64,' + i.data },
-              })),
-            ],
+          ? [...imageParts(images, provider), { type: 'text', text: prompt }]
+          : [{ type: 'text', text: prompt }, ...imageParts(images, provider)],
     });
     if (instructions && provider !== 'anthropic')
       messages.unshift({ role: 'system', content: instructions });
@@ -388,6 +384,10 @@ export async function plainChat({
             provider + ' cut its reply off before it finished, twice. Try again, or another model.',
           );
         recut = true;
+        // A cut that came while writing a tool call or a long reply will likely
+        // come again: ask for the work in smaller pieces.
+        if (reply.calls.length || reply.summary.length > LONG_REPLY)
+          tell(messages, provider, CUT_ADVICE);
         round--;
         continue;
       }
@@ -410,8 +410,20 @@ export async function plainChat({
         continue;
       }
       if (!reply.calls.length || round === rounds - 1) {
-        if (!reply.calls.length && reply.summary.trim())
-          return answer(reply.summary.trim(), reply.reasoning);
+        if (!reply.calls.length && reply.summary.trim()) {
+          const text = reply.summary.trim(),
+            back = review && round < rounds - 1 ? await review(text) : null;
+          if (!back) return answer(text, reply.reasoning);
+          // Sent back: the answer stays in the conversation, then why.
+          messages.push({
+            role: 'assistant',
+            content: text,
+            ...(replay ? { reasoning_content: reply.reasoning } : {}),
+          });
+          tell(messages, provider, back.text, back.images);
+          said = text;
+          continue;
+        }
         if (said) return answer(said + CUT_SHORT, reply.reasoning);
         console.log(
           JSON.stringify({
@@ -460,7 +472,8 @@ export async function plainChat({
             ...(c.extra_content ? { extra_content: c.extra_content } : {}),
           })),
         });
-      const results = [];
+      const results = [],
+        shots = [];
       for (const c of parsed) {
         let result;
         const began = Date.now();
@@ -468,6 +481,11 @@ export async function plainChat({
           if (!c.args) throw Error('Invalid tool arguments');
           result = await runTool(c.name, c.args);
           toolLog.push({ tool: c.name, ok: !result?.error, ms: Date.now() - began });
+          if (Array.isArray(result?.images)) {
+            const { images, ...rest } = result;
+            shots.push(...images);
+            result = rest;
+          }
         } catch (e) {
           toolLog.push({ tool: c.name, ok: false, ms: Date.now() - began, error: e.message });
           if (e.limit) spentTools.add(c.name);
@@ -490,9 +508,52 @@ export async function plainChat({
       else
         for (const r of results)
           messages.push({ role: 'tool', tool_call_id: r.id, content: r.result });
+      if (shots.length) tell(messages, provider, '', shots);
     }
   }
 }
+/** images ({type, data}) as message parts, in the provider's own format. */
+function imageParts(images, provider) {
+  return images.map(i =>
+    provider === 'anthropic'
+      ? { type: 'image', source: { type: 'base64', media_type: i.type, data: i.data } }
+      : { type: 'image_url', image_url: { url: 'data:' + i.type + ';base64,' + i.data } },
+  );
+}
+/** Screenshots a conversation keeps at once: each is some hundreds of tokens
+ * and tens of kilobytes of saved state, and the latest is the one that counts. */
+const KEEP_SHOTS = 2;
+/** A screenshot's caption, which marks the image after it as one (a tool's,
+ * not the user's). */
+const SHOT_CAPTION = /^Screenshot of .*rendered at phone size/;
+/** Tells the model text, with images ({type, data, caption}) each after its
+ * caption, as a user message; Anthropic's joins the tool results' turn when
+ * that is the last. Earlier screenshots are left out first, so that no more
+ * than KEEP_SHOTS remain. */
+function tell(messages, provider, text, images = []) {
+  const shown = [];
+  for (const m of messages)
+    if (Array.isArray(m.content))
+      m.content.forEach((part, i) => {
+        const image = /^image/.test(m.content[i + 1]?.type);
+        if (image && SHOT_CAPTION.test(part.text || '')) shown.push([m.content, i + 1]);
+      });
+  for (const [content, i] of shown.slice(0, Math.max(0, shown.length + images.length - KEEP_SHOTS)))
+    content[i] = { type: 'text', text: '(an earlier screenshot, left out)' };
+  const parts = [
+    ...(text ? [{ type: 'text', text }] : []),
+    ...images.flatMap(i => [{ type: 'text', text: i.caption }, ...imageParts([i], provider)]),
+  ];
+  const last = messages.at(-1);
+  if (provider === 'anthropic' && last?.role === 'user' && Array.isArray(last.content))
+    last.content.push(...parts);
+  else messages.push({ role: 'user', content: images.length ? parts : text });
+}
+/** Replies longer than this, in characters, count as long when cut off. */
+const LONG_REPLY = 8000;
+/** Said when a reply cut off by the provider is asked again. */
+const CUT_ADVICE =
+  'Your last reply was cut off by the provider before it finished (a single reply may run only about 3 minutes). Do it in smaller steps: change an artifact with edits, or build a large page as a working skeleton and add sections with update_artifact append.';
 /** Added to a turn's answer when its model calls ran out before it finished. */
 const CUT_SHORT =
   '\n\n*Stopped at this turn’s research limit, so this may be incomplete. Super search allows more.*';

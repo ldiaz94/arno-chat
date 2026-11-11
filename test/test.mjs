@@ -3174,3 +3174,206 @@ test('git gateway serves a session’s extra repositories, and only those', asyn
     'two of the same name',
   );
 });
+test('update_artifact appends, changes kind, keeps a whole page as html, and says what to send', async () => {
+  const { artifactTool } = await import('../server/probe/artifacts.mjs');
+  const map = new Map([['session', { id: 's' }]]);
+  const storage = {
+    get: async k => map.get(k),
+    put: async (k, v) => map.set(k, structuredClone(v)),
+    delete: async k => map.delete(k),
+    list: async ({ prefix }) => new Map([...map].filter(([k]) => k.startsWith(prefix))),
+  };
+  const page = await artifactTool(
+    storage,
+    'create_artifact',
+    { title: 'Page', kind: 'markdown', content: '  <!DOCTYPE html><p>one</p>' },
+    [],
+  );
+  assert.equal(page.kind, 'html');
+  const id = page.id;
+  await artifactTool(storage, 'update_artifact', { id, append: '<p>two</p>' }, []);
+  assert.equal(map.get('artifact:' + id).content, '  <!DOCTYPE html><p>one</p><p>two</p>');
+  const code = await artifactTool(
+    storage,
+    'update_artifact',
+    { id, kind: 'code', content: 'print(1)' },
+    [],
+  );
+  assert.equal(code.kind, 'code');
+  await assert.rejects(
+    artifactTool(storage, 'update_artifact', { id, kind: 'pdf', content: 'x' }, []),
+    /kind must be one of/,
+  );
+  await assert.rejects(
+    artifactTool(storage, 'update_artifact', { id, content: '' }, []),
+    /one of: content .* edits .* or append/,
+  );
+});
+test('find_image keeps Commons images only, best match first, metadata as plain text', async () => {
+  const { findImage } = await import('../server/chat/images.mjs');
+  let asked;
+  const upstream = async (url, init) => {
+    asked = { url, agent: init.headers['User-Agent'] };
+    return Response.json({
+      query: {
+        pages: {
+          9: {
+            index: 2,
+            title: 'File:Moon.jpg',
+            imageinfo: [
+              {
+                mime: 'image/jpeg',
+                url: 'https://upload.wikimedia.org/moon.jpg',
+                thumburl: 'https://upload.wikimedia.org/1280px-moon.jpg',
+                thumbwidth: 1280,
+                thumbheight: 960,
+                extmetadata: {
+                  ImageDescription: { value: '<p>The <b>full</b> Moon &amp; stars</p>' },
+                  LicenseShortName: { value: 'CC BY-SA 4.0' },
+                  Artist: { value: '<a href="//x">Ana</a>' },
+                },
+              },
+            ],
+          },
+          3: { index: 1, title: 'File:Moon.pdf', imageinfo: [{ mime: 'application/pdf' }] },
+          4: {
+            index: 0,
+            title: 'File:Crater.png',
+            imageinfo: [{ mime: 'image/png', url: 'https://u/c.png', width: 64, height: 32 }],
+          },
+        },
+      },
+    });
+  };
+  const found = await findImage('full moon', { upstream });
+  assert.match(asked.url, /gsrsearch=full%20moon/);
+  assert.match(asked.agent, /^ArnoChat\//);
+  assert.deepEqual(
+    found.map(i => i.title),
+    ['Crater.png', 'Moon.jpg'],
+  );
+  assert.deepEqual(found[0], {
+    title: 'Crater.png',
+    url: 'https://u/c.png',
+    width: 64,
+    height: 32,
+    description: '',
+    license: '',
+    artist: '',
+  });
+  assert.equal(found[1].url, 'https://upload.wikimedia.org/1280px-moon.jpg');
+  assert.equal(found[1].description, 'The full Moon & stars');
+  assert.equal(found[1].artist, 'Ana');
+});
+test('the claim guard sends back, once, an answer saying an artifact changed when none did', async () => {
+  const { claimCheck } = await import('../server/chat/turn.mjs');
+  const guard = { claimed: false },
+    bodies = [];
+  let calls = 0;
+  const result = await plainChat({
+    model: 'test',
+    history: [],
+    prompt: 'Make the page blue',
+    key: 'test',
+    runTool: async () => ({}),
+    review: async answer => {
+      const text = claimCheck(guard, answer, { inPlay: true, changed: false });
+      return text && { text };
+    },
+    upstream: async (url, init) => {
+      bodies.push(JSON.parse(init.body));
+      return new Response(
+        'data: {"choices":[{"delta":{"content":"' +
+          (++calls === 1 ? 'I updated the page: it is now blue.' : 'I did not change it.') +
+          '"}}]}\n\ndata: [DONE]\n\n',
+      );
+    },
+  });
+  assert.equal(calls, 2);
+  assert.equal(result.summary, 'I did not change it.');
+  const sent = bodies[1].messages;
+  assert.equal(sent.at(-2).content, 'I updated the page: it is now blue.');
+  assert.match(sent.at(-1).content, /no create_artifact or update_artifact call succeeded/);
+  assert.equal(claimCheck({ claimed: false }, 'Here is a recipe.', { inPlay: true }), null);
+  assert.equal(
+    claimCheck({ claimed: false }, 'I updated it.', { inPlay: true, changed: true }),
+    null,
+  );
+});
+test('a tool’s screenshot reaches the model as an image after its result, the oldest left out', async () => {
+  let calls = 0;
+  const bodies = [];
+  const shot = n => ({
+    type: 'image/jpeg',
+    data: 'AAA' + n,
+    caption: 'Screenshot of P v' + n + ', rendered at phone size',
+  });
+  await plainChat({
+    model: 'test',
+    history: [],
+    prompt: 'Build it',
+    key: 'test',
+    runTool: async () => ({ id: 'a', check: { ok: true }, images: [shot(++calls)] }),
+    upstream: async (url, init) => {
+      bodies.push(JSON.parse(init.body));
+      return new Response(
+        bodies.length < 4
+          ? 'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c' +
+              bodies.length +
+              '","function":{"name":"update_artifact","arguments":"{}"}}]}}]}\n\ndata: [DONE]\n\n'
+          : 'data: {"choices":[{"delta":{"content":"Done."}}]}\n\ndata: [DONE]\n\n',
+      );
+    },
+  });
+  const messages = bodies[3].messages;
+  assert.equal(messages.find(m => m.role === 'tool').content, '{"id":"a","check":{"ok":true}}');
+  const images = messages.flatMap(m => (Array.isArray(m.content) ? m.content : []));
+  assert.deepEqual(
+    images.filter(p => p.type === 'image_url').map(p => p.image_url.url),
+    ['data:image/jpeg;base64,AAA2', 'data:image/jpeg;base64,AAA3'],
+  );
+  assert.ok(images.some(p => p.text === '(an earlier screenshot, left out)'));
+});
+test('renderPage reports page errors and failed loads, and always closes the browser', async () => {
+  const { renderPage } = await import('../server/probe/render.mjs');
+  let closed = 0,
+    served;
+  const handlers = {};
+  const page = {
+    setViewport: async () => {},
+    evaluateOnNewDocument: async () => {},
+    setRequestInterception: async () => {},
+    on: (event, f) => (handlers[event] = f),
+    goto: async url => {
+      handlers.request({ url: () => url, respond: r => (served = r) });
+      handlers.pageerror({
+        message: 'x is not defined',
+        stack: 'at https://artifact.invalid/:12:5',
+      });
+      handlers.pageerror({
+        message: 'x is not defined',
+        stack: 'at https://artifact.invalid/:12:5',
+      });
+      handlers.response({ url: () => 'https://cdn.jsdelivr.net/npm/nope.js', status: () => 404 });
+      handlers.console({ type: () => 'log', text: () => 'hello' });
+    },
+    screenshot: async () => 'SHOT',
+  };
+  const browser = { newPage: async () => page, close: async () => closed++ };
+  const r = await renderPage({}, '<p>hi</p>', { launch: async () => browser });
+  assert.equal(served.body, '<p>hi</p>');
+  assert.match(served.headers['Content-Security-Policy'], /connect-src 'none'/);
+  assert.deepEqual(r.errors, ['x is not defined (line 12)']);
+  assert.deepEqual(r.failedLoads, [{ url: 'https://cdn.jsdelivr.net/npm/nope.js', status: 404 }]);
+  assert.equal(r.screenshot, 'SHOT');
+  assert.equal(closed, 1);
+  const failed = await renderPage({}, '', {
+    launch: async () => ({
+      newPage: async () => Promise.reject(Error('no session')),
+      close: async () => closed++,
+    }),
+  });
+  assert.match(failed.unavailable, /no session/);
+  assert.equal(closed, 2);
+  assert.match((await renderPage({}, '')).unavailable, /No browser/);
+});

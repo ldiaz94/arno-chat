@@ -28,6 +28,7 @@ import { workspace } from '../code/workspace.mjs';
 
 import { codeTurn } from '../code/turn.mjs';
 import { extras, extraRoutes } from '../code/extras.mjs';
+import { adminRoutes } from '../admin.mjs';
 
 /** The most alarms one chat turn may run across (each up to 9 minutes of rounds). */
 const MAX_RUNS = 20;
@@ -40,6 +41,7 @@ const ROUTES = {
   ...sessionRoutes,
   ...codeRoutes,
   ...extraRoutes,
+  ...adminRoutes,
 };
 
 /** The Durable Object: one instance per session, user index or sign-in record. */

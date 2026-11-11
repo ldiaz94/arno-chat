@@ -37,7 +37,9 @@ screenshots`), so they show the app as the tests see it.
 ## Get it
 
 You need a Cloudflare account with Workers Paid (for Containers), Docker,
-Node 20 or later, and a GitHub App or OAuth app for signing in.
+Node 20 or later, and a GitHub App or OAuth app for signing in. Chats check
+the pages they make in Browser Rendering (the `BROWSER` binding): Workers
+Paid includes 10 browser hours a month, then $0.09 an hour.
 
 ```sh
 npm install
@@ -158,6 +160,12 @@ provider's streaming API) and runs the tools it calls: web research
 of the connections you marked for chats ([`chat-mcp.mjs`](server/chat/chat-mcp.mjs)).
 A tool that may change something waits for you to tap **Allow**.
 [`plan.mjs`](server/chat/plan.mjs) turns the options into budgets and limits.
+Each HTML page the model writes is opened in a headless browser at phone
+size ([`render.mjs`](server/probe/render.mjs)); its errors, failed loads and
+a screenshot go back to the model, which compares the page against your
+request before it answers. An answer that says a page changed when nothing
+was written is sent back. `find_image` ([`images.mjs`](server/chat/images.mjs))
+finds freely licensed pictures on Wikimedia Commons for pages to show.
 
 **5. A coding session is a container driven by arno.** [`server/code/turn.mjs`](server/code/turn.mjs)
 starts the session's container, or restores it from its snapshot

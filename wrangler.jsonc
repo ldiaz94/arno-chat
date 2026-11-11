@@ -10,6 +10,9 @@
   "vars": { "ALLOWED_GITHUB_LOGINS": "ldiaz94" },
   "durable_objects": { "bindings": [{ "name": "PROBE", "class_name": "ArnoProbe" }] },
   "exports": { "ArnoProbe": { "type": "durable-object", "storage": "sqlite" } },
+  // Browser Rendering: chat turns open the pages they write to check them
+  // (server/probe/render.mjs).
+  "browser": { "binding": "BROWSER" },
   "containers": [
     {
       "name": "arno-compat-probe",

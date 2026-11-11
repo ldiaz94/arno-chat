@@ -3,6 +3,7 @@
  *   /auth/*  -> auth.mjs (GitHub sign-in, MCP OAuth callback)
  *   /api/*   -> same-origin and sign-in checks, then api.mjs routes,
  *               then sessions-api.mjs (per-session paths)
+ *   /admin/* -> admin.mjs (read-only storage, behind ADMIN_TOKEN)
  *   other    -> 404 (the page itself is served as a static asset)
  *
  * The Durable Object class (probe/probe.mjs) and the gateway classes
@@ -12,6 +13,7 @@ import { SECURITY, json, sameOrigin } from './http.mjs';
 import { currentAuth, handleOAuth, repoAccess } from './auth.mjs';
 import { apiRoutes } from './api.mjs';
 import { sessionPaths } from './sessions-api.mjs';
+import { adminRoute } from './admin.mjs';
 
 export { ArnoProbe } from './probe/probe.mjs';
 export {
@@ -32,6 +34,7 @@ export default {
         const response = await handleOAuth(request, env, url);
         if (response) return response;
       }
+      if (url.pathname.startsWith('/admin/')) return await adminRoute(request, env, url);
       if (!url.pathname.startsWith('/api/'))
         return new Response('Not found', { status: 404, headers: SECURITY });
       if (!sameOrigin(request)) return json({ error: 'Cross-origin request denied' }, 403);

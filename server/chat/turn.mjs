@@ -14,7 +14,14 @@
  * value holds at most 128 KiB); a model call still running at 12 minutes is
  * stopped and its round asked again in the next alarm. Tools are never cut
  * off, so no action runs twice. An alarm the platform ends anyway is retried,
- * and finds the same state. */
+ * and finds the same state.
+ *
+ * An html page the model writes is opened in a browser (probe/render.mjs) and
+ * what failed goes back with the tool's result, with a screenshot for a model
+ * that sees images. Before the answer is kept, the turn reviews it: an answer
+ * that says an artifact changed when none did is sent back once, and a page
+ * written this turn is shown to the model once more (twice, if it changed it
+ * after the first) to compare against the request. */
 import { json } from '../http.mjs';
 import { plainChat } from './chat.mjs';
 import { modelInput } from '../probe/attachments.mjs';
@@ -23,13 +30,17 @@ import { providerModel } from '../providers.mjs';
 import { chatMcpTools, callChatMcp } from './chat-mcp.mjs';
 import { WEB_INSTRUCTIONS, WEB_TOOLS, research, citedSources } from './research.mjs';
 import { turnPlan } from './plan.mjs';
-import { effortSupported } from '../models.mjs';
+import { effortSupported, seesScreenshots } from '../models.mjs';
+import { IMAGE_TOOLS, findImage } from './images.mjs';
+import { renderArtifact } from '../probe/render.mjs';
 import {
   ARTIFACT_INSTRUCTIONS,
   ARTIFACT_TOOLS,
   artifactTool,
   artifactList,
   listArtifacts,
+  findArtifact,
+  getArtifact,
 } from '../probe/artifacts.mjs';
 
 /** The chat turn's methods, mixed into ArnoProbe (probe.mjs). */
@@ -123,7 +134,22 @@ export const chatTurn = {
         input = saved
           ? { text: prompt, images: [] } // the saved messages hold them
           : await modelInput(this.ctx.storage, prompt, attached),
-        artifacts = saved?.artifacts || [];
+        artifacts = saved?.artifacts || [],
+        listed = await listArtifacts(this.ctx.storage),
+        vision = await seesScreenshots(session.model),
+        // What the turn's review has done (see review below), kept across alarms.
+        guard = saved?.guard || { claimed: false, reviews: 0, reviewed: '' };
+      // Checks of pages this alarm, by 'id:version', so the review reuses the
+      // check made when the page was written.
+      const checks = new Map();
+      // An artifact's page rendered, as shown to the model (shownCheck).
+      const checked = async (a, unavailable) => {
+        const key = a.id + ':' + a.version;
+        if (!checks.has(key)) checks.set(key, await renderArtifact(this.env, a));
+        return shownCheck(a, checks.get(key), vision, unavailable);
+      };
+      // Whether this turn is about an artifact: one exists, or the user names one.
+      const inPlay = listed.length > 0 || ABOUT_ARTIFACT.test(prompt);
       // The owner's MCP connections marked for chats, unless this message
       // turned them off (web/options.mjs).
       const mcp =
@@ -139,13 +165,18 @@ export const chatTurn = {
         rounds: plan.rounds,
         maxOutput: plan.maxOutput,
         effort: (await effortSupported(session.model)) ? plan.effort : 'auto',
-        toolSpecs: [...(plan.search ? WEB_TOOLS : []), ...ARTIFACT_TOOLS, ...mcp.specs],
+        toolSpecs: [
+          ...(plan.search ? WEB_TOOLS : []),
+          ...ARTIFACT_TOOLS,
+          ...IMAGE_TOOLS,
+          ...mcp.specs,
+        ],
         key: await credential(this.env, session.ownerId, p, selected.provider),
         instructions: [
           instructions(p),
           plan.search ? WEB_INSTRUCTIONS : '',
           ARTIFACT_INSTRUCTIONS,
-          artifactList(await listArtifacts(this.ctx.storage)),
+          artifactList(listed),
           mcp.specs.length ? MCP_INSTRUCTIONS : '',
           mcp.failures.length ? 'Unavailable connections: ' + mcp.failures.join('; ') : '',
           plan.instructions,
@@ -155,7 +186,8 @@ export const chatTurn = {
         signal: this.chatAbort.signal,
         resume: saved?.chat,
         yieldAt: now + ALARM_YIELD,
-        checkpoint: chat => this.saveResume({ jobId, began, sources, counts, artifacts, chat }),
+        checkpoint: chat =>
+          this.saveResume({ jobId, began, sources, counts, artifacts, guard, chat }),
         onRound: () => this.phase('thinking', { workspace: 'chat', startupMs: 0 }),
         onProgress: preview => this.progress({ ...preview, jobId }),
         runTool: async (name, args) => {
@@ -167,7 +199,14 @@ export const chatTurn = {
             await this.activity(what);
             return callChatMcp(this.env, session.ownerId, remote, args);
           }
-          if (/_artifact$/.test(name)) return artifactTool(this.ctx.storage, name, args, artifacts);
+          if (name === 'find_image') return findImage(args.query);
+          if (name === 'check_artifact')
+            return checked(await findArtifact(this.ctx.storage, args.id), true);
+          if (/_artifact$/.test(name)) {
+            const done = await artifactTool(this.ctx.storage, name, args, artifacts);
+            if (name === 'read_artifact' || done.kind !== 'html') return done;
+            return { ...done, ...(await checked(await getArtifact(this.ctx.storage, done.id))) };
+          }
           await this.phase(name === 'web_search' ? 'searching' : 'reading', { workspace: 'chat' });
           const data = await research(name, args, {
             key: webKey,
@@ -182,6 +221,36 @@ export const chatTurn = {
             sourceCount: sources.length,
           });
           return data;
+        },
+        review: async answer => {
+          const claim = claimCheck(guard, answer, { inPlay, changed: artifacts.length > 0 });
+          if (claim) return { text: claim };
+          // The page written last this turn: reviewed once, and once more only
+          // if the model changed it after the first review.
+          const page = artifacts
+              .filter(a => a.kind === 'html')
+              .sort((a, b) => a.updatedAt - b.updatedAt)
+              .at(-1),
+            key = page && page.id + ':' + page.version;
+          if (!page || key === guard.reviewed) return null;
+          if (guard.reviews && (guard.reviews >= 2 || !guard.reviewed.startsWith(page.id + ':')))
+            return null;
+          const shown = await checked(await getArtifact(this.ctx.storage, page.id));
+          if (!shown.check) return null; // nothing rendered, nothing to compare
+          guard.reviews++;
+          guard.reviewed = key;
+          return {
+            text:
+              'Check of "' +
+              page.title +
+              '" v' +
+              page.version +
+              ': ' +
+              JSON.stringify(shown.check) +
+              '\n\n' +
+              REVIEW,
+            images: shown.images,
+          };
         },
       }).catch(async e => {
         const cancelled = (await this.ctx.storage.get('job'))?.status === 'cancelled';
@@ -248,6 +317,45 @@ const RESUME_PART = 30000;
 /** What the model is told when a chat has MCP tools. */
 const MCP_INSTRUCTIONS =
   'Tools named <connection>__<tool> reach services the user connected (MCP). Use them when the question is about those services. A tool that changes something waits for the user to allow it; if the user does not, say so and do not try again.';
+
+/** What the model is given of artifact a's rendered page r (renderArtifact's):
+ * the check, and the screenshot as an image when it can see one (vision).
+ * When nothing could be rendered: {check: {unavailable}} if unavailable is
+ * asked for, else {}. */
+function shownCheck(a, r, vision, unavailable) {
+  if (r.unavailable) return unavailable ? { check: { unavailable: r.unavailable } } : {};
+  const caption = 'Screenshot of ' + a.title + ' v' + a.version + ', rendered at phone size';
+  return {
+    check: {
+      ok: !r.errors.length && !r.failedLoads.length,
+      errors: r.errors,
+      failedLoads: r.failedLoads,
+    },
+    images: vision && r.screenshot ? [{ type: 'image/jpeg', data: r.screenshot, caption }] : [],
+  };
+}
+/** A prompt that names an artifact, or the kind of thing one holds. */
+const ABOUT_ARTIFACT = /\b(artifact|page|app|game|site|website|chart|diagram|drawing|svg|html)\b/i;
+/** An answer that says it changed something: "I updated / added / fixed …",
+ * "it is now live", "now has", "is now v3", or one opening with "Done".
+ * Kept narrow, as it sends a right answer back too when it matches one: it
+ * wants the first person or a plain statement that the thing changed. */
+const CLAIMS_CHANGE =
+  /\bI(?:'ve| have)? (?:just )?(?:updated|added|fixed|rebuilt|built|created|made|changed|shipped|rewrote|redesigned|replaced|removed|implemented)\b|\b(?:is|are) (?:now )?live\b|\bnow (?:has|have|shows|includes)\b|\b(?:now|is|to) v\d+\b|^\s*done\b/im;
+/** Sent back with an answer that says an artifact changed when none did. */
+const CLAIM_CHECK =
+  'Your answer says the artifact changed, but no create_artifact or update_artifact call succeeded this turn. Make the change now with the tool, or correct your answer to say it was not made.';
+/** Sent with the check of a page written this turn, before the answer. */
+const REVIEW =
+  'Before answering, compare the page against the user’s request: list each thing asked for and whether it is visibly present and working. Fix what is missing or broken with update_artifact, then answer. If all is there, answer now.';
+/** What to send back with an answer that claims an artifact changed in a turn
+ * about artifacts when nothing was written (changed false); null otherwise.
+ * Once a turn: guard.claimed remembers it. */
+export function claimCheck(guard, answer, { inPlay, changed }) {
+  if (guard.claimed || changed || !inPlay || !CLAIMS_CHANGE.test(answer)) return null;
+  guard.claimed = true;
+  return CLAIM_CHECK;
+}
 
 /** One line in the Worker's log for each finished chat turn: what it ran on,
  * how long and how much, the tools it called (by name, with failures), the

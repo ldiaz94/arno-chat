@@ -11,8 +11,9 @@
  *                         updatedAt, path}
  *   session.artifacts    {<id>: summary}  for the list and the gallery
  *
- * A chat's model makes, reads and revises them with three tools
- * (ARTIFACT_TOOLS), and each turn's instructions list the conversation's
+ * A chat's model makes, reads, revises and checks them with four tools
+ * (ARTIFACT_TOOLS; check_artifact runs in ../chat/turn.mjs, through
+ * render.mjs), and each turn's instructions list the conversation's
  * artifacts (artifactList), so later turns can find earlier ones; a
  * coding session's arno writes files that ../code/collect.mjs brings in
  * (putArtifact). HTML pages and Mermaid diagrams are shown by viewResponse,
@@ -40,8 +41,22 @@ const PREVIEW = 240;
 const MERMAID = 'https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs';
 
 /** Text added to the system prompt telling the model when and how to use the artifact tools. */
-export const ARTIFACT_INSTRUCTIONS =
-  'You can make artifacts with create_artifact, read one with read_artifact and revise it with update_artifact: standalone things the user may want to keep, open full screen, copy or download. Kinds: markdown (documents, plans, lists, tables, itineraries, specs), html (an interactive page, mini-app, game, calculator or chart: one self-contained file with inline CSS and JS; scripts may load from cdn.jsdelivr.net, cdnjs.cloudflare.com or unpkg.com, but the page has no network otherwise, so put its data in the page), svg (a drawing, icon or illustration), mermaid (a flowchart, sequence, class, state, gantt or ER diagram; the source only, no fence) and code (a source file; give its language). For a chart, an html page with Chart.js (<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>) and the data inline. For 3D, an html page with three.js as a module, through an import map: {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}; the page cannot fetch files, so build geometry in code and give textures as data: URLs or https images. Use one for substantial content (roughly more than 15 lines), anything visual or interactive, or when asked; keep the chat reply short and refer to the artifact by title. Update an existing artifact rather than making a near-duplicate; for a small change, send edits instead of the whole content.';
+export const ARTIFACT_INSTRUCTIONS = `Artifacts are standalone things the user may keep, open full screen, copy or download. Make one for substantial content (over ~15 lines), anything visual or interactive, or when asked; keep the chat reply short and name the artifact by title. Update an existing one rather than make a near-duplicate, and keep related artifacts consistent (notes must describe the current page).
+Kinds (the content must match the kind; update_artifact with kind converts): markdown (documents, plans, tables), html (one self-contained page, inline CSS and JS), svg, mermaid (source only, no fence), code (give language).
+HTML pages:
+- Scripts load only from cdn.jsdelivr.net, cdnjs.cloudflare.com, unpkg.com (inline is fine); styles also from Google Fonts.
+- Images: data:, blob: or any https URL. Audio/video: data: or blob: only.
+- No fetch, XHR or WebSocket, no form submits, no storage or cookies (localStorage throws), no relative paths: put data in the page.
+- At most 200,000 characters. Shown in an iframe, often on a phone (~390px wide): design phone-first, use pointer events, nothing hover-only.
+- Chart.js: <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>.
+- three.js: a module with the import map {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}; build geometry in code; TextureLoader takes https images, fetch-based loaders fail.
+Rules:
+- Never say a change is done, live or under way unless you made it with a tool in this turn; if you could not, say so.
+- Writing an html artifact checks it in a phone-sized browser: read the check result and fix what it reports before you reply. check_artifact checks again, e.g. after layout changes.
+- On a reported error, read_artifact and fix the actual cause, located by pageErrors and the check's line numbers (often a syntax slip). Never blame the sandbox, network or CDN without evidence.
+- Factual content: research it first when you have web tools, and cite in the reply. Images: only URLs from find_image or web results, never from memory; give each image an onerror fallback. Never claim a check you did not run.
+- Simulations and visualisations: first decide the model (equations, what is drawn, boundary conditions; an airfoil is a solid obstacle, drawn and enforced in the solver). Make every requested element visible. Correct and clear beats more particles; tune one thing at a time.
+- Change with edits, not rewrites. A reply stops after ~3 minutes, so build a large page as a working skeleton, then add sections with append or edits.`;
 
 /** The tool definitions offered to the model (name, description, JSON schema). */
 export const ARTIFACT_TOOLS = [
@@ -76,12 +91,13 @@ export const ARTIFACT_TOOLS = [
   {
     name: 'update_artifact',
     description:
-      'Make a new version of an artifact from earlier in this conversation: either the whole new content, or edits that each replace text occurring exactly once.',
+      'Make a new version of an artifact from earlier in this conversation. Send exactly one of: content (the whole new content), edits (each replaces text occurring exactly once) or append (text added at the end, to build a large page in parts). An html page is then opened in a browser at phone size and the result says what failed (check).',
     inputSchema: {
       type: 'object',
       properties: {
         id: { type: 'string', description: 'The artifact id create_artifact returned' },
         title: { type: 'string' },
+        kind: { type: 'string', enum: Object.keys(KINDS), description: 'Only to change its kind' },
         content: { type: 'string', description: 'The whole new content' },
         edits: {
           type: 'array',
@@ -92,7 +108,21 @@ export const ARTIFACT_TOOLS = [
             required: ['find', 'replace'],
           },
         },
+        append: {
+          type: 'string',
+          description: 'Instead of content or edits: text added to the end of the current content',
+        },
       },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'check_artifact',
+    description:
+      'Open an html or svg artifact in a browser at phone size, as the user sees it, and report its script errors and the images, scripts or styles that failed to load.',
+    inputSchema: {
+      type: 'object',
+      properties: { id: { type: 'string', description: 'The artifact id, from the list' } },
       required: ['id'],
     },
   },
@@ -166,6 +196,14 @@ function checkContent(content, kind) {
   if (typeof content !== 'string' || !content.trim()) throw Error('Artifact content is empty');
   if (content.length > most) throw Error('Artifacts are limited to ' + most + ' characters');
 }
+/** Whether a tool sent content with something in it. */
+const filled = content => typeof content === 'string' && !!content.trim();
+/** The kind to keep content as: a whole HTML page sent as markdown or code,
+ * as models sometimes do, is kept as the page it is. */
+export function kindFor(kind, content) {
+  const page = /^\s*<(!doctype html|html)[\s>]/i.test(content);
+  return page && (kind === 'markdown' || kind === 'code') ? 'html' : kind;
+}
 /** content with each edit's find, which must occur exactly once, replaced. */
 export function applyEdits(content, edits) {
   for (const { find, replace } of edits) {
@@ -219,7 +257,7 @@ export async function artifactTool(storage, name, args, touched) {
   const title = typeof args.title === 'string' ? args.title.trim().slice(0, 80) : '';
   let artifact;
   if (name === 'read_artifact') {
-    const a = await find(storage, args.id);
+    const a = await findArtifact(storage, args.id);
     if (a.kind === 'image')
       if (a.kind === 'image')
         return { id: a.id, title: a.title, kind: a.kind, content: '(an image)' };
@@ -237,7 +275,8 @@ export async function artifactTool(storage, name, args, touched) {
   }
   if (name === 'create_artifact') {
     if (!title) throw Error('Give the artifact a title');
-    const kind = KINDS[args.kind] ? args.kind : 'markdown';
+    if (!filled(args.content)) throw Error('Send create_artifact the whole content in content');
+    const kind = kindFor(KINDS[args.kind] ? args.kind : 'markdown', args.content);
     artifact = await putArtifact(storage, null, {
       title,
       kind,
@@ -245,9 +284,23 @@ export async function artifactTool(storage, name, args, touched) {
       content: args.content,
     });
   } else {
-    const old = await find(storage, args.id);
-    const content = Array.isArray(args.edits) ? applyEdits(old.content, args.edits) : args.content;
-    artifact = await putArtifact(storage, old.id, { title: title || old.title, content });
+    const old = await findArtifact(storage, args.id);
+    if (args.kind !== undefined && !KINDS[args.kind])
+      throw Error('kind must be one of ' + Object.keys(KINDS).join(', '));
+    const content = Array.isArray(args.edits)
+      ? applyEdits(old.content, args.edits)
+      : typeof args.append === 'string' && args.append
+        ? old.content + args.append
+        : args.content;
+    if (!filled(content))
+      throw Error(
+        'Send update_artifact one of: content (the whole new content), edits (find and replace pairs) or append (text added at the end)',
+      );
+    artifact = await putArtifact(storage, old.id, {
+      title: title || old.title,
+      kind: kindFor(args.kind || old.kind, content),
+      content,
+    });
   }
   const card = summary(artifact),
     i = touched.findIndex(t => t.id === card.id);
@@ -258,7 +311,7 @@ export async function artifactTool(storage, name, args, touched) {
 
 /** The artifact a tool call names, by id or, as models sometimes send, by its
  * title; when none matches, the error lists the ones there are. */
-async function find(storage, ref) {
+export async function findArtifact(storage, ref) {
   const key = String(ref || '').trim();
   const byId = key && (await load(storage, key));
   if (byId) return byId;
@@ -331,7 +384,7 @@ export async function restoreArtifact(storage, id, version) {
 /** The policy an artifact's page runs under: a sandbox (an origin of its
  * own, so no cookies, storage or app API), scripts from the three CDNs, no
  * network, framed only by the app. */
-const PAGE_POLICY = [
+export const PAGE_POLICY = [
   'sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads allow-forms',
   "default-src 'none'",
   "script-src 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com",

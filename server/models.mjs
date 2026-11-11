@@ -91,6 +91,18 @@ export async function acceptsImages(model, upstream = fetch) {
   return provider !== 'ollama' || !!(await ollamaShow(id, upstream))?.vision;
 }
 
+/** Whether the app may show a model screenshots of its pages unasked. Stricter
+ * than acceptsImages, since a model that turns images away fails the whole
+ * turn: Anthropic and Gemini models, OpenAI's but the few text-only ones,
+ * and Ollama models listing "vision". The other providers mix text-only and
+ * vision models under no reliable sign, so theirs get the check as text. */
+export async function seesScreenshots(model, upstream = fetch) {
+  const { provider, id } = providerModel(model);
+  if (provider === 'ollama') return !!(await ollamaShow(id, upstream))?.vision;
+  if (provider === 'openai') return !/^(o1-mini|o3-mini|gpt-3\.5)/.test(id);
+  return provider === 'anthropic' || provider === 'gemini';
+}
+
 /** Whether a model can honour a thinking effort: its provider declares which
  * of its models do (PROVIDERS' effort); an Ollama model does when /api/show
  * lists "thinking". */
