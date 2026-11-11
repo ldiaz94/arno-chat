@@ -52,8 +52,7 @@ export async function renderPage(env, html, { launch } = {}) {
     if (errors.size < MAX_ITEMS) errors.add(String(text).slice(0, ITEM_LENGTH));
   };
   const noteFailed = (url, status) => {
-    // The browser asks for a favicon of its own accord; the app shows none.
-    if (url.endsWith('/favicon.ico')) return;
+    if (isFavicon(url)) return;
     if (failed.size < MAX_ITEMS && !failed.has(url)) failed.set(url, status);
   };
   const work = (async () => {
@@ -62,7 +61,9 @@ export async function renderPage(env, html, { launch } = {}) {
     await page.setViewport(VIEWPORT);
     await page.evaluateOnNewDocument(POLICY_LISTENER);
     page.on('pageerror', e => noteError(e.message + lineOf(e)));
-    page.on('console', m => m.type() === 'error' && noteError(m.text()));
+    page.on('console', m => {
+      if (m.type() === 'error' && !isFavicon(m.location?.()?.url || '')) noteError(m.text());
+    });
     page.on('requestfailed', r => noteFailed(r.url(), r.failure()?.errorText || 'failed'));
     page.on('response', r => r.status() >= 400 && noteFailed(r.url(), r.status()));
     await page.setRequestInterception(true);
@@ -117,6 +118,11 @@ export async function renderPage(env, html, { launch } = {}) {
   } finally {
     clearTimeout(timer);
   }
+}
+/** Whether url is the favicon the browser asks for of its own accord; the
+ * app shows none, so its 404 (and the console line about it) is no fault. */
+function isFavicon(url) {
+  return url.endsWith('/favicon.ico');
 }
 /** ' (line n)' from an uncaught error's stack, for the page's own code; ''
  * when it came from elsewhere or has no line. */
