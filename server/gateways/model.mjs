@@ -285,11 +285,17 @@ export async function modelRequest(
   // The runner sends back the thinking it read, which mistralDeltas made
   // reasoning_content; Mistral refuses unknown message fields.
   if (provider === 'mistral')
-    payload.messages = body.messages.map(m => {
+    payload.messages = payload.messages.map(m => {
       const copy = { ...m };
       delete copy.reasoning_content;
       return copy;
     });
+  // A reply cut off mid-stream leaves an assistant message with nothing in
+  // it, which OpenAI-style providers refuse for the rest of the session.
+  if (provider !== 'anthropic')
+    payload.messages = payload.messages.filter(
+      m => m.role !== 'assistant' || m.content || m.tool_calls?.length,
+    );
   if (provider === 'anthropic') {
     const original =
       typeof body.system === 'string'
@@ -301,7 +307,7 @@ export async function modelRequest(
     if (payload.thinking) replayThinking(payload, await recallThinking());
   } else {
     if (instructions)
-      payload.messages = [{ role: 'system', content: instructions }, ...body.messages];
+      payload.messages = [{ role: 'system', content: instructions }, ...payload.messages];
   }
   if (body.tools !== undefined) {
     if (!Array.isArray(body.tools) || body.tools.length > 64) {

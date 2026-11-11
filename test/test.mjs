@@ -1410,6 +1410,9 @@ test('coding gateway: Mistral gets no stream_options and its thinking chunks bec
           { role: 'user', content: 'hi' },
           { role: 'assistant', content: 'Hello', reasoning_content: 'greet' },
           { role: 'user', content: 'and?' },
+          // What a reply cut off mid-stream leaves behind.
+          { role: 'assistant', content: '' },
+          { role: 'user', content: 'still there?' },
         ],
         stream: true,
       }),
@@ -1417,6 +1420,7 @@ test('coding gateway: Mistral gets no stream_options and its thinking chunks bec
     {
       provider: 'mistral',
       model: 'mistral-large-4',
+      instructions: 'Be brief.',
       key: 'k',
       authorize: async () => true,
       onUsage: async u => (usage = u),
@@ -1430,7 +1434,11 @@ test('coding gateway: Mistral gets no stream_options and its thinking chunks bec
   assert.equal(sent.url, 'https://api.mistral.ai/v1/chat/completions');
   assert.equal(sent.body.stream_options, undefined);
   assert.equal(sent.body.max_tokens, 16384);
-  assert.deepEqual(sent.body.messages[1], { role: 'assistant', content: 'Hello' });
+  assert.deepEqual(
+    sent.body.messages.map(m => m.role),
+    ['system', 'user', 'assistant', 'user', 'user'],
+  );
+  assert.deepEqual(sent.body.messages[2], { role: 'assistant', content: 'Hello' });
   assert.deepEqual(JSON.parse(lines[1].slice(6)).choices[0].delta, {
     content: 'Ans',
     reasoning_content: 'it',
