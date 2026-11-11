@@ -428,11 +428,30 @@ export function editMessage(node, text) {
   };
   save.onclick = () => {
     const v = area.value.trim();
-    if (!v || state.busy) return;
-    while (node.nextSibling) node.nextSibling.remove();
-    node.remove();
-    send(v, at, undefined, node._attachments);
+    if (v && !state.busy) replaceFrom(node, v, at);
   };
+}
+/** Send a saved chat message again as it is: its answer and every later turn
+ * are replaced. */
+export function retryMessage(node, text) {
+  if (state.offline) return toast('Reconnect to retry');
+  if (state.busy) return toast('Wait for the current turn to finish');
+  const at = Number(node.dataset.at);
+  if (!at) return toast('This message can be retried once its answer is saved');
+  const later = [...node.parentNode.querySelectorAll('.turn.user')].filter(
+    n => n.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_PRECEDING,
+  ).length;
+  const lost = later === 1 ? 'The message after it' : 'The ' + later + ' messages after it';
+  if (later && !confirm('Retry this message? ' + lost + ' and their answers will be removed.'))
+    return;
+  replaceFrom(node, text, at);
+}
+/** Clear node (a saved message, sent at at) and everything after it, and send
+ * text in its place. */
+function replaceFrom(node, text, at) {
+  while (node.nextSibling) node.nextSibling.remove();
+  node.remove();
+  send(text, at, undefined, node._attachments);
 }
 /** Send a failed turn's message again in its place. */
 export function retry(card, text) {

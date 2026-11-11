@@ -15,7 +15,7 @@ import {
   copy,
   main,
 } from './core.js';
-import { editMessage, retry } from './turns.js';
+import { editMessage, retry, retryMessage } from './turns.js';
 import { attachmentsHtml } from './attach.js';
 import { artifactCard } from './artifacts.js';
 import { optionTags } from './options.mjs';
@@ -52,8 +52,12 @@ export function message(role, text, result = {}) {
     if (state.session?.kind === 'chat') {
       node
         .querySelector('.spacer')
-        .insertAdjacentHTML('afterend', '<button type="button" class="edit-message">Edit</button>');
+        .insertAdjacentHTML(
+          'afterend',
+          '<button type="button" class="edit-message">Edit</button><button type="button" class="edit-message retry-message">Retry</button>',
+        );
       node.querySelector('.edit-message').onclick = () => editMessage(node, text);
+      node.querySelector('.retry-message').onclick = () => retryMessage(node, text);
     }
     node.querySelector('.copy-message').onclick = () => copy(text);
   } else {
