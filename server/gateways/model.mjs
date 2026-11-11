@@ -291,11 +291,10 @@ export async function modelRequest(
       return copy;
     });
   // A reply cut off mid-stream leaves an assistant message with nothing in
-  // it, which OpenAI-style providers refuse for the rest of the session.
-  if (provider !== 'anthropic')
-    payload.messages = payload.messages.filter(
-      m => m.role !== 'assistant' || m.content || m.tool_calls?.length,
-    );
+  // it, which every provider refuses for the rest of the session.
+  payload.messages = payload.messages.filter(
+    m => m.role !== 'assistant' || m.content?.length || m.tool_calls?.length,
+  );
   if (provider === 'anthropic') {
     const original =
       typeof body.system === 'string'
