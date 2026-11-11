@@ -39,10 +39,16 @@ export function register() {
 
 /** Enables or disables the controls that need the network: changing the model,
  * and every element marked `data-online="Reconnect to …"` (that text is its
- * tooltip while offline). Busy disables sending and changing the model; offline,
+ * tooltip while offline). Busy disables changing the model, and Send shows
+ * beside Stop once there is text, to queue it for after the turn; offline,
  * sending and attaching still work, into the outbox. */
 export function controls() {
-  $('#send').disabled = state.busy;
+  const queue = state.busy && !!$('#prompt').value.trim(),
+    send = $('#send');
+  send.hidden = state.busy && !queue;
+  send.classList.toggle('queue', queue);
+  send.setAttribute('aria-label', queue ? 'Queue message' : 'Send');
+  send.title = queue ? 'Queue · sends when this turn ends' : '';
   for (const id of MODEL_BUTTONS) {
     const b = document.getElementById(id);
     if (!b) continue;

@@ -45,7 +45,7 @@ import './options.js'; // wires the options button, its popover and chips
 import './complete.js'; // slash-command suggestions in the composer
 import { openActions } from './actions.js'; // the ⋯ sheet
 import { mcpReturn } from './settings.js'; // also wires the account settings dialog
-import { register, warm, clearData } from './offline.js';
+import { register, warm, clearData, controls } from './offline.js';
 import { startOutbox, flush } from './outbox.js';
 tableResize(document);
 
@@ -107,6 +107,7 @@ $('#stop').onclick = async () => {
 };
 prompt.oninput = () => {
   resizePrompt();
+  controls(); // while a turn runs, typed text can be queued
   if (state.session?.id) sessionStorage.setItem('draft:' + state.session.id, prompt.value);
 };
 prompt.onkeydown = e => {

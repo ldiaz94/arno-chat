@@ -979,6 +979,19 @@ const { chromium } = require('playwright'),
       /Linear · create_issue[\s\S]*"title": "Fix"/,
     );
     await page.screenshot({ path: '/tmp/arno-approval-mobile.png' });
+    // While the turn runs, typed text can be queued: Send comes back beside
+    // Stop as Queue, and the message waits in line, editable, until it ends.
+    const draft = page.getByLabel('Message', { exact: true });
+    assert.equal(await page.locator('#send').isVisible(), false);
+    await draft.fill('And the tides tomorrow?');
+    await page.getByRole('button', { name: 'Queue message' }).waitFor();
+    await draft.press('Control+Enter');
+    await page.locator('.queued-badge.behind', { hasText: 'Up next' }).waitFor();
+    assert.equal(await page.locator('#send').isVisible(), false);
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: '/tmp/arno-queued-mobile.png' });
+    await page.locator('.turn.queued').getByRole('button', { name: 'Cancel' }).click();
+    await page.locator('.turn.queued').waitFor({ state: 'detached' });
     await page.getByRole('button', { name: 'Allow', exact: true }).click();
     await page.getByText('Allowed · running').waitFor();
     assert.deepEqual(approved, { id: 'ap1', allow: true });

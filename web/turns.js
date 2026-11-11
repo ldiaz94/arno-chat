@@ -377,7 +377,7 @@ export async function watchJob(id, gen, expected) {
 // it cannot go now. Then follows the job.
 export async function submit(e) {
   e.preventDefault();
-  if (!state.session || state.busy || !prompt.value.trim()) return;
+  if (!state.session || !prompt.value.trim()) return;
   if (uploading()) return toast('Wait for the uploads to finish');
   const text = prompt.value.trim();
   // /pull is the app's: it updates the workspace without a turn (code.js).
@@ -456,15 +456,20 @@ async function send(text, editAt, replaces, attachments = []) {
       ...(editAt ? { editAt } : {}),
       ...(replaces ? { replaces } : {}),
     };
-  // A new message waits in the outbox while offline, while earlier ones of its
+  // A new message waits in the outbox while offline, while a turn runs (it is
+  // queued, and sends when the turn ends), while earlier ones of its
   // conversation wait, or while its files are not uploaded; edits and retries
   // of saved turns need the network.
   const plain = !editAt && !replaces;
   if (
     plain &&
-    (state.offline || isLocal(id) || waiting(id, 'message') || attachments.some(a => !a.id))
+    (state.offline ||
+      state.busy ||
+      isLocal(id) ||
+      waiting(id, 'message') ||
+      attachments.some(a => !a.id))
   )
-    return queueMessage(id, body, attachments);
+    return queueMessage(id, body, attachments, state.busy && !state.offline);
   if (state.offline) return toast('Reconnect to send');
   $('#thread .starter')?.remove();
   const asked = message('You', body.prompt, { attachments });

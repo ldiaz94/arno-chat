@@ -24,13 +24,20 @@ import { watchJob } from './turns.js';
 import { uploadFile, bytes } from './attach.js';
 import { moveOptions } from './options.js';
 import { loadModels } from './models.js';
-import { banner } from './offline.js';
+import { banner, controls } from './offline.js';
 
 const JOB_POLL = 2000; // ms between checks of a conversation's running turn
 const JOB_POLLS = 900; // checks before giving up on a turn that never ends (30 min)
 const NEW_CHAT_TITLE = 'General chat'; // the name the server gives a new chat
-// The badge of a waiting message, by its state.
+// The badge of a waiting message, by its state; one queued behind a running
+// turn (behind) says where it stands in line instead.
 const BADGE = { queued: 'Queued · sends when online', sending: 'Sending…', failed: 'Not sent' };
+const badge = (e, i) =>
+  e.behind && e.state === 'queued' && !state.offline
+    ? i
+      ? 'Queued · ' + (i + 1) + ' in line'
+      : 'Up next'
+    : BADGE[e.state];
 
 /** The IndexedDB store, behind the storage interface queue.mjs expects. */
 function database() {
@@ -70,7 +77,10 @@ export const waiting = (id, kind) =>
 
 /** What the banner shows: entries waiting, and progress while sending. */
 export function outboxStatus() {
-  const left = outbox.entries.filter(e => e.kind !== 'chat' && e.state !== 'failed').length;
+  // Messages queued behind a running turn aren't the network's to report.
+  const left = outbox.entries.filter(
+    e => e.kind !== 'chat' && e.state !== 'failed' && !e.behind,
+  ).length;
   return { waiting: left, sending: !!pass, done: pass?.done || 0, total: (pass?.done || 0) + left };
 }
 
@@ -110,19 +120,22 @@ export async function startOutbox() {
 }
 
 /** Keeps a message to send later. body is { id, prompt }; attachments are
- * uploaded ones ({ id, … }) or files picked offline ({ file, … }). */
-export async function queueMessage(sessionId, body, attachments = []) {
+ * uploaded ones ({ id, … }) or files picked offline ({ file, … }); behind
+ * when it waits for a running turn rather than for the network. */
+export async function queueMessage(sessionId, body, attachments = [], behind = false) {
   try {
     await outbox.add({
       kind: 'message',
       sessionId,
       body: { id: body.id, prompt: body.prompt },
       attachments,
+      ...(behind && { behind }),
     });
   } catch (e) {
     return showError(e);
   }
   showQueued();
+  controls();
   scrollDown(true);
   flush();
 }
@@ -201,16 +214,19 @@ function filesHtml(list) {
 
 /** One waiting message in the thread: badge, Edit and Cancel; a refused one
  * also gets the failure card with Retry, Edit and Cancel. */
-function showEntry(e, box) {
+function showEntry(e, box, i) {
   const node = message('You', e.body.prompt);
   node.classList.add('queued');
   node.querySelector('.edit-message')?.remove();
+  node.querySelector('.user-footer')?.remove(); // nothing saved to copy yet
   node
     .querySelector('.spacer')
     .insertAdjacentHTML(
       'afterend',
-      '<span class="queued-badge">' +
-        BADGE[e.state] +
+      '<span class="queued-badge' +
+        (e.behind && !state.offline ? ' behind' : '') +
+        '">' +
+        badge(e, i) +
         '</span>' +
         (e.state === 'queued'
           ? '<button type="button" class="edit-message">Edit</button><button type="button" class="edit-message">Cancel</button>'
@@ -254,7 +270,7 @@ export function showQueued() {
   const box = document.createElement('div');
   box.className = 'outbox-items';
   thread.append(box);
-  for (const e of list) showEntry(e, box);
+  list.forEach((e, i) => showEntry(e, box, i));
 }
 
 /** Edits a waiting message's text in place; saving queues it again. */
@@ -397,6 +413,9 @@ async function createChat(e) {
  * waits for its turn to finish, following it live when it is on screen. */
 async function sendMessage(e) {
   const sid = e.sessionId;
+  // Queued, it can still be edited or cancelled until the turn before it ends.
+  await settle(sid);
+  if (!outbox.get(e.key)) return; // cancelled meanwhile
   e = await outbox.update(e.key, { state: 'sending' });
   showQueued();
   for (const a of e.attachments || [])

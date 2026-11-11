@@ -1010,10 +1010,23 @@ th:hover .col-resize::after,
   justify-content: flex-end;
   margin-top: 8px;
 }
-/* Messages waiting in the outbox (outbox.js): dashed, with a badge. */
+/* Messages waiting in the outbox (outbox.js): dashed, with a badge; queued
+   behind a running turn, tinted with the accent and in line. */
 .turn.user.queued .user-content {
   border: 1px dashed var(--line);
   opacity: 0.85;
+}
+.turn.user.queued:has(.behind) .user-content {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+  background: color-mix(in srgb, var(--accent) 6%, var(--raised));
+  opacity: 1;
+}
+.queued-badge.behind {
+  padding: 2px 9px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-weight: 600;
 }
 .queued-badge,
 .queued-mark {
@@ -4200,6 +4213,10 @@ details.setting-card.collapsible[open] > summary {
   stroke-width: 2.4;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+.composer-actions .send-button.queue {
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  color: var(--accent);
 }
 .stop-button {
   position: relative;

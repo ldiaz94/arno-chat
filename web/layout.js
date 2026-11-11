@@ -74,13 +74,12 @@ export function drawer(open) {
 }
 $('#send').innerHTML = icon('arrow');
 $('#stop').innerHTML = icon('stop');
-// Sets the busy flag and swaps Send for Stop while a turn runs.
+// Sets the busy flag and shows Stop while a turn runs (Send stays only to
+// queue typed text, see controls).
 export function busy(value) {
   state.busy = value;
-  // While a turn runs, Stop takes Send's place; the thread shows what is happening.
   $('#stop').hidden = !value;
-  $('#send').hidden = value;
-  controls(); // send and model change wait while busy; offline, attaching too
+  controls(); // model change waits while busy; offline, attaching too
 }
 /** The header: the page's or conversation's name and a line under it. A coding
  * session's name is its repository, owner muted, and its line the branch, the
