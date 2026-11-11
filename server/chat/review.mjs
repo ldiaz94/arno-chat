@@ -23,7 +23,11 @@ const REVIEWER =
   '2. Check the physics, maths and logic in the code for errors: coordinate mappings, units, signs, formulas, state that is never updated.\n' +
   '3. Check the layout at both sizes: overflow, overlap, cut-off or unreadable parts, areas left empty where something should be drawn.\n' +
   '4. Note broken visuals and the errors the browser check found.\n' +
-  'Reply only with a short numbered list of concrete defects, each with how to fix it, or with exactly "No defects." Leave out matters of taste.';
+  'You have no tools: write the review itself, as text. Reply only with a short numbered list of concrete defects, each with how to fix it, or with exactly "No defects." Leave out matters of taste.';
+/** Added when the reviewer is asked again, having answered with a tool call
+ * (as Kimi does) or nothing. */
+const TEXT_ONLY =
+  '\n\nYou have no tools in this reply. Write the review itself now, as plain text.';
 /** A reply that finds nothing wrong. */
 const NO_DEFECTS = /^\W*no defects\b/i;
 
@@ -62,33 +66,50 @@ export async function reviewPage({
   ]
     .filter(Boolean)
     .join('\n\n');
-  const timeout = AbortSignal.timeout(REVIEW_MS);
-  try {
-    const r = await plainChat({
+  const timeout = AbortSignal.timeout(REVIEW_MS),
+    spent = [];
+  // One call; a reply with no text (a model calling a tool it was not
+  // offered) is asked once more, told plainly, and not thinking.
+  const ask = (text, effortNow) =>
+    plainChat({
       model,
       provider,
       key,
-      effort,
+      effort: effortNow,
       maxOutput: REVIEW_OUTPUT,
       rounds: 1,
       history: [],
-      prompt,
+      prompt: text,
       images,
       toolSpecs: [],
       instructions: REVIEWER,
       signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       ...(upstream && { upstream }),
+    }).catch(e => {
+      if (e.spent?.usage) spent.push(e.spent.usage);
+      throw e;
     });
-    const text = r.summary.trim();
-    if (!text || NO_DEFECTS.test(text)) return { defects: null, count: 0, usage: r.usage };
-    return {
-      defects: text,
-      count: Math.max(1, text.match(/^\s*\d+[.)]/gm)?.length || 0),
-      usage: r.usage,
-    };
+  let r;
+  try {
+    r = await ask(prompt, effort).catch(() => ask(prompt + TEXT_ONLY, 'off'));
   } catch (e) {
-    return { defects: null, count: 0, usage: e.spent?.usage || null, error: e.message };
+    return { defects: null, count: 0, usage: sumUsage(spent), error: e.message };
   }
+  const usage = sumUsage([...spent, r.usage]),
+    text = r.summary.trim();
+  if (!text || NO_DEFECTS.test(text)) return { defects: null, count: 0, usage };
+  return { defects: text, count: Math.max(1, text.match(/^\s*\d+[.)]/gm)?.length || 0), usage };
+}
+/** The usages of the review's calls added up (numbers field by field), or
+ * null when none was measured. */
+function sumUsage(list) {
+  const all = list.filter(Boolean);
+  if (!all.length) return null;
+  const total = {};
+  for (const u of all)
+    for (const [k, v] of Object.entries(u))
+      if (typeof v === 'number') total[k] = (total[k] || 0) + v;
+  return total;
 }
 
 /** What the chat model is told when the reviewer found defects in page. */
