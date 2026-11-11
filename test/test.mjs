@@ -2367,7 +2367,7 @@ test('turn plans: fast trims, deep widens, style adds its instruction', () => {
   assert.equal(fast.effort, 'off');
   assert.equal(fast.maxOutput, 4096);
   assert.match(fast.instructions, /briefly and directly/);
-  assert.deepEqual([deep.search, deep.effort, deep.rounds], [true, 'medium', 16]);
+  assert.deepEqual([deep.search, deep.effort, deep.rounds], [true, 'medium', 32]);
   assert.deepEqual(deep.limits, { searches: 10, reads: 20, sources: 60 });
   assert.equal(deep.timeLimit, undefined); // chat turns have none: they go on across alarms
   assert.match(deep.instructions, /create_artifact[\s\S]*Research: /);
@@ -3035,7 +3035,7 @@ test('a turn out of model calls asks for the answer, else keeps what was said; s
   assert.match(r.summary, /^Checking the distance\.\n\n\*Stopped at this turn’s research limit/);
   const plan = turnPlan({ superSearch: true, search: false });
   assert.equal(plan.search, true);
-  assert.equal(plan.rounds, 32);
+  assert.equal(plan.rounds, 40);
   assert.equal(plan.limits.searches, 25);
   assert.equal(checkOptions({ superSearch: true }, 'code').superSearch, false);
 });

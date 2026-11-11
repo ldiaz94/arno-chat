@@ -7,10 +7,13 @@
  * option defaults in web/options.mjs. Leaves out the options' storage.
  *
  *   mode          effort          search   output   rounds  searches/reads
- *   standard      as chosen       chosen   16,384   12      6 / 12
+ *   standard      as chosen       chosen   16,384   24      6 / 12
  *   fast          off unless set  chosen   4,096    12      6 / 12
- *   deep          at least medium on       16,384   16      10 / 20
- *   super search  (any mode)      on       as mode  32      25 / 50
+ *   deep          at least medium on       16,384   32      10 / 20
+ *   super search  (any mode)      on       as mode  40      25 / 50
+ *
+ * Rounds are sized for a turn that builds a page: research, write, the
+ * browser's check, the reviewer's defects and their fixes (12 ran out).
  */
 import { MAX_OUTPUT } from '../providers.mjs';
 import { DEFAULTS } from '../../web/options.mjs';
@@ -69,7 +72,7 @@ export function turnPlan(options = DEFAULTS) {
         ? 'off'
         : o.effort,
     maxOutput: fast ? 4096 : MAX_OUTPUT,
-    rounds: o.superSearch ? 32 : deep ? 16 : 12,
+    rounds: o.superSearch ? 40 : deep ? 32 : fast ? 12 : 24,
     limits: o.superSearch
       ? { searches: 25, reads: 50, sources: 80 }
       : deep

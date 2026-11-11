@@ -443,7 +443,7 @@ export async function plainChat({
       if (!reply.calls.length || round === rounds - 1) {
         if (!reply.calls.length && reply.summary.trim()) {
           const text = reply.summary.trim(),
-            back = review && round < rounds - 1 ? await review(text) : null;
+            back = review && round < rounds - FIX_ROUNDS ? await review(text) : null;
           if (!back) return answer(text, reply.reasoning);
           // Sent back: the answer stays in the conversation, then why.
           messages.push({
@@ -585,6 +585,10 @@ function tell(messages, provider, text, images = []) {
     last.content.push(...parts);
   else messages.push({ role: 'user', content: images.length ? parts : text });
 }
+/** Rounds an answer sent back (a review's defects, a claim to check) needs
+ * left to act on it: an edit, a check, the answer. With fewer, the answer
+ * stands rather than ending in "I ran out of tool calls". */
+const FIX_ROUNDS = 4;
 /** Replies longer than this, in characters, count as long when cut off. */
 const LONG_REPLY = 8000;
 /** Said when a reply cut off by the provider is asked again. */
