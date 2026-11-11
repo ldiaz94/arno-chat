@@ -11,7 +11,12 @@ import { moon, byRecent, ago, daily, weatherText } from '../web/today.mjs';
 import { QUOTES, FACTS } from '../web/home-content.js';
 import { buildPrompt, sessionPrompt } from '../server/code/context.mjs';
 import { validateFiles } from '../server/code/publish.mjs';
-import { usageStream, modelRequest, displayDelta } from '../server/gateways/model.mjs';
+import {
+  usageStream,
+  modelRequest,
+  displayDelta,
+  replayThinking,
+} from '../server/gateways/model.mjs';
 import { checkOptions, optionTags, DEFAULTS } from '../web/options.mjs';
 import { turnPlan, codeSettings, codeLimits } from '../server/chat/plan.mjs';
 import { gitProxy, refUpdates } from '../server/code/git.mjs';
@@ -2520,6 +2525,36 @@ test('Anthropic thinking between calls goes back in the order it came, text and 
     { type: 'tool_use', id: 'tu1', name: 'web_search', input: {} },
   ]);
 });
+test('coding gateway: every reply of the turn gets its thinking back, so none is edited out later', () => {
+  const asked = (id, blocks) => ({
+    role: 'assistant',
+    content: [...blocks, { type: 'tool_use', id, name: 'bash', input: {} }],
+  });
+  const result = id => ({ role: 'user', content: [{ type: 'tool_result', tool_use_id: id }] });
+  const a = { type: 'thinking', thinking: '', signature: 'A' },
+    b = { type: 'thinking', thinking: '', signature: 'B' };
+  const payload = {
+    thinking: { type: 'adaptive' },
+    messages: [
+      { role: 'user', content: 'p' },
+      asked('old', []), // an earlier turn's: nothing kept, it stays as it was
+      result('old'),
+      asked('t1', []),
+      result('t1'),
+      asked('t2', []),
+      result('t2'),
+    ],
+  };
+  replayThinking(payload, [
+    { toolIds: ['t1'], blocks: [a] },
+    { toolIds: ['t2'], blocks: [b] },
+  ]);
+  assert.deepEqual(
+    payload.messages.filter(m => m.role === 'assistant').map(m => m.content[0].signature),
+    [undefined, 'A', 'B'],
+  );
+  assert.deepEqual(payload.thinking, { type: 'adaptive' });
+});
 test('coding gateway: Claude thinking is kept from a tool call and put back for the runner', async () => {
   let kept, sent;
   const request = messages =>
@@ -3498,6 +3533,48 @@ test('Claude’s conversation only grows: no screenshot is left out, so its thin
   }
   assert.equal(JSON.stringify(bodies[3].messages).match(/"type":"image"/g).length, 3);
   assert.deepEqual(bodies[0].cache_control, { type: 'ephemeral' });
+});
+test('Claude keeps every tool all turn: a spent one says so, and the last round turns tools off by tool_choice', async () => {
+  const bodies = [];
+  const call = n =>
+    claudeStream([
+      {
+        type: 'content_block_start',
+        index: 0,
+        content_block: { type: 'tool_use', id: 't' + n, name: 'web_search', input: {} },
+      },
+    ]);
+  await plainChat({
+    model: 'claude-sonnet-5-5',
+    provider: 'anthropic',
+    history: [],
+    prompt: 'p',
+    key: 'k',
+    rounds: 3,
+    toolSpecs: [
+      { name: 'web_search', description: 'd', inputSchema: { type: 'object' } },
+      { name: 'web_read', description: 'd', inputSchema: { type: 'object' } },
+    ],
+    runTool: async () => {
+      throw Object.assign(Error('This turn has reached its limit of 6 searches.'), { limit: true });
+    },
+    upstream: async (url, init) => {
+      bodies.push(JSON.parse(init.body));
+      return bodies.length < 3
+        ? call(bodies.length)
+        : claudeStream([
+            { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+            { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Done.' } },
+          ]);
+    },
+  });
+  assert.equal(bodies.length, 3);
+  for (const b of bodies) assert.deepEqual(b.tools, bodies[0].tools);
+  assert.equal(bodies[0].tools.length, 2);
+  assert.deepEqual(
+    bodies.map(b => b.tool_choice),
+    [undefined, undefined, { type: 'none' }],
+  );
 });
 test('renderPage reports page errors and failed loads, and always closes the browser', async () => {
   const { renderPage } = await import('../server/probe/render.mjs');

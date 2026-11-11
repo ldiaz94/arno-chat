@@ -173,6 +173,29 @@ export const chatTurn = {
         job?.options?.mcp === false
           ? { specs: [], calls: new Map(), failures: [] }
           : await chatMcpTools(this.env, session.ownerId, p, this.ctx.storage);
+      // The tools and instructions the turn began with, kept when it goes on
+      // in a later alarm: rebuilt, they would name newer artifact versions or
+      // another MCP tool list, and a changed prefix voids the cache (and
+      // Claude's thinking blocks, which are bound to it).
+      const toolSpecs = saved?.toolSpecs || [
+          ...(plan.search ? WEB_TOOLS : []),
+          ...ARTIFACT_TOOLS,
+          ...IMAGE_TOOLS,
+          ...mcp.specs,
+        ],
+        told =
+          saved?.instructions ||
+          [
+            instructions(p),
+            plan.search ? WEB_INSTRUCTIONS : '',
+            ARTIFACT_INSTRUCTIONS,
+            artifactList(listed),
+            mcp.specs.length ? MCP_INSTRUCTIONS : '',
+            mcp.failures.length ? 'Unavailable connections: ' + mcp.failures.join('; ') : '',
+            plan.instructions,
+          ]
+            .filter(Boolean)
+            .join('\n\n');
       const result = await plainChat({
         model: selected.id,
         provider: selected.provider,
@@ -182,29 +205,24 @@ export const chatTurn = {
         rounds: plan.rounds,
         maxOutput: plan.maxOutput,
         effort: (await effortSupported(session.model)) ? plan.effort : 'auto',
-        toolSpecs: [
-          ...(plan.search ? WEB_TOOLS : []),
-          ...ARTIFACT_TOOLS,
-          ...IMAGE_TOOLS,
-          ...mcp.specs,
-        ],
+        toolSpecs,
         key: await credential(this.env, session.ownerId, p, selected.provider),
-        instructions: [
-          instructions(p),
-          plan.search ? WEB_INSTRUCTIONS : '',
-          ARTIFACT_INSTRUCTIONS,
-          artifactList(listed),
-          mcp.specs.length ? MCP_INSTRUCTIONS : '',
-          mcp.failures.length ? 'Unavailable connections: ' + mcp.failures.join('; ') : '',
-          plan.instructions,
-        ]
-          .filter(Boolean)
-          .join('\n\n'),
+        instructions: told,
         signal: this.chatAbort.signal,
         resume: saved?.chat,
         yieldAt: now + ALARM_YIELD,
         checkpoint: chat =>
-          this.saveResume({ jobId, began, sources, counts, artifacts, guard, chat }),
+          this.saveResume({
+            jobId,
+            began,
+            sources,
+            counts,
+            artifacts,
+            guard,
+            chat,
+            toolSpecs,
+            instructions: told,
+          }),
         onRound: async round => {
           await this.phase('thinking', { workspace: 'chat', startupMs: 0 });
           if (round) await this.activity('Thinking (step ' + (round + 1) + ')');

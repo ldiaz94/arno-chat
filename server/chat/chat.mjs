@@ -308,10 +308,17 @@ export async function plainChat({
         throw Object.assign(Error('This turn goes on in its next run'), { yielded: true });
       await onRound(round);
       if (runTool && round && round === rounds - 1) nudge(messages, provider);
-      const offered = toolSpecs.filter(t => !spentTools.has(t.name));
+      // Claude's tools never change within a turn: its thinking blocks are
+      // bound to them, so removing one fails the next request. A spent tool
+      // answers that it is spent, and the last round turns tools off by
+      // tool_choice, which is not bound. Others lose spent tools, and all
+      // tools in the last round.
+      const claude = provider === 'anthropic',
+        last = round === rounds - 1,
+        offered = claude ? toolSpecs : toolSpecs.filter(t => !spentTools.has(t.name));
       const tools =
-        runTool && round < rounds - 1 && offered.length
-          ? provider === 'anthropic'
+        runTool && (claude || !last) && offered.length
+          ? claude
             ? offered.map(t => ({
                 name: t.name,
                 description: t.description,
@@ -340,6 +347,7 @@ export async function plainChat({
           messages,
           stream: true,
           tools,
+          ...(claude && tools && last && { tool_choice: { type: 'none' } }),
           ...fields,
           ...(provider === 'anthropic'
             ? {
