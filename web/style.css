@@ -2109,10 +2109,27 @@ body.light,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.step-list li.fresh {
   animation: appear 0.2s ease-out;
 }
 .step-list span {
   color: var(--accent);
+}
+/* What to read while a chat turn works: quiet, under its steps. */
+.activity-quote {
+  margin: 12px 0 0;
+  max-width: 52ch;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--muted);
+}
+.activity-quote span {
+  font-style: normal;
+  white-space: nowrap;
+}
+.activity-quote.fresh {
+  animation: appear 0.6s ease-out;
 }
 .activity .step-list {
   margin-top: 10px;

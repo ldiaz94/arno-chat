@@ -107,10 +107,22 @@ function chatActivity(node, job, preview) {
   if (node.className !== 'chat-activity') {
     node.className = 'chat-activity';
     node.innerHTML =
-      '<div class="activity-now"><span class="pulse-dot" aria-hidden="true"></span><span class="activity-label" role="status"></span><span class="activity-clock"></span></div><div class="activity-steps"></div>';
+      '<div class="activity-now"><span class="pulse-dot" aria-hidden="true"></span><span class="activity-label" role="status"></span><span class="activity-clock"></span></div><div class="activity-steps"></div><p class="activity-quote"></p>';
     const began = job.createdAt || Date.now(),
       clock = node.querySelector('.activity-clock'),
-      tick = () => (clock.textContent = elapsed(Date.now() - began));
+      quote = node.querySelector('.activity-quote');
+    let next = Math.floor(Math.random() * QUOTES.length);
+    // A quote to read while it works, a new one every QUOTE_SECONDS.
+    const tick = () => {
+      const s = Math.floor((Date.now() - began) / 1000);
+      clock.textContent = elapsed(Date.now() - began);
+      if (s % QUOTE_SECONDS && quote.textContent) return;
+      const [words, who] = QUOTES[next++ % QUOTES.length];
+      quote.innerHTML = '“' + esc(words) + '” <span>— ' + esc(who) + '</span>';
+      quote.classList.remove('fresh');
+      void quote.offsetWidth;
+      quote.classList.add('fresh');
+    };
     tick();
     const timer = setInterval(() => (node.isConnected ? tick() : clearInterval(timer)), 1000);
   }
@@ -131,7 +143,15 @@ function chatActivity(node, job, preview) {
                 : 'Thinking');
   const label = node.querySelector('.activity-label');
   if (label.textContent !== now + '…') label.textContent = now + '…';
-  node.querySelector('.activity-steps').innerHTML = stepsHtml(steps, now);
+  // Redrawn only when the steps change, and only new ones fade in: a redraw
+  // on every update replayed the fade on all of them, so the list flashed.
+  const list = node.querySelector('.activity-steps'),
+    html = stepsHtml(steps, now);
+  if (list.dataset.html === html) return;
+  const seen = new Set([...list.querySelectorAll('li')].map(li => li.textContent));
+  list.innerHTML = list.dataset.html = html;
+  for (const li of list.querySelectorAll('li'))
+    if (!seen.has(li.textContent)) li.classList.add('fresh');
 }
 /** The turn's recent steps, each ✓ but the one it is on (current). */
 function stepsHtml(steps = [], current) {
@@ -143,6 +163,42 @@ function stepsHtml(steps = [], current) {
     '</ol>'
   );
 }
+/** How often the activity card's quote changes, in seconds. */
+const QUOTE_SECONDS = 15;
+/** Quotes on making, finding out and keeping it simple, as [words, who]. */
+const QUOTES = [
+  ['Simplicity is prerequisite for reliability.', 'Edsger W. Dijkstra'],
+  ['The purpose of computing is insight, not numbers.', 'Richard Hamming'],
+  ['What I cannot create, I do not understand.', 'Richard Feynman'],
+  [
+    'The first principle is that you must not fool yourself, and you are the easiest person to fool.',
+    'Richard Feynman',
+  ],
+  [
+    'Programs must be written for people to read, and only incidentally for machines to execute.',
+    'Abelson and Sussman',
+  ],
+  ['Premature optimization is the root of all evil.', 'Donald Knuth'],
+  ['The best way to predict the future is to invent it.', 'Alan Kay'],
+  ['Any sufficiently advanced technology is indistinguishable from magic.', 'Arthur C. Clarke'],
+  ['If I have seen further it is by standing on the shoulders of Giants.', 'Isaac Newton'],
+  [
+    'Perfection is achieved, not when there is nothing more to add, but when there is nothing left to take away.',
+    'Antoine de Saint-Exupéry',
+  ],
+  [
+    'We can only see a short distance ahead, but we can see plenty there that needs to be done.',
+    'Alan Turing',
+  ],
+  ['Science is a way of thinking much more than it is a body of knowledge.', 'Carl Sagan'],
+  ['The important thing is not to stop questioning.', 'Albert Einstein'],
+  ['Talk is cheap. Show me the code.', 'Linus Torvalds'],
+  [
+    'There are only two hard things in Computer Science: cache invalidation and naming things.',
+    'Phil Karlton',
+  ],
+  ['Brevity is the soul of wit.', 'William Shakespeare'],
+];
 /** Time since a turn began, as m:ss. */
 function elapsed(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
