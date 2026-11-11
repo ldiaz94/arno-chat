@@ -746,6 +746,9 @@ td.num {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.artifact-prose table:not(.sized) {
+  min-width: 100%;
+}
 table.sized {
   table-layout: fixed;
   max-width: none;
@@ -775,9 +778,25 @@ table.sized th {
   width: 2px;
   border-radius: 1px;
   background: var(--line);
+  opacity: 0.3;
+}
+th:last-child .col-resize {
+  display: none;
+}
+th:hover .col-resize::after,
+.col-resize:active::after {
+  opacity: 1;
 }
 .col-resize:hover::after {
   background: var(--accent);
+}
+@media (pointer: coarse) {
+  .col-resize {
+    width: 24px;
+  }
+  .col-resize::after {
+    right: 10px;
+  }
 }
 .turn-footer {
   margin: 14px 0 0 37px;
@@ -785,12 +804,12 @@ table.sized th {
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--muted);
 }
 .turn-footer button,
 .copy-message {
-  font-size: 11px;
+  font-size: 12px;
   min-height: 28px;
   padding: 3px 7px;
   background: transparent;
@@ -854,9 +873,14 @@ table.sized th {
   color: var(--diff-del-fg);
 }
 .diff-line.file {
-  color: var(--text);
+  color: var(--muted);
   background: var(--raised);
   padding: 2px 12px;
+  font-weight: 500;
+}
+.diff-line.file:first-child,
+.diff-line.start {
+  color: var(--text);
   font-weight: 600;
 }
 .diff-line.hunk {
@@ -905,7 +929,7 @@ table.sized th {
   font-size: 12px;
 }
 .composer-hint {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--muted);
   max-width: 756px;
   margin: 7px auto 0;
@@ -967,7 +991,7 @@ table.sized th {
 }
 .toast {
   position: fixed;
-  bottom: calc(150px + env(safe-area-inset-bottom));
+  top: calc(76px + env(safe-area-inset-top));
   left: 50%;
   transform: translateX(-50%);
   background: var(--raised);
@@ -1078,6 +1102,9 @@ table.sized th {
 .stat-grid .metric {
   background: var(--bg);
 }
+.stat-grid > :last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
 .timing-row {
   display: flex;
   justify-content: space-between;
@@ -1091,6 +1118,11 @@ table.sized th {
   background: var(--accent-bg);
   border-radius: 5px;
   padding: 2px 6px;
+}
+.tag.off {
+  color: var(--muted);
+  background: var(--raised);
+  border: 1px solid var(--line);
 }
 .overlay {
   display: none;
@@ -1120,7 +1152,7 @@ body.light,
   --bg: #f5f6f8;
   --panel: #fff;
   --raised: #eaf0f3;
-  --line: #d6dfe5;
+  --line: #b8c0c5;
   --text: #18232f;
   --muted: #596c7d;
   --accent: #157452;
@@ -1141,7 +1173,7 @@ body.light,
   --diff-add-fg: #1d4a26;
   --diff-del-bg: #f8d8d0;
   --diff-del-fg: #6e1f14;
-  --diff-hunk-bg: #e3eef5;
+  --diff-hunk-bg: #d6e6f2;
   --diff-hunk-fg: #1b6b8a;
 }
 .light .session-pick.on::after {
@@ -1188,10 +1220,10 @@ body.light,
   --bg: #edf2ef;
   --panel: #e6ebe8;
   --raised: #dde3e0;
-  --line: #ced4d1;
+  --line: #b6bcb9;
   --line-strong: #b6bebb;
   --text: #1b2b26;
-  --muted: #65706b;
+  --muted: #59635f;
   --accent: #007277;
   --accent-bg: #c7dedc;
   --on-accent: #edf2ef;
@@ -1247,10 +1279,10 @@ body.light,
   --bg: #eff1f5;
   --panel: #e8eaef;
   --raised: #e1e3e8;
-  --line: #d3d5da;
+  --line: #b9babf;
   --line-strong: #bec0c7;
   --text: #313344;
-  --muted: #6a6c77;
+  --muted: #5f616b;
   --accent: #bc4a08;
   --accent-bg: #e7d6cf;
   --on-accent: #eff1f5;
@@ -1306,10 +1338,10 @@ body.light,
   --bg: #fce1f4;
   --panel: #f6d9ef;
   --raised: #efd1e9;
-  --line: #e1c1de;
+  --line: #c7abc4;
   --line-strong: #cea9ce;
   --text: #4a0a63;
-  --muted: #855691;
+  --muted: #764d81;
   --accent: #bb0083;
   --accent-bg: #f2bde2;
   --on-accent: #fce1f4;
@@ -1365,10 +1397,10 @@ body.light,
   --bg: #e9f2e6;
   --panel: #e2ebdf;
   --raised: #d9e3d7;
-  --line: #c9d3c7;
+  --line: #b3bcb1;
   --line-strong: #b2bdb1;
   --text: #14261a;
-  --muted: #616f64;
+  --muted: #576359;
   --accent: #0a7700;
   --accent-bg: #c5dec1;
   --on-accent: #e9f2e6;
@@ -1424,10 +1456,10 @@ body.light,
   --bg: #fbf1c7;
   --panel: #f4ebc2;
   --raised: #ede3bc;
-  --line: #ded5b1;
+  --line: #c2ba9b;
   --line-strong: #c9c1a1;
   --text: #3c3836;
-  --muted: #726c5e;
+  --muted: #676155;
   --accent: #af3a03;
   --accent-bg: #efd4a8;
   --on-accent: #fbf1c7;
@@ -1578,11 +1610,17 @@ body.light,
     font-size: 14px;
   }
   .topbar-title small {
-    font-size: 10.5px;
+    font-size: 12px;
   }
   .topbar-actions .icon {
-    width: 34px;
-    height: 34px;
+    width: 40px;
+    height: 40px;
+  }
+  .edit-message,
+  .turn-footer button,
+  .copy-message {
+    min-height: 40px;
+    margin-block: -6px;
   }
   .modal {
     max-height: 85dvh;
@@ -1661,6 +1699,13 @@ body.light,
 .access-notice p {
   color: var(--muted);
 }
+.code-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+.code-dialog .modal-head {
+  flex: none;
+}
 .code-dialog {
   width: min(1200px, calc(100vw - 28px));
   height: 85dvh;
@@ -1671,10 +1716,12 @@ body.light,
   gap: 8px;
   padding: 10px 18px;
   border-bottom: 1px solid var(--line);
+  flex: none;
 }
 .code-body {
   overflow: auto;
-  height: calc(100% - 138px);
+  flex: 1;
+  min-height: 0;
 }
 .breadcrumbs {
   display: flex;
@@ -1731,6 +1778,7 @@ body.light,
   display: inline-block;
   position: sticky;
   left: 0;
+  box-sizing: border-box;
   width: calc(var(--gutter) - 10px);
   padding-right: 8px;
   margin-right: 10px;
@@ -1759,6 +1807,9 @@ body.light,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.code-tabs button {
+  min-height: 34px;
+}
 @media (max-width: 640px) {
   :root {
     --code-size: 12px;
@@ -1766,16 +1817,30 @@ body.light,
   .codeblock pre {
     padding: 10px 12px;
   }
+  .code-dialog .modal-head {
+    padding: 10px 16px;
+  }
+  .code-tabs {
+    padding: 8px 16px;
+  }
+  .code-tabs button,
+  .codehead button,
+  .breadcrumbs button {
+    min-height: 40px;
+  }
 }
 .panel-diff {
   max-height: none;
-  height: calc(100% - 50px);
+  height: calc(100% - 62px);
+  margin-top: 12px;
 }
 #action-items button {
   margin: 5px 0;
 }
-.code-tabs button {
-  min-height: 34px;
+@media (min-width: 2400px) {
+  :root {
+    --code-size: 14px;
+  }
 }
 @media (min-width: 1600px) {
   body.code-open .workspace {
@@ -1798,6 +1863,14 @@ body.light,
   }
   .code-dialog::backdrop {
     background: none;
+  }
+}
+@media (min-width: 2400px) {
+  body.code-open .workspace {
+    padding-right: 1300px;
+  }
+  .code-dialog {
+    width: 1300px;
   }
 }
 .mark {
@@ -1881,16 +1954,26 @@ body.light,
   height: 18px;
 }
 .account-save {
+  position: sticky;
+  bottom: -20px;
+  z-index: 2;
+  background: var(--panel);
   border-top: 1px solid var(--line);
   margin-top: 20px;
-  padding-top: 18px;
+  padding: 14px 0 20px;
   display: flex;
   gap: 15px;
   align-items: center;
   justify-content: space-between;
 }
 .account-save span {
-  max-width: 65%;
+  flex: 1;
+  min-width: 0;
+  max-width: none;
+}
+.account-save button {
+  flex: none;
+  white-space: nowrap;
 }
 .account-dialog textarea {
   resize: vertical;
@@ -1907,6 +1990,13 @@ body.light,
 }
 .account-dialog h3 {
   font-size: 15px;
+  margin: 22px 0 4px;
+}
+.account-dialog .check-label {
+  min-height: 40px;
+}
+.account-dialog .mcp-actions .ghost {
+  border-color: var(--line);
 }
 .sidebar #account-settings {
   font-size: 12px;
@@ -2367,7 +2457,7 @@ body.light,
     gap: 8px;
   }
   .account-dialog .account-save span {
-    font-size: 10px;
+    font-size: 11px;
   }
   .account-dialog .tag {
     font-size: 9px;
@@ -2441,7 +2531,12 @@ body.light,
 }
 .live-pass {
   display: block;
-  margin-top: 12px;
+  margin: 12px 0 0 37px;
+}
+@media (max-width: 800px) {
+  .live-pass {
+    margin-left: 0;
+  }
 }
 .streaming {
   min-width: 0;
@@ -2845,7 +2940,7 @@ body.light,
   box-shadow: 0 1px 3px #0003;
 }
 .segmented button:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: default;
 }
 .artifact-versions {
@@ -2860,11 +2955,12 @@ body.light,
   display: none;
 }
 .artifact-versions button {
-  min-width: 30px;
-  min-height: 30px;
+  min-width: 40px;
+  min-height: 40px;
   font-size: 18px;
 }
 .artifact-versions button:disabled {
+  opacity: 0.35;
   cursor: default;
 }
 .artifact-tools {
@@ -2874,7 +2970,7 @@ body.light,
   margin-left: auto;
 }
 .artifact-tools button {
-  min-height: 32px;
+  min-height: 40px;
   padding: 4px 10px;
   font-size: 13px;
 }
@@ -2958,6 +3054,15 @@ body.light,
   border: 0;
   background: #fff;
 }
+.artifact-dialog:not([data-kind='mermaid']) .artifact-content:has(.artifact-frame) {
+  background: var(--raised);
+}
+.artifact-dialog:not([data-kind='mermaid']) .artifact-frame {
+  width: calc(100% - 16px);
+  height: calc(100% - 16px);
+  margin: 8px;
+  border-radius: 8px;
+}
 .artifact-dialog[data-kind='mermaid'] .artifact-frame {
   background: transparent;
 }
@@ -3031,6 +3136,10 @@ body.light,
   .artifact-tools {
     margin-left: 0;
     width: 100%;
+    justify-content: space-between;
+  }
+  .segmented button {
+    min-height: 36px;
   }
   .artifact-prose {
     padding: 16px 16px 40px;
@@ -3131,6 +3240,7 @@ body.light,
   line-height: 1.5;
   color: var(--muted);
   overflow: hidden;
+  -webkit-mask-image: linear-gradient(#000 60%, transparent);
   mask-image: linear-gradient(#000 60%, transparent);
 }
 .gallery-text.mono {
@@ -3139,7 +3249,7 @@ body.light,
 }
 .gallery-kind {
   position: absolute;
-  left: 8px;
+  right: 8px;
   bottom: 8px;
   display: inline-flex;
   align-items: center;
@@ -3586,8 +3696,12 @@ details.setting-card.collapsible[open] > summary {
   .account-dialog .account-tabs::-webkit-scrollbar {
     display: none;
   }
+  .account-dialog .account-tabs {
+    gap: 4px;
+  }
   .account-dialog .account-tabs button {
-    flex: none;
+    flex: 1 0 auto;
+    padding: 5px 7px;
   }
   details.setting-card.collapsible > summary .provider-name {
     min-width: 0;
@@ -3606,8 +3720,8 @@ details.setting-card.collapsible[open] > summary {
   top: -48px;
   left: 50%;
   transform: translateX(-50%);
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   min-height: 0;
   padding: 0;
   border-radius: 50%;
@@ -4003,6 +4117,11 @@ details.setting-card.collapsible[open] > summary {
 .option-pills label[hidden] {
   display: none;
 }
+@media (pointer: coarse) {
+  .option-pills label {
+    min-height: 38px;
+  }
+}
 .option-pills input {
   position: absolute;
   opacity: 0;
@@ -4236,6 +4355,13 @@ details.setting-card.collapsible[open] > summary {
   color: var(--muted);
   font-size: 12px;
 }
+.pull-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
 .commit-list {
   list-style: none;
   margin: 0;
@@ -4339,11 +4465,11 @@ details.setting-card.collapsible[open] > summary {
 
 /* A chat's question before an MCP action (turns.js approval). */
 .approval-card {
-  margin: 0 0 18px;
+  margin: 0 0 24px 37px;
   padding: 14px;
-  border: 1px solid var(--accent);
+  border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--accent-bg);
+  background: var(--panel);
 }
 .approval-card p {
   margin: 6px 0;
@@ -4358,6 +4484,14 @@ details.setting-card.collapsible[open] > summary {
   font: 12px var(--mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+@media (max-width: 800px) {
+  .approval-card {
+    margin-left: 0;
+  }
+}
+.approval-actions button {
+  min-height: 42px;
 }
 .approval-actions {
   display: flex;
@@ -4503,6 +4637,9 @@ details.setting-card.collapsible[open] > summary {
   display: flex;
   gap: 8px;
 }
+.changes-bar:has(+ #pr-form:not([hidden])) .changes-actions {
+  display: none;
+}
 .changes-actions button svg,
 .pr-done svg {
   width: 16px;
@@ -4516,7 +4653,7 @@ details.setting-card.collapsible[open] > summary {
 }
 #pr-form {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   margin: 10px 18px 0;
   padding: 14px;
   border: 1px solid var(--accent);

@@ -906,7 +906,8 @@ const concha = {
 
 // --- Diffs --------------------------------------------------------------------------------
 
-/** A unified diff's lines as [{ kind, html }], kind '', 'file', 'hunk', 'add' or 'remove'.
+/** A unified diff's lines as [{ kind, html }], kind '', 'file', 'file start' (a file's
+ * first header line), 'hunk', 'add' or 'remove'.
  * Each hunk's old and new sides are coloured as small files in the language of the file
  * the diff names (ladle's rule), and their lines put back in the hunk's order. */
 export function diffLines(diff) {
@@ -922,7 +923,15 @@ export function diffLines(diff) {
       if (line.startsWith('diff ')) lang = detect({ path: line.split(' ').at(-1) });
       if (line.startsWith('+++ ') && !line.includes('/dev/null'))
         lang = detect({ path: line.slice(4).replace(/\t.*/, '') });
-      const kind = file ? 'file' : line[0] === '+' ? 'add' : line[0] === '-' ? 'remove' : '';
+      const kind = line.startsWith('diff ')
+        ? 'file start'
+        : file
+          ? 'file'
+          : line[0] === '+'
+            ? 'add'
+            : line[0] === '-'
+              ? 'remove'
+              : '';
       out.push({ kind, html: escape(line) });
       i++;
       continue;

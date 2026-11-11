@@ -210,6 +210,7 @@ function paint() {
     b.disabled =
       (b.dataset.view === 'source' && !textual) ||
       (b.dataset.view === 'changes' && (!textual || !older()));
+    if (b.dataset.view === 'changes') b.title = textual && !older() ? 'No earlier version' : '';
   }
   $('#artifact-copy').hidden = !textual;
   $('#artifact-csv').hidden = a.kind !== 'markdown' || !tableCsv(a.content);

@@ -1034,7 +1034,7 @@ const { chromium } = require('playwright'),
       '_blank',
     );
     await page.locator('#about').fill('Ana, a nurse who likes short answers');
-    await page.getByRole('button', { name: 'Instructions & skills' }).click();
+    await page.getByRole('button', { name: 'Instructions' }).click();
     await page.locator('#system-prompt').fill('Be concise');
     await page.getByRole('button', { name: 'Add skill', exact: false }).click();
     await page.locator('.skill-name').fill('Test discipline');
