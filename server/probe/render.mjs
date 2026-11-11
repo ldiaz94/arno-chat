@@ -6,7 +6,7 @@
  *           own policy) ─► the CDNs and images it loads, from the network
  *        ─► page errors, console errors, failed loads, policy violations
  *        ─► steps, if any (set a value, click, tap, drag, key, wait, scroll)
- *        ─► a JPEG screenshot at phone size
+ *        ─► a JPEG screenshot at phone size (or the viewport asked for)
  *
  * The page runs under PAGE_POLICY from artifacts.mjs, sandbox and all, as in
  * the app, so what is blocked there is blocked here. Rendering is a check, not
@@ -22,6 +22,14 @@ const ORIGIN = 'https://artifact.invalid',
   PAGE_URL = ORIGIN + '/';
 /** A phone's screen, in CSS pixels, at one device pixel each (a small image). */
 const VIEWPORT = { width: 390, height: 844, deviceScaleFactor: 1, isMobile: true, hasTouch: true };
+/** A laptop's screen, for a look at the page wide. */
+export const WIDE = {
+  width: 1280,
+  height: 800,
+  deviceScaleFactor: 1,
+  isMobile: false,
+  hasTouch: false,
+};
 /** How long to wait for the page and its loads to settle, then for its
  * opening animations, and for the whole check, in ms. */
 const LOAD_MS = 8000,
@@ -43,12 +51,12 @@ const MAX_ITEMS = 20,
 const POLICY_LISTENER =
   "document.addEventListener('securitypolicyviolation',e=>console.error('Blocked by the page policy: '+e.blockedURI+' ('+e.effectiveDirective+')'))";
 
-/** Opens html in a headless browser at phone size, takes steps (see
- * takeStep) if given, and reports what went wrong: {errors, failedLoads:
- * [{url, status}], screenshot (base64 JPEG), ms}, plus stepErrors: [{step,
- * error}] when there were steps, or {unavailable: why}. launch stands in for
- * the browser in tests. */
-export async function renderPage(env, html, { launch, steps = [] } = {}) {
+/** Opens html in a headless browser at phone size (or at viewport, e.g.
+ * WIDE), takes steps (see takeStep) if given, and reports what went wrong:
+ * {errors, failedLoads: [{url, status}], screenshot (base64 JPEG), ms}, plus
+ * stepErrors: [{step, error}] when there were steps, or {unavailable: why}.
+ * launch stands in for the browser in tests. */
+export async function renderPage(env, html, { launch, steps = [], viewport = VIEWPORT } = {}) {
   const began = Date.now();
   if (!launch) {
     if (!env?.BROWSER) return { unavailable: 'No browser to render with' };
@@ -70,7 +78,7 @@ export async function renderPage(env, html, { launch, steps = [] } = {}) {
   const work = (async () => {
     browser = await launch();
     const page = await browser.newPage();
-    await page.setViewport(VIEWPORT);
+    await page.setViewport(viewport);
     await page.evaluateOnNewDocument(POLICY_LISTENER);
     page.on('pageerror', e => noteError(e.message + lineOf(e)));
     page.on('console', m => {

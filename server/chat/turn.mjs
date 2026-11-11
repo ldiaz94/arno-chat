@@ -20,8 +20,10 @@
  * what failed goes back with the tool's result, with a screenshot for a model
  * that sees images. Before the answer is kept, the turn reviews it: an answer
  * that says an artifact changed when none did is sent back once, and a page
- * written this turn is shown to the model once more (twice, if it changed it
- * after the first) to compare against the request. */
+ * written this turn goes to a reviewer (review.mjs: the owner's review model,
+ * or the chat's own) with screenshots at phone size and wide, once (twice, if
+ * the model changed it after the first); the defects it finds go back to the
+ * model to fix. The reviews' cost joins the turn's (probe/records.mjs). */
 import { json } from '../http.mjs';
 import { plainChat } from './chat.mjs';
 import { modelInput } from '../probe/attachments.mjs';
@@ -32,7 +34,9 @@ import { WEB_INSTRUCTIONS, WEB_TOOLS, research, citedSources } from './research.
 import { turnPlan } from './plan.mjs';
 import { effortSupported, seesScreenshots } from '../models.mjs';
 import { IMAGE_TOOLS, findImage } from './images.mjs';
-import { renderArtifact } from '../probe/render.mjs';
+import { renderArtifact, WIDE } from '../probe/render.mjs';
+import { reviewPage, fixRequest } from './review.mjs';
+import { prices, priceOf, cost } from '../prices.mjs';
 import {
   ARTIFACT_INSTRUCTIONS,
   ARTIFACT_TOOLS,
@@ -137,18 +141,30 @@ export const chatTurn = {
         artifacts = saved?.artifacts || [],
         listed = await listArtifacts(this.ctx.storage),
         vision = await seesScreenshots(session.model),
-        // What the turn's review has done (see review below), kept across alarms.
-        guard = saved?.guard || { claimed: false, reviews: 0, reviewed: '' };
-      // Checks of pages this alarm, by 'id:version' and the steps taken, so
-      // the review reuses the check made when the page was written.
+        // What the turn's review has done (see review below), kept across
+        // alarms; spent holds each reviewer call's {model, usage, cost}.
+        guard = { claimed: false, reviews: 0, reviewed: '', spent: [], ...saved?.guard };
+      // Checks of pages this alarm, by 'id:version', the steps taken and the
+      // size, so the review reuses the check made when the page was written.
       const checks = new Map();
-      // An artifact's page rendered, after steps if any, as shown to the
-      // model (shownCheck).
-      const checked = async (a, unavailable, steps = []) => {
-        const key = a.id + ':' + a.version + (steps.length ? ':' + JSON.stringify(steps) : '');
-        if (!checks.has(key)) checks.set(key, await renderArtifact(this.env, a, { steps }));
-        return shownCheck(a, checks.get(key), vision, unavailable);
+      // An artifact's page rendered, after steps if any, at phone size or wide.
+      const rendered = async (a, steps = [], wide = false) => {
+        const key =
+          a.id +
+          ':' +
+          a.version +
+          (steps.length ? ':' + JSON.stringify(steps) : '') +
+          (wide ? ':wide' : '');
+        if (!checks.has(key))
+          checks.set(
+            key,
+            await renderArtifact(this.env, a, { steps, ...(wide && { viewport: WIDE }) }),
+          );
+        return checks.get(key);
       };
+      // An artifact's page rendered, as shown to the model (shownCheck).
+      const checked = async (a, unavailable, steps = []) =>
+        shownCheck(a, await rendered(a, steps), { vision, unavailable });
       // Whether this turn is about an artifact: one exists, or the user names one.
       const inPlay = listed.length > 0 || ABOUT_ARTIFACT.test(prompt);
       // The owner's MCP connections marked for chats, unless this message
@@ -244,23 +260,44 @@ export const chatTurn = {
           if (!page || key === guard.reviewed) return null;
           if (guard.reviews && (guard.reviews >= 2 || !guard.reviewed.startsWith(page.id + ':')))
             return null;
-          await this.activity('Reviewing the page against your request');
-          const shown = await checked(await getArtifact(this.ctx.storage, page.id));
-          if (!shown.check) return null; // nothing rendered, nothing to compare
+          const model = p.reviewModel || session.model,
+            reviewer = providerModel(model);
+          await this.activity('Reviewing “' + page.title + '” with ' + reviewer.id);
+          const a = await getArtifact(this.ctx.storage, page.id),
+            phone = shownCheck(a, await rendered(a), { vision: true });
+          if (!phone.check) return null; // nothing rendered, nothing to compare
+          const wide = shownCheck(a, await rendered(a, [], true), { vision: true, wide: true }),
+            shots = [...phone.images, ...(wide.images || [])];
           guard.reviews++;
           guard.reviewed = key;
-          return {
-            text:
-              'Check of "' +
-              page.title +
-              '" v' +
-              page.version +
-              ': ' +
-              JSON.stringify(shown.check) +
-              '\n\n' +
-              REVIEW,
-            images: shown.images,
-          };
+          const sees = await seesScreenshots(model),
+            began = Date.now(),
+            r = await reviewPage({
+              model: reviewer.id,
+              provider: reviewer.provider,
+              key: await credential(this.env, session.ownerId, p, reviewer.provider),
+              effort: (await effortSupported(model)) ? 'low' : 'auto',
+              request: prompt,
+              previous: previous.at(-1)?.prompt,
+              page: a,
+              check: phone.check,
+              images: sees ? shots : [],
+              signal: this.chatAbort.signal,
+            }),
+            spent = r.usage && cost(priceOf(await prices(), model), r.usage);
+          if (r.usage) guard.spent.push({ model, usage: r.usage, cost: spent });
+          console.log(
+            JSON.stringify({
+              event: 'artifact_review',
+              model,
+              ms: Date.now() - began,
+              defects: r.count,
+              cost: spent ?? null,
+              ...(r.error && { error: r.error }),
+            }),
+          );
+          if (!r.defects) return null;
+          return { text: fixRequest(a, r.defects), images: vision ? shots : [] };
         },
       }).catch(async e => {
         const cancelled = (await this.ctx.storage.get('job'))?.status === 'cancelled';
@@ -268,8 +305,10 @@ export const chatTurn = {
         // carries on from the state saved before the round.
         if (!cancelled && (e.yielded || stopped))
           throw Object.assign(Error('This turn goes on in its next run'), { yielded: true });
-        // A failed turn is charged for what it spent: its web calls too, at the session's model.
-        if (e.spent) Object.assign(e.spent, { model: session.model, webUsage: counts });
+        // A failed turn is charged for what it spent: its model calls at the
+        // session's model, its web calls and page reviews too.
+        if (e.spent)
+          Object.assign(e.spent, { model: session.model, webUsage: counts, reviews: guard.spent });
         throw e;
       });
       await this.clearResume();
@@ -278,6 +317,7 @@ export const chatTurn = {
       result.artifacts = artifacts;
       result.sources = citedSources(result.summary, sources, previous);
       result.webUsage = counts;
+      result.reviews = guard.spent;
       result.options = job?.options;
       if ((await this.ctx.storage.get('job'))?.status === 'cancelled')
         throw Object.assign(Error('Chat cancelled'), { spent: result });
@@ -356,17 +396,18 @@ export function toolStep(name, args = {}, known = []) {
   return line.slice(0, 120);
 }
 /** What the model is given of artifact a's rendered page r (renderArtifact's):
- * the check, and the screenshot as an image when it can see one (vision).
- * When nothing could be rendered: {check: {unavailable}} if unavailable is
- * asked for, else {}. */
-function shownCheck(a, r, vision, unavailable) {
+ * the check, and the screenshot as an image when it can see one (vision),
+ * captioned with its size (wide, or phone). When nothing could be rendered:
+ * {check: {unavailable}} if unavailable is asked for, else {}. */
+function shownCheck(a, r, { vision, unavailable, wide }) {
   if (r.unavailable) return unavailable ? { check: { unavailable: r.unavailable } } : {};
   const caption =
     'Screenshot of ' +
     a.title +
     ' v' +
     a.version +
-    ', rendered at phone size' +
+    ', rendered at ' +
+    (wide ? WIDE.width + '×' + WIDE.height : 'phone size') +
     (r.stepErrors ? ', after the steps' : '');
   return {
     check: {
@@ -389,9 +430,6 @@ const CLAIMS_CHANGE =
 /** Sent back with an answer that says an artifact changed when none did. */
 const CLAIM_CHECK =
   'Your answer says the artifact changed, but no create_artifact or update_artifact call succeeded this turn. Make the change now with the tool, or correct your answer to say it was not made.';
-/** Sent with the check of a page written this turn, before the answer. */
-const REVIEW =
-  'Before answering, compare the page against the user’s request: list each thing asked for and whether it is visibly present and working. Fix what is missing or broken with update_artifact, then answer. If all is there, answer now.';
 /** What to send back with an answer that claims an artifact changed in a turn
  * about artifacts when nothing was written (changed false); null otherwise.
  * Once a turn: guard.claimed remembers it. */

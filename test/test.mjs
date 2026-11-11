@@ -3316,6 +3316,63 @@ test('the claim guard sends back, once, an answer saying an artifact changed whe
     null,
   );
 });
+test('the page review asks the review model once, without tools, and turns its defects into a fix', async () => {
+  const { reviewPage, fixRequest } = await import('../server/chat/review.mjs');
+  const page = {
+      title: 'Wind tunnel',
+      version: 2,
+      content: '<canvas></canvas><script>flow()</script>',
+    },
+    shot = caption => ({ type: 'image/jpeg', data: 'AAAA', caption }),
+    bodies = [];
+  const ask = reply =>
+    reviewPage({
+      model: 'kimi-k3.1-pro',
+      provider: 'ollama',
+      key: 'k',
+      request: 'A Joukowski airfoil wind tunnel',
+      previous: 'Hi',
+      page,
+      check: { ok: true, errors: [], failedLoads: [] },
+      images: [shot('Screenshot of Wind tunnel v2, rendered at phone size'), shot('… wide')],
+      upstream: async (url, init) => {
+        bodies.push(JSON.parse(init.body));
+        return reply == null
+          ? new Response('', { status: 500 })
+          : new Response(
+              'data: ' +
+                JSON.stringify({ choices: [{ delta: { content: reply } }] }) +
+                '\n\ndata: {"choices":[],"usage":{"prompt_tokens":900,"completion_tokens":40}}\n\ndata: [DONE]\n\n',
+            );
+      },
+    });
+  const list =
+    '1. Particles flow around a circle: map them through z + 1/z.\n2. The legend overlaps the canvas when wide.';
+  const found = await ask(list);
+  assert.equal(found.defects, list);
+  assert.equal(found.count, 2);
+  assert.equal(found.usage.calls, 1);
+  assert.equal(found.usage.outputTokens, 40);
+  const sent = bodies[0];
+  assert.equal(sent.model, 'kimi-k3.1-pro');
+  assert.equal(sent.tools, undefined);
+  assert.equal(sent.max_tokens, 1500);
+  assert.match(sent.messages[0].content, /strict reviewer/);
+  const user = sent.messages.at(-1).content;
+  assert.match(user[0].text, /Joukowski[\s\S]*"Wind tunnel" v2[\s\S]*flow\(\)/);
+  assert.equal(user.filter(p => p.type === 'image_url').length, 2);
+  assert.equal(
+    fixRequest(page, list),
+    'A reviewer checked "Wind tunnel" v2 and found:\n' +
+      list +
+      '\nFix these with update_artifact (check other states with check_artifact steps), then answer.',
+  );
+  // Nothing found, or no review at all: the answer stands.
+  assert.equal((await ask('No defects.')).defects, null);
+  const failed = await ask(null);
+  assert.equal(failed.defects, null);
+  assert.match(failed.error, /500/);
+});
 test('a tool’s screenshot reaches the model as an image after its result, the oldest left out', async () => {
   let calls = 0;
   const bodies = [];

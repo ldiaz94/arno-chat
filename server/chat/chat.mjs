@@ -525,7 +525,7 @@ function imageParts(images, provider) {
 const KEEP_SHOTS = 2;
 /** A screenshot's caption, which marks the image after it as one (a tool's,
  * not the user's). */
-const SHOT_CAPTION = /^Screenshot of .*rendered at phone size/;
+const SHOT_CAPTION = /^Screenshot of .*, rendered at /;
 /** Tells the model text, with images ({type, data, caption}) each after its
  * caption, as a user message; Anthropic's joins the tool results' turn when
  * that is the last. Earlier screenshots are left out first, so that no more

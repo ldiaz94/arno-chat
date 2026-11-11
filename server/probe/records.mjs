@@ -68,7 +68,8 @@ export const records = {
       }
     );
   },
-  /** Prices what a turn spent (result.usage, webUsage, requestLog), sets its
+  /** Prices what a turn spent (result.usage, webUsage, requestLog, and its
+   * page reviews, priced at their own model by chat/turn.mjs), sets its
    * usage.cost and costParts, adds it to the stats given and to the owner's
    * request log. A failed or stopped turn is charged too (chargeFailed). */
   async charge(result, stats) {
@@ -89,9 +90,13 @@ export const records = {
           : null,
       rates = webKey ? await webRates(webKey) : WEB_RATES,
       parts = costParts(price, result.usage, result.webUsage, rates),
-      web = parts.search + parts.reads;
+      web = parts.search + parts.reads,
+      reviews = result.reviews || [];
+    parts.review = reviews.reduce((n, r) => n + (r.cost || 0), 0);
+    result.usage.calls += reviews.reduce((n, r) => n + r.usage.calls, 0);
     result.usage.costParts = parts;
-    result.usage.cost = modelCost == null && !web ? null : (modelCost || 0) + web;
+    result.usage.cost =
+      modelCost == null && !web && !parts.review ? null : (modelCost || 0) + web + parts.review;
     stats.cost = (stats.cost || 0) + (result.usage.cost || 0);
     stats.costParts = Object.fromEntries(
       Object.entries(parts).map(([k, v]) => [k, (stats.costParts?.[k] || 0) + (v || 0)]),
@@ -100,6 +105,7 @@ export const records = {
       (stats.unpriced || 0) + Number(modelCost == null && !!result.usage.measuredCalls);
     await this.logRequests(session, result, price, rates);
     delete result.requestLog;
+    delete result.reviews;
     stats.calls += result.usage.calls;
     stats.measuredCalls += result.usage.measuredCalls;
     stats.inputTokens += result.usage.inputTokens || 0;
@@ -176,6 +182,17 @@ export const records = {
         cached: r.cached,
         output: r.output,
         cost: callCost(r),
+      })),
+      // Each page review as one request, at its own model.
+      ...(result.reviews || []).map(r => ({
+        ...base,
+        at,
+        kind: 'model',
+        model: r.model,
+        input: r.usage.inputTokens,
+        cached: r.usage.cachedTokens,
+        output: r.usage.outputTokens,
+        cost: r.cost,
       })),
       ...tool(web.searches, 'search', 'web_search', rates.search),
       ...tool(web.searxng, 'search', 'searxng', 0),

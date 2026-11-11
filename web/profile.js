@@ -32,13 +32,27 @@ export function profilePanel(account) {
     '</section>'
   );
 }
-// The composer settings: default model and send key.
+// The models in list as a select's options, after first ([value, label]),
+// with chosen selected (and added at the top when list lacks it).
+function modelOptions(list, chosen, first) {
+  const models =
+    list.some(m => m.id === chosen) || !chosen ? list : [{ id: chosen, name: chosen }, ...list];
+  return [first, ...models.map(m => [m.id, modelName(m.id)])]
+    .map(
+      ([id, label]) =>
+        '<option value="' +
+        esc(id) +
+        '"' +
+        (id === chosen ? ' selected' : '') +
+        '>' +
+        esc(label) +
+        '</option>',
+    )
+    .join('');
+}
+// The composer settings: send key, default model and review model (only
+// models that see images: the review looks at screenshots).
 function composerCard(account) {
-  const current = account.defaultModel || '',
-    models =
-      state.models.some(m => m.id === current) || !current
-        ? state.models
-        : [{ id: current, name: current }, ...state.models];
   return (
     '<section class="setting-card" id="composer-card"><strong>Composer & defaults</strong>' +
     '<label class="check-label"><input type="radio" name="enter-key" id="enter-sends"' +
@@ -47,20 +61,16 @@ function composerCard(account) {
     '<label class="check-label"><input type="radio" name="enter-key" id="enter-line"' +
     (account.enterSends !== true ? ' checked' : '') +
     '> Enter adds a new line · ⌘ / Ctrl + Enter sends</label>' +
-    '<label>Default model<select id="default-model" class="field"><option value="">App default</option>' +
-    models
-      .map(
-        m =>
-          '<option value="' +
-          esc(m.id) +
-          '"' +
-          (m.id === current ? ' selected' : '') +
-          '>' +
-          esc(modelName(m.id)) +
-          '</option>',
-      )
-      .join('') +
-    '</select></label><p class="caption">New chats and coding sessions start with this model. The send button always sends.</p></section>'
+    '<label>Default model<select id="default-model" class="field">' +
+    modelOptions(state.models, account.defaultModel || '', ['', 'App default']) +
+    '</select></label><p class="caption">New chats and coding sessions start with this model. The send button always sends.</p>' +
+    '<label>Review model<select id="review-model" class="field">' +
+    modelOptions(
+      state.models.filter(m => m.vision),
+      account.reviewModel || '',
+      ['', 'Same as the chat'],
+    ) +
+    '</select></label><p class="caption">Checks pages the chat builds against your request, with screenshots. A stronger model catches more; costs one extra call per page.</p></section>'
   );
 }
 let spot = null; // the weather's place as rounded coordinates, from "Use my location"
@@ -118,6 +128,7 @@ export async function profilePrefs() {
     about: $('#about').value,
     enterSends: $('#enter-sends').checked,
     defaultModel: $('#default-model').value,
+    reviewModel: $('#review-model').value,
     home: {
       quote: $('#home-quote').checked,
       fact: $('#home-fact').checked,

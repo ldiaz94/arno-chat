@@ -71,6 +71,7 @@ export function publicProfile(env, p) {
     home: p.home || HOME,
     enterSends: p.enterSends ?? false, // false (default): Enter adds a line, Ctrl/⌘+Enter sends; true: Enter sends
     defaultModel: p.defaultModel || '', // '' : the app's own default
+    reviewModel: p.reviewModel || '', // '' : each chat's own model reviews its pages
     updatedAt: p.updatedAt || 0, // when preferences were last saved; offline edits compare it
     skills: p.skills || [],
     models: p.models || [],
@@ -197,13 +198,19 @@ export async function accountRoute(request, env, userId) {
         throw Error('About you must be at most 2,000 characters');
       const home = homeSettings(body.home ?? p.home ?? HOME),
         enterSends = body.enterSends ?? p.enterSends ?? false,
-        defaultModel = body.defaultModel ?? p.defaultModel ?? '';
+        defaultModel = body.defaultModel ?? p.defaultModel ?? '',
+        reviewModel = body.reviewModel ?? p.reviewModel ?? '';
       if (typeof enterSends !== 'boolean') throw Error('Invalid Enter key setting');
       if (
         typeof defaultModel !== 'string' ||
         (defaultModel && defaultModel !== p.defaultModel && !(await modelAllowed(defaultModel)))
       )
         throw Error('Unsupported default model');
+      if (
+        typeof reviewModel !== 'string' ||
+        (reviewModel && reviewModel !== p.reviewModel && !(await modelAllowed(reviewModel)))
+      )
+        throw Error('Unsupported review model');
       if (!Array.isArray(body.skills) || body.skills.length > 10)
         throw Error('At most 10 skills are supported');
       const skills = body.skills.map(s => {
@@ -264,6 +271,7 @@ export async function accountRoute(request, env, userId) {
         home,
         enterSends,
         defaultModel,
+        reviewModel,
         skills,
         mcp,
         models,

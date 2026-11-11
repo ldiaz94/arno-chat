@@ -162,8 +162,11 @@ A tool that may change something waits for you to tap **Allow**.
 [`plan.mjs`](server/chat/plan.mjs) turns the options into budgets and limits.
 Each HTML page the model writes is opened in a headless browser at phone
 size ([`render.mjs`](server/probe/render.mjs)); its errors, failed loads and
-a screenshot go back to the model, which compares the page against your
-request before it answers. `check_artifact` can set a slider, tap or drag
+a screenshot go back to the model. Before it answers, a reviewer (the
+**Review model** in Settings → You, or the chat's own model) gets your
+request, the page's source and screenshots at phone size and 1280×800
+([`review.mjs`](server/chat/review.mjs)); the defects it lists go back to
+the model to fix. The review costs one extra call per page. `check_artifact` can set a slider, tap or drag
 before the screenshot, to see another state without changing the page. An answer that says a page changed when nothing
 was written is sent back. `find_image` ([`images.mjs`](server/chat/images.mjs))
 finds freely licensed pictures on Wikimedia Commons for pages to show.

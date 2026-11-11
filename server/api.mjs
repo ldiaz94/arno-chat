@@ -11,7 +11,7 @@
  * (worker.js, auth.mjs) and everything under /api/sessions/<id>/. */
 import { COOKIE, SECURITY, json, boundedJson, cookie, sessionCookie } from './http.mjs';
 import { github, authObject } from './auth.mjs';
-import { catalog, modelAllowed } from './models.mjs';
+import { catalog, modelAllowed, seesScreenshots } from './models.mjs';
 import { profile, credential, accountRoute } from './account.mjs';
 import { PROVIDERS, providerModels, providerModel, effortModel } from './providers.mjs';
 import { testMcp } from './gateways/mcp.mjs';
@@ -300,11 +300,16 @@ export const apiRoutes = {
       ...extra.filter(r => r.status === 'fulfilled').flatMap(r => r.value),
       ...(p.models || []),
     ];
-    // effort: whether the thinking choice can be honoured (absent: unknown).
-    const models = [...new Map(all.map(m => [m.id, m])).values()].map(m => {
-      const { provider, id } = providerModel(m.id);
-      return provider === 'ollama' ? m : { ...m, effort: effortModel(provider, id) };
-    });
+    // effort: whether the thinking choice can be honoured (absent: unknown);
+    // vision: whether it is shown screenshots (seesScreenshots).
+    const models = await Promise.all(
+      [...new Map(all.map(m => [m.id, m])).values()].map(async m => {
+        const { provider, id } = providerModel(m.id);
+        return provider === 'ollama'
+          ? m
+          : { ...m, effort: effortModel(provider, id), vision: await seesScreenshots(m.id) };
+      }),
+    );
     return json({ ...base, models });
   },
   /** One page of the user's GitHub repositories, filtered by the search text

@@ -132,6 +132,7 @@ const COST_PARTS = [
   ['output', 'Output tokens'],
   ['search', 'Web searches'],
   ['reads', 'Page reads'],
+  ['review', 'Page reviews'],
 ];
 // The cost split by part (input, output, searches, reads), for the session and the last turn,
 // as a table.
