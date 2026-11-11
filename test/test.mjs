@@ -3393,3 +3393,35 @@ test('renderPage reports page errors and failed loads, and always closes the bro
   assert.equal(closed, 2);
   assert.match((await renderPage({}, '')).unavailable, /No browser/);
 });
+test('renderPage takes steps in order and reports the ones that fail', async () => {
+  const { renderPage } = await import('../server/probe/render.mjs');
+  const done = [];
+  const element = name => ({
+    click: async () => done.push('click ' + name),
+    evaluate: async (f, value) => done.push('set ' + name + '=' + value),
+  });
+  const page = {
+    setViewport: async () => {},
+    evaluateOnNewDocument: async () => {},
+    setRequestInterception: async () => {},
+    on: () => {},
+    goto: async () => {},
+    $: async selector => (selector === '#missing' ? null : element(selector)),
+    touchscreen: { tap: async (x, y) => done.push('tap ' + x + ',' + y) },
+    keyboard: { press: async key => done.push('key ' + key) },
+    screenshot: async () => 'SHOT',
+  };
+  const r = await renderPage({}, '', {
+    launch: async () => ({ newPage: async () => page, close: async () => {} }),
+    steps: [
+      { set: '#angle', value: '18' },
+      { click: '#missing' },
+      { tap: [10, 20] },
+      { wait: 1 },
+      { key: 'Enter' },
+    ],
+  });
+  assert.deepEqual(done, ['set #angle=18', 'tap 10,20', 'key Enter']);
+  assert.deepEqual(r.stepErrors, [{ step: 1, error: 'Nothing matches #missing' }]);
+  assert.equal(r.screenshot, 'SHOT');
+});

@@ -163,7 +163,8 @@ A tool that may change something waits for you to tap **Allow**.
 Each HTML page the model writes is opened in a headless browser at phone
 size ([`render.mjs`](server/probe/render.mjs)); its errors, failed loads and
 a screenshot go back to the model, which compares the page against your
-request before it answers. An answer that says a page changed when nothing
+request before it answers. `check_artifact` can set a slider, tap or drag
+before the screenshot, to see another state without changing the page. An answer that says a page changed when nothing
 was written is sent back. `find_image` ([`images.mjs`](server/chat/images.mjs))
 finds freely licensed pictures on Wikimedia Commons for pages to show.
 

@@ -139,13 +139,14 @@ export const chatTurn = {
         vision = await seesScreenshots(session.model),
         // What the turn's review has done (see review below), kept across alarms.
         guard = saved?.guard || { claimed: false, reviews: 0, reviewed: '' };
-      // Checks of pages this alarm, by 'id:version', so the review reuses the
-      // check made when the page was written.
+      // Checks of pages this alarm, by 'id:version' and the steps taken, so
+      // the review reuses the check made when the page was written.
       const checks = new Map();
-      // An artifact's page rendered, as shown to the model (shownCheck).
-      const checked = async (a, unavailable) => {
-        const key = a.id + ':' + a.version;
-        if (!checks.has(key)) checks.set(key, await renderArtifact(this.env, a));
+      // An artifact's page rendered, after steps if any, as shown to the
+      // model (shownCheck).
+      const checked = async (a, unavailable, steps = []) => {
+        const key = a.id + ':' + a.version + (steps.length ? ':' + JSON.stringify(steps) : '');
+        if (!checks.has(key)) checks.set(key, await renderArtifact(this.env, a, { steps }));
         return shownCheck(a, checks.get(key), vision, unavailable);
       };
       // Whether this turn is about an artifact: one exists, or the user names one.
@@ -205,7 +206,11 @@ export const chatTurn = {
           await this.activity(toolStep(name, args, [...artifacts, ...listed]));
           if (name === 'find_image') return findImage(args.query);
           if (name === 'check_artifact')
-            return checked(await findArtifact(this.ctx.storage, args.id), true);
+            return checked(
+              await findArtifact(this.ctx.storage, args.id),
+              true,
+              Array.isArray(args.steps) ? args.steps : [],
+            );
           if (/_artifact$/.test(name)) {
             const done = await artifactTool(this.ctx.storage, name, args, artifacts);
             if (name === 'read_artifact' || done.kind !== 'html') return done;
@@ -342,7 +347,11 @@ export function toolStep(name, args = {}, known = []) {
       create_artifact: () => 'Writing ' + title,
       update_artifact: () => 'Editing ' + title,
       read_artifact: () => 'Reading ' + title,
-      check_artifact: () => 'Checking ' + title + ' in a browser',
+      check_artifact: () =>
+        'Checking ' +
+        title +
+        ' in a browser' +
+        (args.steps?.length ? ' (' + args.steps.length + ' steps)' : ''),
     }[name]?.() || name;
   return line.slice(0, 120);
 }
@@ -352,12 +361,19 @@ export function toolStep(name, args = {}, known = []) {
  * asked for, else {}. */
 function shownCheck(a, r, vision, unavailable) {
   if (r.unavailable) return unavailable ? { check: { unavailable: r.unavailable } } : {};
-  const caption = 'Screenshot of ' + a.title + ' v' + a.version + ', rendered at phone size';
+  const caption =
+    'Screenshot of ' +
+    a.title +
+    ' v' +
+    a.version +
+    ', rendered at phone size' +
+    (r.stepErrors ? ', after the steps' : '');
   return {
     check: {
       ok: !r.errors.length && !r.failedLoads.length,
       errors: r.errors,
       failedLoads: r.failedLoads,
+      ...(r.stepErrors?.length && { stepErrors: r.stepErrors }),
     },
     images: vision && r.screenshot ? [{ type: 'image/jpeg', data: r.screenshot, caption }] : [],
   };

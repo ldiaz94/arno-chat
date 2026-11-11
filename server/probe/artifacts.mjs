@@ -27,6 +27,8 @@ export const KINDS = { markdown: 'md', html: 'html', svg: 'svg', mermaid: 'mmd',
 /** Longest artifact, in characters; an image's, in base64. */
 const MAX_CONTENT = 200000,
   MAX_IMAGE = 1400000;
+/** Most steps a check_artifact call may take (render.mjs). */
+export const MAX_STEPS = 12;
 /** Artifacts one conversation may hold. */
 const MAX_ARTIFACTS = 100;
 /** Earlier versions kept per artifact. */
@@ -52,7 +54,7 @@ HTML pages:
 - three.js: a module with the import map {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}; build geometry in code; TextureLoader takes https images, fetch-based loaders fail.
 Rules:
 - Never say a change is done, live or under way unless you made it with a tool in this turn; if you could not, say so.
-- Writing an html artifact checks it in a phone-sized browser: read the check result and fix what it reports before you reply. check_artifact checks again, e.g. after layout changes.
+- Writing an html artifact checks it in a phone-sized browser: read the check result and fix what it reports before you reply. check_artifact checks again, e.g. after layout changes. To see another state (a slider position, a tab, after a tap), use check_artifact with steps; never change the page's defaults or initial state just to test it.
 - On a reported error, read_artifact and fix the actual cause, located by pageErrors and the check's line numbers (often a syntax slip). Never blame the sandbox, network or CDN without evidence.
 - Factual content: research it first when you have web tools, and cite in the reply. Images: only URLs from find_image or web results, never from memory; give each image an onerror fallback. Never claim a check you did not run.
 - Simulations and visualisations: first decide the model (equations, what is drawn, boundary conditions; an airfoil is a solid obstacle, drawn and enforced in the solver). Make every requested element visible. Correct and clear beats more particles; tune one thing at a time.
@@ -119,10 +121,19 @@ export const ARTIFACT_TOOLS = [
   {
     name: 'check_artifact',
     description:
-      'Open an html or svg artifact in a browser at phone size, as the user sees it, and report its script errors and the images, scripts or styles that failed to load.',
+      'Open an html or svg artifact in a browser at phone size (390×844), as the user sees it, and report its script errors and the images, scripts or styles that failed to load. Optional steps run in order once the page settles, before the screenshot, to see another state without changing the page; a step that fails is reported in stepErrors (step is its index) and the rest still run.',
     inputSchema: {
       type: 'object',
-      properties: { id: { type: 'string', description: 'The artifact id, from the list' } },
+      properties: {
+        id: { type: 'string', description: 'The artifact id, from the list' },
+        steps: {
+          type: 'array',
+          maxItems: MAX_STEPS,
+          description:
+            'Each one of: {set: css selector, value: string} (sets an input, select, textarea or range slider and sends input and change), {click: selector}, {tap: [x, y]}, {drag: [x1, y1, x2, y2]}, {key: name, e.g. "ArrowRight"}, {wait: ms, at most 3000}, {scroll: y}. Coordinates are CSS pixels in the viewport.',
+          items: { type: 'object' },
+        },
+      },
       required: ['id'],
     },
   },
