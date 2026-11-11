@@ -342,7 +342,11 @@ export async function plainChat({
           tools,
           ...fields,
           ...(provider === 'anthropic'
-            ? { system: instructions || 'You are a helpful assistant.' }
+            ? {
+                system: instructions || 'You are a helpful assistant.',
+                // Each round re-reads the turn so far from the cache.
+                cache_control: { type: 'ephemeral' },
+              }
             : {}),
         }),
       });
@@ -558,15 +562,18 @@ const SHOT_CAPTION = /^Screenshot of .*, rendered at /;
 /** Tells the model text, with images ({type, data, caption}) each after its
  * caption, as a user message; Anthropic's joins the tool results' turn when
  * that is the last. Earlier screenshots are left out first, so that no more
- * than KEEP_SHOTS remain. */
+ * than KEEP_SHOTS remain, except for Anthropic: its thinking blocks are bound
+ * to the conversation before them, so an edit there fails the next request
+ * (400, "bound to a different conversation"), and it would void the cache. */
 function tell(messages, provider, text, images = []) {
   const shown = [];
-  for (const m of messages)
-    if (Array.isArray(m.content))
-      m.content.forEach((part, i) => {
-        const image = /^image/.test(m.content[i + 1]?.type);
-        if (image && SHOT_CAPTION.test(part.text || '')) shown.push([m.content, i + 1]);
-      });
+  if (provider !== 'anthropic')
+    for (const m of messages)
+      if (Array.isArray(m.content))
+        m.content.forEach((part, i) => {
+          const image = /^image/.test(m.content[i + 1]?.type);
+          if (image && SHOT_CAPTION.test(part.text || '')) shown.push([m.content, i + 1]);
+        });
   for (const [content, i] of shown.slice(0, Math.max(0, shown.length + images.length - KEEP_SHOTS)))
     content[i] = { type: 'text', text: '(an earlier screenshot, left out)' };
   const parts = [

@@ -3442,6 +3442,63 @@ test('a tool’s screenshot reaches the model as an image after its result, the 
   );
   assert.ok(images.some(p => p.text === '(an earlier screenshot, left out)'));
 });
+test('Claude’s conversation only grows: no screenshot is left out, so its thinking stays valid, and it is cached', async () => {
+  let calls = 0;
+  const bodies = [];
+  await plainChat({
+    model: 'claude-sonnet-5-5',
+    provider: 'anthropic',
+    history: [],
+    prompt: 'Build it',
+    key: 'k',
+    runTool: async () => ({
+      id: 'a',
+      images: [
+        {
+          type: 'image/jpeg',
+          data: 'A' + ++calls,
+          caption: 'Screenshot of P v' + calls + ', rendered at phone size',
+        },
+      ],
+    }),
+    upstream: async (url, init) => {
+      bodies.push(JSON.parse(init.body));
+      const n = bodies.length;
+      return claudeStream(
+        n < 4
+          ? [
+              {
+                type: 'content_block_start',
+                index: 0,
+                content_block: { type: 'thinking', thinking: '', signature: 'S' + n },
+              },
+              {
+                type: 'content_block_start',
+                index: 1,
+                content_block: { type: 'tool_use', id: 't' + n, name: 'check_artifact', input: {} },
+              },
+            ]
+          : [
+              { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+              {
+                type: 'content_block_delta',
+                index: 0,
+                delta: { type: 'text_delta', text: 'Done.' },
+              },
+            ],
+      );
+    },
+  });
+  for (let i = 1; i < bodies.length; i++) {
+    const before = JSON.stringify(bodies[i - 1].messages).slice(0, -1);
+    assert.ok(
+      JSON.stringify(bodies[i].messages).startsWith(before),
+      'request ' + i + ' edits history',
+    );
+  }
+  assert.equal(JSON.stringify(bodies[3].messages).match(/"type":"image"/g).length, 3);
+  assert.deepEqual(bodies[0].cache_control, { type: 'ephemeral' });
+});
 test('renderPage reports page errors and failed loads, and always closes the browser', async () => {
   const { renderPage } = await import('../server/probe/render.mjs');
   let closed = 0,
