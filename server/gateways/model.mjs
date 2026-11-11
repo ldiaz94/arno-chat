@@ -330,8 +330,28 @@ export async function modelRequest(
     return new Response(provider + ' request failed', { status: 502 });
   }
   if (!response.ok) {
-    if (response.body) await response.body.cancel();
-    return new Response(provider + ' rejected the request', { status: 502 });
+    // The provider's reason goes to the log and to the runner, which shows
+    // it; the status alone left a turn ending "without a reply".
+    const said = await response.text().catch(() => '');
+    console.log(
+      JSON.stringify({
+        event: 'model_http_error',
+        provider,
+        model,
+        status: response.status,
+        body: said.slice(0, 1000),
+      }),
+    );
+    let reason = '';
+    try {
+      reason = String(JSON.parse(said).error?.message || '').slice(0, 300);
+    } catch {
+      // Not JSON: the log keeps the body.
+    }
+    return new Response(
+      provider + ' rejected the request (' + response.status + (reason ? ': ' + reason : '') + ')',
+      { status: 502 },
+    );
   }
   const stream =
     provider === 'mistral' ? response.body?.pipeThrough(mistralDeltas()) : response.body;
