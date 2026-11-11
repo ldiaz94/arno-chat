@@ -125,21 +125,30 @@ function thinkingBlocks() {
 }
 /** The runner drops Claude's thinking blocks, but with thinking on, the
  * assistant message that called tools must start with them, unchanged. Put
- * back the ones the gateway kept from that reply; without them, this request
- * goes without thinking, which the API allows. */
+ * back the ones the gateway kept (saved: [{toolIds, blocks}], this turn's
+ * replies) in every reply of the turn, not only the last: Claude's thinking
+ * is bound to the conversation before it, so a reply that loses its blocks
+ * on a later request voids every block after it. Replies of earlier turns
+ * stay without, as in every request of this one. Without the last reply's
+ * blocks, this request goes without thinking, which the API allows. */
 export function replayThinking(payload, saved) {
-  const last = payload.messages.findLast(m => m.role === 'assistant');
-  if (!Array.isArray(last?.content) || last.content.some(b => /thinking$/.test(b.type))) return;
-  const ids = last.content.filter(b => b.type === 'tool_use').map(b => b.id);
-  if (!ids.length) return;
-  if (saved?.blocks?.length && ids.every(id => saved.toolIds.includes(id))) {
-    payload.messages = payload.messages.map(m =>
-      m === last ? { ...m, content: [...saved.blocks, ...m.content] } : m,
-    );
-    return;
+  const kept = Array.isArray(saved) ? saved : saved ? [saved] : [],
+    last = payload.messages.findLast(m => m.role === 'assistant');
+  let missing = false;
+  payload.messages = payload.messages.map(m => {
+    if (m.role !== 'assistant' || !Array.isArray(m.content)) return m;
+    if (m.content.some(b => /thinking$/.test(b.type))) return m;
+    const ids = m.content.filter(b => b.type === 'tool_use').map(b => b.id);
+    if (!ids.length) return m;
+    const found = kept.find(k => k.blocks?.length && ids.every(id => k.toolIds.includes(id)));
+    if (found) return { ...m, content: [...found.blocks, ...m.content] };
+    if (m === last) missing = true;
+    return m;
+  });
+  if (missing) {
+    delete payload.thinking;
+    delete payload.output_config;
   }
-  delete payload.thinking;
-  delete payload.output_config;
 }
 /** A pass-through stream over a reply: the bytes go on unchanged while it
  * counts the reported usage (onUsage at the end), shows text and reasoning

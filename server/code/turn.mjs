@@ -179,7 +179,8 @@ export const codeTurn = {
       return json(result);
     } finally {
       this.inFlight = false;
-      await this.ctx.storage.delete(['modelQuota', 'thinking']);
+      const thinking = await this.ctx.storage.list({ prefix: 'thinking:' });
+      await this.ctx.storage.delete(['modelQuota', 'thinking', ...thinking.keys()]);
       await this.ctx.storage.setAlarm(Date.now() + 35 * 60 * 1000);
     }
   },
