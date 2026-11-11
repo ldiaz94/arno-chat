@@ -47,6 +47,7 @@ export function message(role, text, result = {}) {
         '<div class="message-attachments">' +
         attachmentsHtml(state.session.id, node._attachments) +
         '</div>';
+    node.innerHTML += '<div class="turn-footer user-footer">' + copyButton('message') + '</div>';
     if (result.at) node.dataset.at = result.at;
     if (state.session?.kind === 'chat') {
       node
@@ -54,6 +55,7 @@ export function message(role, text, result = {}) {
         .insertAdjacentHTML('afterend', '<button type="button" class="edit-message">Edit</button>');
       node.querySelector('.edit-message').onclick = () => editMessage(node, text);
     }
+    node.querySelector('.copy-message').onclick = () => copy(text);
   } else {
     const cleaned = cleanOutput(text);
     if (result.reasoning)
@@ -110,9 +112,8 @@ export function message(role, text, result = {}) {
       optionTags(result.options)
         .map(t => '<span class="tag option-tag">' + esc(t) + '</span>')
         .join('') +
-      '<button type="button" class="copy-answer" aria-label="Copy answer">' +
-      icon('copy') +
-      ' Copy</button></div>';
+      copyButton('answer') +
+      '</div>';
     if (result.diff)
       node.innerHTML +=
         '<details class="details"><summary>' +
@@ -132,11 +133,21 @@ export function message(role, text, result = {}) {
         '<details class="details"><summary>Execution details</summary><pre>' +
         esc((result.diagnostics || '') + '\n' + text) +
         '</pre></details>';
-    node.querySelector('.copy-answer').onclick = () => copy(cleaned);
+    node.querySelector('.copy-message').onclick = () => copy(cleaned);
   }
   place(node);
   scrollDown();
   return node;
+}
+/** The small Copy button under a message; what names what it copies. */
+function copyButton(what) {
+  return (
+    '<button type="button" class="copy-message" aria-label="Copy ' +
+    what +
+    '">' +
+    icon('copy') +
+    ' Copy</button>'
+  );
 }
 /** Adds a node to the end of the thread, above the messages still waiting in
  * the outbox (outbox.js), which stay last. */
@@ -168,10 +179,13 @@ export function failure(text, error, at, attachments = [], usage) {
     esc(error || 'This turn failed.') +
     '</p>' +
     spent(usage) +
-    '<div class="failure-actions"><button type="button" class="primary">Retry</button></div>';
+    '<div class="failure-actions">' +
+    copyButton('error') +
+    '<button type="button" class="primary">Retry</button></div>';
   if (at) node.dataset.at = at;
   node._attachments = attachments;
-  node.querySelector('button').onclick = () => retry(node, text);
+  node.querySelector('.copy-message').onclick = () => copy(error || 'This turn failed.');
+  node.querySelector('.primary').onclick = () => retry(node, text);
   place(node);
   scrollDown();
   return node;

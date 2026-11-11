@@ -52,6 +52,8 @@ export async function renderPage(env, html, { launch } = {}) {
     if (errors.size < MAX_ITEMS) errors.add(String(text).slice(0, ITEM_LENGTH));
   };
   const noteFailed = (url, status) => {
+    // The browser asks for a favicon of its own accord; the app shows none.
+    if (url.endsWith('/favicon.ico')) return;
     if (failed.size < MAX_ITEMS && !failed.has(url)) failed.set(url, status);
   };
   const work = (async () => {

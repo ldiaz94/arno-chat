@@ -5,6 +5,9 @@
  * Leaves out the routes (session-routes.mjs) and the model's side (../gateways). */
 import { SECURITY, json } from '../http.mjs';
 
+/** How many recent steps the live view keeps. */
+const STEPS = 6;
+
 export const live = {
   /** Full bounded snapshots make SSE reconnects idempotent. This is a view of
    * the durable job, never its execution lifetime. Slow readers are disconnected
@@ -24,8 +27,9 @@ export const live = {
       }
     }
   },
-  /** What a coding turn is doing now (a tool call, a worker's step), for the
-   * live view; kept with the live preview, not stored. */
+  /** What a turn is doing now (a tool call, a worker's step, a new round), for
+   * the live view: the current step, and the last STEPS of them as {text, at}
+   * for its timeline. Saved, as the preview is, at most once a second. */
   async activity(text) {
     const job = await this.ctx.storage.get('job');
     if (!text || job?.status !== 'running') return;
@@ -33,12 +37,19 @@ export const live = {
       this.live?.jobId === job.id
         ? this.live
         : { jobId: job.id, round: 0, text: '', reasoning: '' };
+    // A step's time is the view's, so a preview updated after it is newer.
+    const at = Math.max(Date.now(), (old.updatedAt || 0) + 1);
     this.live = {
       ...old,
       activity: text,
-      updatedAt: Math.max(Date.now(), (old.updatedAt || 0) + 1),
+      steps: [...(old.steps || []), { text, at }].slice(-STEPS),
+      updatedAt: at,
     };
     this.broadcast(this.live);
+    if (!this.liveSavedAt || Date.now() - this.liveSavedAt >= 1000) {
+      this.liveSavedAt = Date.now();
+      await this.ctx.storage.put('live', this.live);
+    }
   },
   /** Take a model snapshot from the gateway as the new live view: ignored unless its turn is
    * running and its round is not older; text is clipped, and the view is saved at most once a
@@ -54,6 +65,7 @@ export const live = {
       text: String(preview.text || '').slice(0, 16000),
       reasoning: String(preview.reasoning || '').slice(0, 12000),
       activity: old?.activity || '',
+      steps: old?.steps || [],
       updatedAt: Math.max(Date.now(), (old?.updatedAt || 0) + 1),
     };
     if (new TextEncoder().encode(JSON.stringify(this.live)).byteLength > 100000) {

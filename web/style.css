@@ -788,12 +788,26 @@ table.sized th {
   font-size: 11px;
   color: var(--muted);
 }
-.turn-footer button {
+.turn-footer button,
+.copy-message {
   font-size: 11px;
   min-height: 28px;
   padding: 3px 7px;
   background: transparent;
   border: 0;
+}
+/* Under a user's bubble, only its Copy button: kept close to it. */
+.user-footer {
+  margin-top: 4px;
+}
+.copy-message svg {
+  width: 13px;
+  height: 13px;
+}
+/* A failed turn's Copy sits apart from its Retry. */
+.failure-actions .copy-message {
+  margin-right: auto;
+  color: var(--muted);
 }
 .details {
   margin: 14px 0 0 37px;
@@ -1952,30 +1966,66 @@ body.light,
   margin-bottom: 10px;
 }
 .chat-activity {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   padding: 10px 0 20px 37px;
   color: var(--muted);
   font-size: 13px;
 }
-.typing-dots {
+/* What a chat turn does now: a pulsing dot, the step, and a clock. */
+.activity-now {
   display: flex;
-  gap: 4px;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
-.typing-dots i {
-  display: block;
-  width: 5px;
-  height: 5px;
+.pulse-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--accent);
-  animation: pulse 1.2s infinite;
+  animation: halo 1.6s ease-out infinite;
 }
-.typing-dots i:nth-child(2) {
-  animation-delay: 0.2s;
+@keyframes halo {
+  from {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+  to {
+    box-shadow: 0 0 0 7px transparent;
+  }
 }
-.typing-dots i:nth-child(3) {
-  animation-delay: 0.4s;
+.activity-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.activity-clock {
+  flex: none;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+/* The steps a turn has finished, oldest first. */
+.step-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0 0 0 4px;
+  border-left: 1px solid var(--line);
+  font-size: 12px;
+}
+.step-list li {
+  padding: 1px 0 1px 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  animation: appear 0.2s ease-out;
+}
+.step-list span {
+  color: var(--accent);
+}
+.activity .step-list {
+  margin-top: 10px;
 }
 .danger {
   color: var(--red) !important;
@@ -2338,6 +2388,28 @@ body.light,
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
+}
+/* The end of the latest line of thinking, on one line, its start fading out:
+ * laid out from the end, an overflowing line is cut at its start, and the
+ * spacer after it keeps a short one on the left. */
+.thinking-peek {
+  display: flex;
+  justify-content: flex-end;
+  white-space: nowrap;
+  margin-top: 4px;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+  mask-image: linear-gradient(to right, transparent, #000 1.5em);
+}
+.thinking-peek::after {
+  content: '';
+  flex: 1;
+}
+.thinking-peek:empty,
+.model-thinking[open] .thinking-peek {
+  display: none;
 }
 .model-thinking summary span {
   font-size: 11px;

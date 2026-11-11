@@ -235,6 +235,22 @@ test('live SSE replays bounded progress, rejects stale rounds and survives viewe
   await f.obj.progress({ round: 3, text: 'After cancel' });
   assert.equal(f.obj.live.text, 'Hello world');
 });
+test('the live view keeps the last six steps, and says what chat tools do', async () => {
+  const f = fixture({ job: { id: 'job', status: 'running' } });
+  for (let i = 1; i <= 8; i++) await f.obj.activity('Step ' + i);
+  await f.obj.progress({ jobId: 'job', round: 1, text: 'Hi' });
+  assert.deepEqual(
+    f.obj.live.steps.map(s => s.text),
+    ['Step 3', 'Step 4', 'Step 5', 'Step 6', 'Step 7', 'Step 8'],
+  );
+  assert.equal(f.obj.live.activity, 'Step 8');
+  const { toolStep } = await import('../server/chat/turn.mjs');
+  assert.equal(toolStep('web_read', { url: 'https://www.example.org/a' }), 'Reading example.org');
+  assert.equal(
+    toolStep('update_artifact', { id: 'a1' }, [{ id: 'a1', title: 'Tip calculator' }]),
+    'Editing “Tip calculator”',
+  );
+});
 test('cold session starts from saved checkpoint, with internet disabled', async () => {
   const f = fixture({ snapshot: { id: 'saved' } });
   await f.obj.start('mistral-large-4:cloud');

@@ -465,6 +465,11 @@ const { chromium } = require('playwright'),
           round: 1,
           text: 'A **streamed answer**',
           reasoning: 'A model-provided explanation <script>never HTML</script>',
+          activity: 'Reading example.org',
+          steps: [
+            { text: 'Searching “tide tables”', at: 0 },
+            { text: 'Reading example.org', at: 1 },
+          ],
           updatedAt: 2,
         };
         await route.fulfill({
@@ -942,6 +947,16 @@ const { chromium } = require('playwright'),
     await page.locator('.chat-activity').waitFor();
     await page.locator('#live-response .prose strong').waitFor();
     assert.equal(await page.locator('#live-response .prose strong').innerText(), 'streamed answer');
+    // The card: what it does now (the answer streams after the last step), a
+    // clock, and the finished steps; the thinking peek gives way to the answer.
+    assert.equal(await page.locator('.activity-label').innerText(), 'Responding…');
+    assert.match(await page.locator('.activity-clock').innerText(), /^\d+:\d\d$/);
+    assert.deepEqual(await page.locator('.step-list li').allInnerTexts(), [
+      '✓ Searching “tide tables”',
+      '✓ Reading example.org',
+    ]);
+    assert.equal(await page.locator('.thinking-peek').isVisible(), false);
+    assert.equal(await page.getByRole('button', { name: 'Copy message' }).count(), 1);
     assert.equal(await page.locator('#live-response .model-thinking').getAttribute('open'), null);
     await page.locator('#live-response .model-thinking summary').click();
     assert.match(

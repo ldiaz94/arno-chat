@@ -143,8 +143,8 @@ async function readReply(body, onProgress) {
  * The last of its `rounds` model requests offers no tools and asks for the
  * answer; if none comes, the latest text said is the answer, marked as cut
  * short. `effort` and `maxOutput` come from the turn's plan (plan.mjs).
- * runTool(name, args) runs one tool call; onRound and onProgress report the
- * turn as it goes; upstream stands in for fetch in tests. Returns the answer,
+ * runTool(name, args) runs one tool call; onRound(round) and onProgress report
+ * the turn as it goes; upstream stands in for fetch in tests. Returns the answer,
  * usage and request log.
  *
  * A tool's result may carry images ({type, data, caption}: a screenshot of a
@@ -302,7 +302,7 @@ export async function plainChat({
       await checkpoint(state(round));
       if (Date.now() >= yieldAt || signal?.aborted)
         throw Object.assign(Error('This turn goes on in its next run'), { yielded: true });
-      await onRound();
+      await onRound(round);
       if (runTool && round && round === rounds - 1) nudge(messages, provider);
       const offered = toolSpecs.filter(t => !spentTools.has(t.name));
       const tools =

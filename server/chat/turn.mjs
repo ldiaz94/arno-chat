@@ -188,7 +188,10 @@ export const chatTurn = {
         yieldAt: now + ALARM_YIELD,
         checkpoint: chat =>
           this.saveResume({ jobId, began, sources, counts, artifacts, guard, chat }),
-        onRound: () => this.phase('thinking', { workspace: 'chat', startupMs: 0 }),
+        onRound: async round => {
+          await this.phase('thinking', { workspace: 'chat', startupMs: 0 });
+          if (round) await this.activity('Thinking (step ' + (round + 1) + ')');
+        },
         onProgress: preview => this.progress({ ...preview, jobId }),
         runTool: async (name, args) => {
           const remote = mcp.calls.get(name);
@@ -199,6 +202,7 @@ export const chatTurn = {
             await this.activity(what);
             return callChatMcp(this.env, session.ownerId, remote, args);
           }
+          await this.activity(toolStep(name, args, [...artifacts, ...listed]));
           if (name === 'find_image') return findImage(args.query);
           if (name === 'check_artifact')
             return checked(await findArtifact(this.ctx.storage, args.id), true);
@@ -235,6 +239,7 @@ export const chatTurn = {
           if (!page || key === guard.reviewed) return null;
           if (guard.reviews && (guard.reviews >= 2 || !guard.reviewed.startsWith(page.id + ':')))
             return null;
+          await this.activity('Reviewing the page against your request');
           const shown = await checked(await getArtifact(this.ctx.storage, page.id));
           if (!shown.check) return null; // nothing rendered, nothing to compare
           guard.reviews++;
@@ -318,6 +323,29 @@ const RESUME_PART = 30000;
 const MCP_INSTRUCTIONS =
   'Tools named <connection>__<tool> reach services the user connected (MCP). Use them when the question is about those services. A tool that changes something waits for the user to allow it; if the user does not, say so and do not try again.';
 
+/** A short line for the live view saying what chat tool `name` does with
+ * args; known holds the artifacts it may name by id ({id, title}). */
+export function toolStep(name, args = {}, known = []) {
+  const title = '“' + (args.title || known.find(a => a.id === args.id)?.title || args.id) + '”';
+  const host = () => {
+    try {
+      return new URL(args.url).hostname.replace(/^www\./, '');
+    } catch {
+      return 'a page';
+    }
+  };
+  const line =
+    {
+      web_search: () => 'Searching “' + args.query + '”',
+      web_read: () => 'Reading ' + host(),
+      find_image: () => 'Finding images of “' + args.query + '”',
+      create_artifact: () => 'Writing ' + title,
+      update_artifact: () => 'Editing ' + title,
+      read_artifact: () => 'Reading ' + title,
+      check_artifact: () => 'Checking ' + title + ' in a browser',
+    }[name]?.() || name;
+  return line.slice(0, 120);
+}
 /** What the model is given of artifact a's rendered page r (renderArtifact's):
  * the check, and the screenshot as an image when it can see one (vision).
  * When nothing could be rendered: {check: {unavailable}} if unavailable is

@@ -54,6 +54,9 @@ function approval(job) {
   place(card);
   scrollDown();
 }
+/** The newest live preview (livePreview), which the activity card reads the
+ * turn's steps from. */
+let latest = null;
 // Shows what a running job is doing (and any MCP question) in the thread.
 function activity(job) {
   approval(job);
@@ -64,24 +67,9 @@ function activity(job) {
     node.className = 'activity';
     place(node);
   }
+  const preview = latest?.jobId === job.id ? latest : null;
   if (state.session?.kind === 'chat') {
-    node.className = 'chat-activity';
-    const label =
-      job.stage === 'searching'
-        ? 'Searching the web'
-        : job.stage === 'reading'
-          ? 'Reading sources'
-          : job.stage === 'approval'
-            ? 'Waiting for your answer'
-            : job.stage === 'saving'
-              ? 'Saving response'
-              : $('#live-response .prose')?.textContent
-                ? 'Responding'
-                : 'Thinking';
-    node.innerHTML =
-      '<div class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></div><span>' +
-      label +
-      '…</span>';
+    chatActivity(node, job, preview);
     scrollDown();
     return;
   }
@@ -105,20 +93,72 @@ function activity(job) {
       ? 'Your existing workspace is being restored, not checked out again.'
       : stage === 'checkpointing'
         ? 'Your answer will appear when its workspace checkpoint is safely saved.'
-        : 'This task continues if you close the page.') +
+        : esc(preview?.activity || 'This task continues if you close the page.')) +
     '</small><div class="steps">' +
     order.map((s, i) => '<span class="' + (i <= at ? 'done' : '') + '"></span>').join('') +
-    '</div>';
+    '</div>' +
+    stepsHtml(preview?.steps, preview?.activity);
   scrollDown();
+}
+/** A chat turn's card: what it does now, with a pulsing dot and a ticking
+ * clock since it began, over the steps it has finished. Built once, then
+ * updated, so the clock and the screen reader's status line are not reset. */
+function chatActivity(node, job, preview) {
+  if (node.className !== 'chat-activity') {
+    node.className = 'chat-activity';
+    node.innerHTML =
+      '<div class="activity-now"><span class="pulse-dot" aria-hidden="true"></span><span class="activity-label" role="status"></span><span class="activity-clock"></span></div><div class="activity-steps"></div>';
+    const began = job.createdAt || Date.now(),
+      clock = node.querySelector('.activity-clock'),
+      tick = () => (clock.textContent = elapsed(Date.now() - began));
+    tick();
+    const timer = setInterval(() => (node.isConnected ? tick() : clearInterval(timer)), 1000);
+  }
+  const steps = preview?.steps || [],
+    last = steps.at(-1);
+  const now =
+    job.stage === 'approval'
+      ? 'Waiting for your answer'
+      : job.stage === 'saving'
+        ? 'Saving response'
+        : preview?.text && (!last || preview.updatedAt > last.at)
+          ? 'Responding'
+          : last?.text ||
+            (job.stage === 'searching'
+              ? 'Searching the web'
+              : job.stage === 'reading'
+                ? 'Reading sources'
+                : 'Thinking');
+  const label = node.querySelector('.activity-label');
+  if (label.textContent !== now + '…') label.textContent = now + '…';
+  node.querySelector('.activity-steps').innerHTML = stepsHtml(steps, now);
+}
+/** The turn's recent steps, each ✓ but the one it is on (current). */
+function stepsHtml(steps = [], current) {
+  const done = steps.at(-1)?.text === current ? steps.slice(0, -1) : steps;
+  if (!done.length) return '';
+  return (
+    '<ol class="step-list" aria-label="Recent steps">' +
+    done.map(s => '<li><span aria-hidden="true">✓</span> ' + esc(s.text) + '</li>').join('') +
+    '</ol>'
+  );
+}
+/** Time since a turn began, as m:ss. */
+function elapsed(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
 }
 /** Live text is provisional until the durable result arrives. Native details
  * preserve keyboard accessibility and keep model thinking optional/collapsed.
  * Only the answer is rendered as Markdown; thinking is escaped plain text. */
 function livePreview(preview) {
-  // A coding turn's current step (a tool call, a worker's) labels the activity line.
-  if (preview?.activity && preview.jobId === state.job?.id) {
-    const label = $('#activity > span');
-    if (label) label.textContent = preview.activity;
+  // Its steps go to the activity card, newest preview first.
+  if (
+    preview?.jobId === state.job?.id &&
+    (latest?.jobId !== preview.jobId || preview.updatedAt > latest.updatedAt)
+  ) {
+    latest = preview;
+    if ($('#activity')) activity(state.job);
   }
   if (
     !preview ||
@@ -133,7 +173,7 @@ function livePreview(preview) {
     node.id = 'live-response';
     node.className = 'turn assistant streaming';
     node.innerHTML =
-      '<div class="turn-header"><div class="avatar arno-avatar"></div><strong>Arno</strong><span class="caption live-label">Live response</span></div><details class="model-thinking"><summary>Thinking <span>Provided by the model</span></summary><div class="thinking-text"></div></details><div class="prose"></div><small class="caption live-pass"></small>';
+      '<div class="turn-header"><div class="avatar arno-avatar"></div><strong>Arno</strong><span class="caption live-label">Live response</span></div><details class="model-thinking"><summary>Thinking <span>Provided by the model</span><small class="thinking-peek"></small></summary><div class="thinking-text"></div></details><div class="prose"></div><small class="caption live-pass"></small>';
     $('#thread').insertBefore(node, $('#activity'));
   }
   const round = Number(node.dataset.round || 0),
@@ -144,11 +184,11 @@ function livePreview(preview) {
   const thinking = node.querySelector('.model-thinking');
   thinking.hidden = !preview.reasoning;
   node.querySelector('.thinking-text').textContent = preview.reasoning || '';
+  // The latest line of thinking, seen while it is collapsed and no answer streams yet.
+  node.querySelector('.thinking-peek').textContent = preview.text
+    ? ''
+    : (preview.reasoning || '').trim().split('\n').at(-1).slice(-160);
   node.querySelector('.prose').innerHTML = markdown(preview.text || '');
-  if (state.session?.kind === 'chat' && preview.text) {
-    const label = $('#activity > span');
-    if (label) label.textContent = 'Responding…';
-  }
   node.querySelector('.live-pass').textContent =
     state.session?.kind === 'chat'
       ? 'Streaming · response not yet saved'
@@ -189,7 +229,7 @@ export async function watchJob(id, gen, expected) {
         if (!active && !expected && (state.offline || !navigator.onLine)) return;
         busy(true);
         if (!$('#activity')) activity({ stage: 'queued' });
-        const label = $('#activity strong') || $('#activity span');
+        const label = $('#activity strong') || $('#activity .activity-label');
         if (label) label.textContent = 'Connection interrupted · reconnecting';
         await new Promise(r => setTimeout(r, 3000));
         continue;
