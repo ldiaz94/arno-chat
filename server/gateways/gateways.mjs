@@ -25,6 +25,11 @@ import { gitProxy } from '../code/git.mjs';
 import { mcpBearer } from './mcp-oauth.mjs';
 import { registryProxy, cloudflareProxy, cloudflareToken } from '../code/sandbox.mjs';
 
+/** Claude's output limit in coding turns: it thinks, then writes a whole file
+ * in one tool call, and at the usual 16k tokens such a reply was cut off mid
+ * call, ending the turn without a reply. */
+const CLAUDE_CODE_OUTPUT = 32000;
+
 /** Model requests from the container, sent on with the owner's key and the
  * running turn's plan; the turn's limits are checked per request. */
 export class ModelGateway extends WorkerEntrypoint {
@@ -42,7 +47,10 @@ export class ModelGateway extends WorkerEntrypoint {
       model: selection.id,
       provider: selection.provider,
       effort: (await effortSupported(this.ctx.props.model)) ? plan.effort : 'auto',
-      maxOutput: plan.maxOutput,
+      maxOutput:
+        selection.provider === 'anthropic'
+          ? Math.max(plan.maxOutput, CLAUDE_CODE_OUTPUT)
+          : plan.maxOutput,
       instructions: [
         instructions(preferences),
         plan.search ? WEB_INSTRUCTIONS : '',
