@@ -15,6 +15,8 @@ import { PROVIDERS, requestFields } from '../providers.mjs';
 // prune keeps history near 200 KB, so this is a ceiling, not a working size.
 const MAX_BODY = 8 * 1024 * 1024;
 
+/** How long a provider may take to start answering, in ms. */
+const HEADERS_MS = 90000;
 /** Reads a JSON request body, refusing more than MAX_BODY bytes. */
 async function readBounded(body) {
   if (!body) throw new Error('missing body');
@@ -310,6 +312,12 @@ export async function modelRequest(
   if (!(await authorize()))
     return new Response('Task model request limit reached', { status: 429 });
   let response;
+  // The provider has HEADERS_MS to answer; the reply then streams for as long
+  // as it takes (the turn's own time limit bounds it). A timeout on the whole
+  // fetch cut long replies, a model thinking and then writing a file, at 90 s
+  // and the turn ended "without a reply".
+  const waiting = new AbortController(),
+    timer = setTimeout(() => waiting.abort(), HEADERS_MS);
   try {
     const endpoint = PROVIDERS[provider].base + PROVIDERS[provider].chat;
     response = await upstream(endpoint, {
@@ -324,10 +332,12 @@ export async function modelRequest(
             }
           : { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(90000),
+      signal: waiting.signal,
     });
   } catch {
     return new Response(provider + ' request failed', { status: 502 });
+  } finally {
+    clearTimeout(timer);
   }
   if (!response.ok) {
     // The provider's reason goes to the log and to the runner, which shows
