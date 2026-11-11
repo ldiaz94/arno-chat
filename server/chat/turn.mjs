@@ -143,7 +143,7 @@ export const chatTurn = {
         vision = await seesScreenshots(session.model),
         // What the turn's review has done (see review below), kept across
         // alarms; spent holds each reviewer call's {model, usage, cost}.
-        guard = { claimed: false, reviews: 0, reviewed: '', spent: [], ...saved?.guard };
+        guard = { claimed: false, reviews: 0, reviewed: '', spent: [], checks: 0, ...saved?.guard };
       // Checks of pages this alarm, by 'id:version', the steps taken and the
       // size, so the review reuses the check made when the page was written.
       const checks = new Map();
@@ -221,12 +221,23 @@ export const chatTurn = {
           }
           await this.activity(toolStep(name, args, [...artifacts, ...listed]));
           if (name === 'find_image') return findImage(args.query);
-          if (name === 'check_artifact')
+          if (name === 'check_artifact') {
+            if (guard.checks >= MAX_CHECKS)
+              throw Object.assign(
+                Error(
+                  'This turn has used its ' +
+                    MAX_CHECKS +
+                    ' page checks. Rely on what they showed, and say in your answer what you could not check.',
+                ),
+                { limit: true }, // the tool is spent: chat.mjs stops offering it
+              );
+            guard.checks++;
             return checked(
               await findArtifact(this.ctx.storage, args.id),
               true,
               Array.isArray(args.steps) ? args.steps : [],
             );
+          }
           if (/_artifact$/.test(name)) {
             const done = await artifactTool(this.ctx.storage, name, args, artifacts);
             if (name === 'read_artifact' || done.kind !== 'html') return done;
@@ -419,6 +430,10 @@ function shownCheck(a, r, { vision, unavailable, wide }) {
     images: vision && r.screenshot ? [{ type: 'image/jpeg', data: r.screenshot, caption }] : [],
   };
 }
+/** check_artifact calls a turn may make: enough to look at a few states, not
+ * so many that testing spends the turn's rounds (a model once used 9 trying
+ * to drag a pendulum exactly to rest). Checks after writes don't count. */
+const MAX_CHECKS = 6;
 /** A prompt that names an artifact, or the kind of thing one holds. */
 const ABOUT_ARTIFACT = /\b(artifact|page|app|game|site|website|chart|diagram|drawing|svg|html)\b/i;
 /** An answer that says it changed something: "I updated / added / fixed …",
