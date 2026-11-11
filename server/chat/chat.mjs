@@ -31,9 +31,11 @@ function visible(text, reasoning) {
 const MAX_STREAM = 32e6;
 /** Decode text, native tool calls, and reported usage from either provider's
  * streaming dialect. Credential-bearing headers never enter these results.
- * Anthropic's thinking blocks (thinking with its signature, or redacted) are
- * kept whole in `thinking`: with tools, the next request must send them back
- * unchanged before the tool_use blocks. Only thinking text is ever shown.
+ * Anthropic's content blocks are kept in `blocks`, in the order they came:
+ * with tools, the next request must send the thinking blocks (with their
+ * signatures, or redacted) back unchanged and in place, and a model that
+ * thinks between calls interleaves them with text and tool_use. Only
+ * thinking text is ever shown.
  * `finish` is why the reply ended (finish_reason or stop_reason), `complete`
  * whether the stream said it had (that, [DONE] or message_stop): a stream
  * cut short says neither. */
@@ -41,7 +43,7 @@ async function readReply(body, onProgress) {
   const reader = body.getReader(),
     decoder = new TextDecoder(),
     calls = new Map(),
-    thinking = new Map();
+    blocks = new Map();
   let buffer = '',
     summary = '',
     reasoning = '',
@@ -90,9 +92,11 @@ async function readReply(body, onProgress) {
       const c = calls.get(v.index);
       if (c) c.arguments += v.delta.partial_json;
     }
-    if (v.type === 'content_block_start' && /thinking$/.test(v.content_block?.type))
-      thinking.set(v.index, { ...v.content_block });
-    const block = v.type === 'content_block_delta' && thinking.get(v.index);
+    if (v.type === 'content_block_start' && v.content_block)
+      blocks.set(v.index, { ...v.content_block });
+    const block = v.type === 'content_block_delta' && blocks.get(v.index);
+    if (block?.type === 'text' && v.delta.type === 'text_delta')
+      block.text = (block.text || '') + v.delta.text;
     if (block?.type === 'thinking' && v.delta.type === 'thinking_delta')
       block.thinking = (block.thinking || '') + v.delta.thinking;
     if (block?.type === 'thinking' && v.delta.type === 'signature_delta')
@@ -129,7 +133,7 @@ async function readReply(body, onProgress) {
     summary: shown.text,
     reasoning: shown.reasoning,
     calls: [...calls.values()],
-    thinking: [...thinking.values()],
+    blocks: [...blocks].sort(([a], [b]) => a - b).map(([, b]) => b),
     usage,
     finish,
     complete: ended || !!finish,
@@ -344,8 +348,31 @@ export async function plainChat({
       });
       total.calls++;
       if (!response.ok) {
-        await response.body?.cancel();
-        throw Error(provider + ' could not complete this chat (' + response.status + ')');
+        // The provider's reason ({error: {message}} in every dialect we
+        // speak) says what to fix; the status alone doesn't.
+        const said = await response.text().catch(() => '');
+        let reason = '';
+        try {
+          reason = String(JSON.parse(said).error?.message || '').slice(0, 300);
+        } catch {
+          // Not JSON: the log keeps the body.
+        }
+        console.log(
+          JSON.stringify({
+            event: 'chat_http_error',
+            provider,
+            model,
+            status: response.status,
+            body: said.slice(0, 1000),
+          }),
+        );
+        throw Error(
+          provider +
+            ' could not complete this chat (' +
+            response.status +
+            (reason ? ': ' + reason : '') +
+            ')',
+        );
       }
       const body =
         provider === 'mistral' ? response.body.pipeThrough(mistralDeltas()) : response.body;
@@ -454,11 +481,13 @@ export async function plainChat({
       if (provider === 'anthropic')
         messages.push({
           role: 'assistant',
-          content: [
-            ...reply.thinking,
-            ...(reply.summary ? [{ type: 'text', text: reply.summary }] : []),
-            ...parsed.map(c => ({ type: 'tool_use', id: c.id, name: c.name, input: c.args || {} })),
-          ],
+          content: reply.blocks
+            .filter(b => b.type !== 'text' || b.text?.trim())
+            .map(b => {
+              if (b.type !== 'tool_use') return b;
+              const c = parsed.find(c => c.id === b.id);
+              return { type: 'tool_use', id: b.id, name: b.name, input: c?.args || {} };
+            }),
         });
       else
         messages.push({

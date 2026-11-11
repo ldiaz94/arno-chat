@@ -2485,6 +2485,41 @@ test('Anthropic thinking: blocks with their signature go back before tool_use, t
   assert.ok(previews.includes('Need a search.'));
   assert.doesNotMatch(JSON.stringify(previews), /SIG/);
 });
+test('Anthropic thinking between calls goes back in the order it came, text and all', async () => {
+  const at = (index, content_block, delta) => [
+    { type: 'content_block_start', index, content_block },
+    ...(delta ? [{ type: 'content_block_delta', index, delta }] : []),
+  ];
+  const bodies = [],
+    replies = [
+      claudeStream([
+        ...at(0, { type: 'thinking', thinking: '' }, { type: 'signature_delta', signature: 'A' }),
+        ...at(1, { type: 'text', text: '' }, { type: 'text_delta', text: 'Checking.' }),
+        ...at(2, { type: 'thinking', thinking: '' }, { type: 'signature_delta', signature: 'B' }),
+        ...at(3, { type: 'tool_use', id: 'tu1', name: 'web_search', input: {} }),
+      ]),
+      claudeStream(at(0, { type: 'text', text: '' }, { type: 'text_delta', text: 'Done.' })),
+    ];
+  await plainChat({
+    model: 'claude-sonnet-5-5',
+    provider: 'anthropic',
+    effort: 'medium',
+    key: 'k',
+    history: [],
+    prompt: 'p',
+    runTool: async () => ({ sources: [] }),
+    upstream: async (url, init) => {
+      bodies.push(JSON.parse(init.body));
+      return replies.shift();
+    },
+  });
+  assert.deepEqual(bodies[1].messages.at(-2).content, [
+    { type: 'thinking', thinking: '', signature: 'A' },
+    { type: 'text', text: 'Checking.' },
+    { type: 'thinking', thinking: '', signature: 'B' },
+    { type: 'tool_use', id: 'tu1', name: 'web_search', input: {} },
+  ]);
+});
 test('coding gateway: Claude thinking is kept from a tool call and put back for the runner', async () => {
   let kept, sent;
   const request = messages =>
