@@ -288,6 +288,7 @@ export const sessionRoutes = {
       const { model } = await request.json();
       if (!(await modelAllowed(model))) return json({ error: 'Unsupported model' }, 400);
       await this.ctx.storage.put('session', { ...session, model });
+      await this.relist(); // the owner's list shows the model too
       return json({ model });
     } finally {
       this.inFlight = false;
