@@ -1,8 +1,9 @@
 /** Sign-in: the GitHub OAuth flow (/auth/*), the cookie-bound auth record kept
  * in its own Durable Object (probe/probe.mjs, keyed auth:<id>), and an
  * authenticated GitHub API client. Depends on http.mjs and
- * gateways/mcp-oauth.mjs (the MCP callback). Leaves out token refresh: a
- * sign-in simply expires after 30 days. */
+ * gateways/mcp-oauth.mjs (the MCP callback). A sign-in expires after 30 days;
+ * its GitHub App token, after 8 hours, is refreshed as it nears that
+ * (refreshGithub). */
 import { COOKIE, SECURITY, json, cookie, sessionCookie } from './http.mjs';
 import { mcpCallback } from './gateways/mcp-oauth.mjs';
 
@@ -18,6 +19,34 @@ export async function currentAuth(request, env) {
   const response = await authObject(env, id).fetch('https://internal/auth/get');
   if (!response.ok) return null;
   return { id, ...(await response.json()) };
+}
+/** The auth record with a new GitHub token, got with its refresh token
+ * (which GitHub replaces too); the record as it was when that fails. */
+export async function refreshGithub(env, auth, upstream = fetch) {
+  try {
+    const r = await upstream('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: env.GITHUB_CLIENT_ID,
+        client_secret: env.GITHUB_CLIENT_SECRET,
+        grant_type: 'refresh_token',
+        refresh_token: auth.refreshToken,
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok || !data.access_token) throw Error(data.error || 'status ' + r.status);
+    return {
+      ...auth,
+      token: data.access_token,
+      refreshToken: data.refresh_token || auth.refreshToken,
+      tokenExpiresAt: Date.now() + (data.expires_in || 28800) * 1000,
+    };
+  } catch (e) {
+    console.error(JSON.stringify({ event: 'github_refresh_failed', error: String(e.message) }));
+    return auth;
+  }
 }
 /** Calls the GitHub API with the user's token; init is passed to fetch. */
 export async function github(path, token, init = {}) {
@@ -125,6 +154,11 @@ export async function handleOAuth(request, env, url) {
       method: 'POST',
       body: JSON.stringify({
         token: tokenData.access_token,
+        // A GitHub App's user token expires; its refresh token gets another.
+        ...(tokenData.refresh_token && {
+          refreshToken: tokenData.refresh_token,
+          tokenExpiresAt: Date.now() + tokenData.expires_in * 1000,
+        }),
         scopes,
         githubConnected: scopes.includes('repo'),
         user: { id: user.id, login: user.login },

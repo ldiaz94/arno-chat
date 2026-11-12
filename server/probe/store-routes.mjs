@@ -3,6 +3,7 @@
  * ('auth:<id>'). Called with this = the ArnoProbe instance. Depends on
  * ../http.mjs. Leaves out the session routes (session-routes.mjs). */
 import { json } from '../http.mjs';
+import { refreshGithub } from '../auth.mjs';
 
 /** Merge a JSON patch into the profile, or set one provider key (/profile/key), in one
  * transaction. */
@@ -164,12 +165,20 @@ export const storeRoutes = {
     await this.ctx.storage.put('auth', data);
     return new Response(null, { status: 204 });
   },
-  /** The sign-in record; 404, and the record is erased, once it has expired. */
+  /** The sign-in record; 404, and the record is erased, once it has expired.
+   * A GitHub token within 5 minutes of expiring is refreshed first, once for
+   * all the requests waiting on it: GitHub takes each refresh token once. */
   async '* /auth/get'() {
-    const auth = await this.ctx.storage.get('auth');
+    let auth = await this.ctx.storage.get('auth');
     if (!auth || auth.expiresAt < Date.now()) {
       if (auth) await this.ctx.storage.deleteAll();
       return new Response(null, { status: 404 });
+    }
+    if (auth.refreshToken && auth.tokenExpiresAt < Date.now() + 5 * 60000) {
+      this.refreshing ??= refreshGithub(this.env, auth)
+        .then(async fresh => (await this.ctx.storage.put('auth', fresh), fresh))
+        .finally(() => (this.refreshing = null));
+      auth = await this.refreshing;
     }
     return Response.json(auth);
   },

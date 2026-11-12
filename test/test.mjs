@@ -382,6 +382,35 @@ test('editing a coding turn puts back the workspace that turn started from', asy
   assert.deepEqual(await f.ctx.storage.get('snapshot'), { id: 'start' });
   await assert.rejects(f.obj.rewind(50), /saved before/);
 });
+test('a sign-in refreshes its GitHub token near expiry, once for concurrent requests', async () => {
+  const f = fixture({
+    auth: {
+      token: 'ghu_old',
+      refreshToken: 'ghr_1',
+      tokenExpiresAt: Date.now() + 60000,
+      expiresAt: Date.now() + 86400000,
+    },
+  });
+  const calls = [],
+    realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    calls.push(JSON.parse(init.body));
+    return Response.json({ access_token: 'ghu_new', refresh_token: 'ghr_2', expires_in: 28800 });
+  };
+  try {
+    const get = () => f.obj.fetch(new Request('https://internal/auth/get')).then(r => r.json());
+    const [a, b] = await Promise.all([get(), get()]);
+    assert.equal(calls.length, 1, 'one refresh');
+    assert.equal(calls[0].refresh_token, 'ghr_1');
+    assert.equal(a.token, 'ghu_new');
+    assert.equal(b.token, 'ghu_new');
+    assert.equal((await f.ctx.storage.get('auth')).refreshToken, 'ghr_2');
+    await get();
+    assert.equal(calls.length, 1, 'a fresh token is kept');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
 test('Markdown renders formatting while escaping HTML and refusing executable links', () => {
   const html = markdown(
     '## Heading\n\n**bold** and [link](https://example.com)\n\n<script>alert(1)</script>\n\n[x](javascript:alert(1))\n\n`code`',
