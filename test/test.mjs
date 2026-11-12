@@ -358,6 +358,8 @@ test('a coding turn stopped at its time limit goes on by itself, at most CONTINU
   assert.equal(job.status, 'completed');
   assert.equal(job.goesOnAs, undefined, 'the sixth stop ends the job');
   assert.deepEqual(job.options, { approach: 'build' });
+  assert.equal(job.continues, 5);
+  assert.ok(job.chainStartedAt, 'the chain keeps when it began');
   // Stop, between a stopped turn and the next, keeps the next from starting.
   await f.ctx.storage.put('job', { ...job, continues: 0, goesOnAs: 'x' });
   await f.obj.fetch(new Request('https://internal/session/cancel', { method: 'POST' }));

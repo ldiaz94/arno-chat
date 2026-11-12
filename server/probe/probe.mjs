@@ -81,6 +81,8 @@ export class ArnoProbe extends DurableObject {
         editAt: null,
         replaces: null,
         continues: (job.continues || 0) + 1,
+        // When the first of the chain began, for the time it has taken in all.
+        chainStartedAt: job.chainStartedAt || job.createdAt,
         status: 'queued',
         createdAt: Date.now(),
       };

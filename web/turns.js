@@ -88,6 +88,8 @@ function activity(job) {
     esc(labels[stage] || 'Working…') +
     '</strong><span class="spacer"></span><span class="caption">' +
     duration(Date.now() - (job.createdAt || Date.now())) +
+    // A turn going on from one stopped at its time limit: the time in all, too.
+    (job.chainStartedAt ? ' · ' + duration(Date.now() - job.chainStartedAt) + ' in all' : '') +
     '</span></div><small>' +
     (stage === 'restoring'
       ? 'Your existing workspace is being restored, not checked out again.'
