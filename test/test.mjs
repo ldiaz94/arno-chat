@@ -3787,3 +3787,36 @@ test('renderPage takes steps in order and reports the ones that fail', async () 
   assert.deepEqual(r.stepErrors, [{ step: 1, error: 'Nothing matches #missing' }]);
   assert.equal(r.screenshot, 'SHOT');
 });
+test('a coding turn finds its last test run, and whether it passed', async () => {
+  const { testsOf } = await import('../server/code/serve.mjs');
+  const tool = (command, result, extra = {}) => ({
+    kind: 'tool',
+    name: 'shell',
+    args: JSON.stringify({ command }),
+    result,
+    ...extra,
+  });
+  const turn = {
+    entries: [
+      tool('make test', 'exit 2: make test\nFAIL eval'),
+      tool('cd /root/x && make test', 'exit 0: make test\nok: 44 golden tests\n'),
+      tool('ls', 'exit 0: ls\nREADME.md'),
+      tool('npm test', 'exit 1: npm test', { worker: '1' }),
+    ],
+  };
+  assert.deepEqual(testsOf(turn), { command: 'make test', ok: true, line: 'ok: 44 golden tests' });
+  assert.equal(testsOf({ entries: [tool('ls', 'exit 0: ls')] }), null);
+  assert.equal(
+    testsOf({
+      entries: [
+        {
+          kind: 'tool',
+          name: 'run',
+          args: '{"args":["make","test"]}',
+          result: 'exit 2: make test',
+        },
+      ],
+    }).ok,
+    false,
+  );
+});

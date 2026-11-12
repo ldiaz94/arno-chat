@@ -102,6 +102,7 @@ export function message(role, text, result = {}) {
         '<div class="artifact-cards">' +
         result.artifacts.map(a => artifactCard(a) + artifactPreview(a)).join('') +
         '</div>';
+    node.innerHTML += resultCards(result);
     const u = result.usage,
       t = result.timing,
       counts = diffCounts(result.diff);
@@ -156,6 +157,45 @@ function copyButton(what) {
     icon('copy') +
     ' Copy</button>'
   );
+}
+/** A coding turn's results worth a glance, as small cards: its last test
+ * run, passed or not, and what it pushed, linked on GitHub; '' when neither. */
+function resultCards(result) {
+  const cards = [],
+    t = result.tests,
+    c = result.commits,
+    repo = state.session?.repo;
+  if (t)
+    cards.push(
+      '<div class="result-card ' +
+        (t.ok ? 'ok' : 'fail') +
+        '"><strong>' +
+        (t.ok ? '✓ Tests pass' : '✗ Tests fail') +
+        '</strong><code>' +
+        esc(t.command) +
+        '</code>' +
+        (t.line ? '<small>' + esc(t.line) + '</small>' : '') +
+        '</div>',
+    );
+  if (c?.commits?.length && result.pushed) {
+    const [top] = c.commits;
+    cards.push(
+      '<a class="result-card" target="_blank" rel="noopener" href="https://github.com/' +
+        esc(repo) +
+        '/commit/' +
+        esc(top.sha) +
+        '"><strong>↑ Pushed ' +
+        (c.count === 1 ? '1 commit' : c.count + ' commits') +
+        ' to ' +
+        esc(result.pushed) +
+        '</strong><code>' +
+        esc(top.sha) +
+        '</code><small>' +
+        esc(top.subject) +
+        '</small></a>',
+    );
+  }
+  return cards.length ? '<div class="result-cards">' + cards.join('') + '</div>' : '';
 }
 /** Adds a node to the end of the thread, above the messages still waiting in
  * the outbox (outbox.js), which stay last. */

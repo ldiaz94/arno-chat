@@ -8,7 +8,7 @@ import { json } from '../http.mjs';
 import { readAttachment } from '../probe/attachments.mjs';
 import { WORKTREE_DIFF } from './publish.mjs';
 import { buildPrompt, sessionPrompt } from './context.mjs';
-import { serveTurn, replyOf, transcriptOf, activityOf } from './serve.mjs';
+import { serveTurn, replyOf, transcriptOf, activityOf, testsOf } from './serve.mjs';
 import { sandboxEnv } from './sandbox.mjs';
 import { collectArtifacts } from './collect.mjs';
 import { citedSources } from '../chat/research.mjs';
@@ -127,6 +127,7 @@ export const codeTurn = {
       const executionMs = Date.now() - modelBegan;
       await this.phase('checkpointing', { workspace, startupMs, executionMs });
       const pushed = await this.followPush(refsBefore);
+      const pushes = pushed ? await this.pushedCommits(refsBefore, pushed).catch(() => null) : null;
       // What arno made in its artifacts directory, kept where the app shows it.
       const artifacts = await collectArtifacts(this).catch(e => {
         console.error(JSON.stringify({ event: 'collect_failed', error: String(e) }));
@@ -154,6 +155,9 @@ export const codeTurn = {
         diagnostics: (transcriptOf(turn) + (stderr ? '\n\n' + stderr : '')).slice(-40000),
         arno: turn.stats,
         pushed: pushed || undefined,
+        // For the turn's cards: what it pushed, and its last test run.
+        commits: pushes?.commits.length ? pushes : undefined,
+        tests: testsOf(turn) || undefined,
         timedOut: turn.cancelled || undefined,
         before,
         reasoning:

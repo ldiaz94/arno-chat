@@ -97,6 +97,26 @@ export const workspace = {
     }
     return branch;
   },
+  /** The commits a turn pushed to branch, newest first, for its card: [{sha,
+   * subject}] (at most 5) and how many in all; before is remoteRefs() from
+   * the turn's start (a new branch counts what main lacks). */
+  async pushedCommits(before, branch) {
+    const was = before
+      .split('\n')
+      .find(l => l.startsWith('refs/remotes/origin/' + branch + ' '))
+      ?.split(' ')[1];
+    const range = (was || 'origin/HEAD') + '..origin/' + branch,
+      git = args => this.exec(['git', ...args], { cwd: '/workspace/repo' }, 10);
+    const [log, count] = await Promise.all([
+      git(['log', '--format=%h %s', '-5', range]),
+      git(['rev-list', '--count', range]),
+    ]);
+    const commits = log.stdout
+      .split('\n')
+      .filter(Boolean)
+      .map(l => ({ sha: l.slice(0, l.indexOf(' ')), subject: l.slice(l.indexOf(' ') + 1, 200) }));
+    return { commits, count: Number(count.stdout.trim()) || commits.length };
+  },
   /** Arno's config for this turn; with search off (plan.mjs) the built-in web
    * research MCP server is left out. */
   async writeConfig(model, plan, options = {}) {

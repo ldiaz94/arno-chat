@@ -258,6 +258,34 @@ export function transcriptOf(turn) {
     .slice(-30000);
 }
 
+/** Commands that run a project's tests. */
+const TEST_COMMAND =
+  /\b(npm (run )?test|npx (vitest|jest)|make (test|check)|node --test|pytest|go test|cargo test|raztest|vitest|jest)\b/;
+/** The last test run of a turn, for its card: {command, ok, line: the last
+ * line it printed}, or null. A shell result starts "exit N: command". */
+export function testsOf(turn) {
+  for (const e of [...turn.entries].reverse()) {
+    if (e.kind !== 'tool' || !e.result || e.worker) continue;
+    let args = {};
+    try {
+      args = JSON.parse(e.args || '{}');
+    } catch {}
+    const command = typeof args.command === 'string' ? args.command : (args.args || []).join(' ');
+    if (!TEST_COMMAND.test(command)) continue;
+    const status = /^exit (-?\d+)/.exec(e.result),
+      lines = e.result
+        .split('\n')
+        .map(l => l.trim())
+        .filter(Boolean);
+    return {
+      command: command.replace(/^cd \S+ && /, '').slice(0, 120),
+      ok: status ? status[1] === '0' : !/\b(fail|error)/i.test(e.result),
+      line: (lines.length > 1 ? lines.at(-1) : '').slice(0, 160),
+    };
+  }
+  return null;
+}
+
 /** A tool call for the live view, or null for anything else: {n, text: a
  * short line, detail: the call in full and the start of its result, done once
  * the result is in}. A call's start and its result share n, so its step is
