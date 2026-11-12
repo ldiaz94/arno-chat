@@ -28,6 +28,7 @@ import { modelButton, modelLabel, openModels, startModel } from './models.js';
 import { message, failure, scrollDown, suggestions } from './thread.js';
 import { watchJob, resizePrompt } from './turns.js';
 import { clearAttachments } from './attach.js';
+import { contextMeter } from './info.js';
 import { render as renderOptions, keepOptions } from './options.js';
 import { greeting, todayCard, wireToday } from './home.js';
 import { controls } from './offline.js';
@@ -74,6 +75,7 @@ function show(s, gen) {
   clearAttachments();
   sidebar();
   $('.composer-hint').textContent = composerHint(s);
+  contextMeter();
   prompt.placeholder = s.kind === 'chat' ? 'Message Arno…' : 'Ask Arno to build, fix, or explain…';
   title(
     s.title || s.repo,

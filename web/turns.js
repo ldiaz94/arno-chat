@@ -8,6 +8,7 @@ import { $, state, esc, duration, api, toast, showError, prompt, sendKey } from 
 import { openNamed } from './artifacts.js';
 import { busy, title, bump } from './layout.js';
 import { message, failure, scrollDown, place, spent } from './thread.js';
+import { contextMeter } from './info.js';
 import { resume, persist } from './sessions.js';
 import { uploading, takeReady, restore } from './attach.js';
 import { warm } from './offline.js';
@@ -355,6 +356,7 @@ function elapsed(ms) {
  * preserve keyboard accessibility and keep model thinking optional/collapsed.
  * Only the answer is rendered as Markdown; thinking is escaped plain text. */
 function livePreview(preview) {
+  if (preview?.jobId === state.job?.id && preview?.context) contextMeter(preview.context);
   // Its steps go to the activity card, newest preview first.
   if (
     preview?.jobId === state.job?.id &&
@@ -471,6 +473,7 @@ export async function watchJob(id, gen, expected) {
           warm([{ id }], true); // keep the new turn's artifacts and images for offline
           if (gen === state.generation) {
             state.session = { id, ...updated };
+            contextMeter();
             const asked = [...document.querySelectorAll('#thread .turn.user')].at(-1),
               saved = updated.history?.at(-1)?.at;
             if (asked && saved) asked.dataset.at = saved;
@@ -505,6 +508,7 @@ export async function watchJob(id, gen, expected) {
             saved = updated?.history?.at(-1);
           if (gen === state.generation && saved?.failed) {
             state.session = { id, ...updated };
+            contextMeter();
             card.dataset.at = saved.at;
             card.querySelector('p').insertAdjacentHTML('afterend', spent(saved.usage));
             const asked = card.previousElementSibling;

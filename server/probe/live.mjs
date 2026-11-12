@@ -112,6 +112,7 @@ export const live = {
       steps: old?.steps || [],
       stepCount: old?.stepCount || 0,
       workers: old?.workers || [],
+      context: old?.context || 0,
       updatedAt: Math.max(Date.now(), (old?.updatedAt || 0) + 1),
     };
     if (new TextEncoder().encode(JSON.stringify(this.live)).byteLength > 100000) {

@@ -131,6 +131,8 @@ export const gatewayRoutes = {
       q.outputTokens = (q.outputTokens || 0) + safe(usage.completion_tokens);
       q.cachedTokens = (q.cachedTokens || 0) + safe(usage.cached_tokens);
       q.lastInputTokens = safe(usage.prompt_tokens);
+      // The lead's context, for the composer's meter (a worker's is its own).
+      if (!model && this.live) this.live.context = safe(usage.prompt_tokens);
       // Per-request entries for the account's request log (bounded per turn).
       q.requestLog = [
         ...(q.requestLog || []),

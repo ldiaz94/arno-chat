@@ -94,6 +94,30 @@ function texts(history) {
   return history.flatMap(t => [t.prompt, t.summary]).filter(Boolean);
 }
 
+/** The composer's context meter: how much of the model's window the lead's
+ * last request filled (live, while a turn runs, else the latest turn's),
+ * as a ring and a share; past 70% it suggests /compact. Hidden with no
+ * window or nothing measured yet; a click opens the conversation's details. */
+export function contextMeter(live) {
+  const button = $('#context-meter'),
+    s = state.session,
+    window = s?.contextWindow,
+    used = live || s?.history?.findLast(t => t.usage?.lastInputTokens > 0)?.usage.lastInputTokens;
+  button.hidden = !(window > 0 && used > 0);
+  if (button.hidden) return;
+  const pct = Math.min(100, Math.round((used / window) * 100));
+  button.style.setProperty('--fill', pct + '%');
+  button.classList.toggle('warn', pct > 70);
+  button.innerHTML = '<span class="ring" aria-hidden="true"></span>' + pct + '%';
+  button.title =
+    num(used) +
+    ' of ' +
+    num(window) +
+    ' tokens of context' +
+    (pct > 70 ? ' · send /compact to shrink it' : '');
+  button.setAttribute('aria-label', 'Context ' + pct + '% full');
+}
+$('#context-meter').onclick = () => openInfo();
 // Input tokens of the latest turn that recorded them, against the model's window.
 function contextSection(history) {
   const used = history.findLast(t => t.usage?.lastInputTokens > 0)?.usage.lastInputTokens,

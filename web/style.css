@@ -935,6 +935,30 @@ th:hover .col-resize::after,
   margin: 7px auto 0;
   text-align: center;
 }
+/* How full the model's context is: a ring and a share, beside the model. */
+.context-meter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.context-meter .ring {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: conic-gradient(var(--accent) var(--fill), var(--line) 0);
+  mask: radial-gradient(circle, transparent 45%, #000 47%);
+}
+.context-meter.warn {
+  color: var(--red);
+}
+.context-meter.warn .ring {
+  background: conic-gradient(var(--red) var(--fill), var(--line) 0);
+}
 .model-button {
   max-width: 70%;
   overflow: hidden;
