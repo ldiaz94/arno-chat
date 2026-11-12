@@ -17,7 +17,7 @@ import {
 } from './core.js';
 import { editMessage, retry, retryMessage } from './turns.js';
 import { attachmentsHtml } from './attach.js';
-import { artifactCard } from './artifacts.js';
+import { artifactCard, artifactPreview, watchPreviews } from './artifacts.js';
 import { optionTags } from './options.mjs';
 // Draws one message in the thread, with its tools, sources, artifacts and footer, and returns
 // the node.
@@ -99,7 +99,9 @@ export function message(role, text, result = {}) {
         '</div>';
     if (result.artifacts?.length)
       node.innerHTML +=
-        '<div class="artifact-cards">' + result.artifacts.map(artifactCard).join('') + '</div>';
+        '<div class="artifact-cards">' +
+        result.artifacts.map(a => artifactCard(a) + artifactPreview(a)).join('') +
+        '</div>';
     const u = result.usage,
       t = result.timing,
       counts = diffCounts(result.diff);
@@ -141,6 +143,7 @@ export function message(role, text, result = {}) {
     node.querySelector('.copy-message').onclick = () => copy(cleaned);
   }
   place(node);
+  watchPreviews(node);
   scrollDown();
   return node;
 }

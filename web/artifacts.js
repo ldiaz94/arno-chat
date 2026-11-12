@@ -388,6 +388,25 @@ export function artifactCard(a) {
     '</span><span class="artifact-card-open">Open</span></button>'
   );
 }
+/** A live, usable preview of a page or diagram a turn made, under its card;
+ * '' for other kinds. Shown on wide screens only (style.css), and loaded once
+ * it scrolls into view (watchPreviews), so a phone never loads it. */
+export function artifactPreview(a) {
+  if (!FRAMED.has(a.kind) || !state.session) return '';
+  return (
+    '<div class="artifact-live"><iframe sandbox="' +
+    SANDBOX +
+    '" data-src="' +
+    viewUrl(state.session.id, a) +
+    '" title="' +
+    esc(a.title) +
+    ' (preview)"></iframe></div>'
+  );
+}
+/** Loads root's previews as they come into view. */
+export function watchPreviews(root) {
+  for (const f of root.querySelectorAll('.artifact-live iframe[data-src]')) lazy.observe(f);
+}
 /** A row of the conversation details' artifacts (info.js). */
 export function artifactRow(a) {
   return (
