@@ -12,6 +12,7 @@ import { serveTurn, replyOf, transcriptOf, activityOf, testsOf } from './serve.m
 import { sandboxEnv } from './sandbox.mjs';
 import { collectArtifacts } from './collect.mjs';
 import { citedSources } from '../chat/research.mjs';
+import { ASK_TOOL } from '../decisions.mjs';
 import { turnPlan, codeLimits } from '../chat/plan.mjs';
 
 export const codeTurn = {
@@ -97,7 +98,17 @@ export const codeTurn = {
       let turn;
       try {
         turn = await serveTurn(process, {
-          hello: { prompt: sessionPrompt(session, await this.sandbox(session.ownerId)) },
+          hello: {
+            prompt: sessionPrompt(session, await this.sandbox(session.ownerId)),
+            // The app's own tool: a question for the user, as a card.
+            tools: [
+              {
+                name: ASK_TOOL.name,
+                description: ASK_TOOL.description,
+                parameters: ASK_TOOL.inputSchema,
+              },
+            ],
+          },
           conversation: session.arnoConversation,
           // A conversation arno no longer has (or a session from before it kept
           // them) starts again with the earlier turns as context.
@@ -158,6 +169,7 @@ export const codeTurn = {
         // For the turn's cards: what it pushed, and its last test run.
         commits: pushes?.commits.length ? pushes : undefined,
         tests: testsOf(turn) || undefined,
+        decision: turn.decision || undefined,
         timedOut: turn.cancelled || undefined,
         before,
         reasoning:

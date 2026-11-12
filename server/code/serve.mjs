@@ -9,6 +9,7 @@
  * (the container is the sandbox), and the turn ends at busy 0, with bye.
  * Pictures (image) and viewers are left out: nothing here shows them.
  */
+import { ASK_TOOL, ASKED, decisionOf } from '../decisions.mjs';
 const encoder = new TextEncoder(),
   decoder = new TextDecoder();
 
@@ -184,9 +185,21 @@ export async function serveTurn(
       case 'ask': // the container is the sandbox: every change is the model's to make
         await send('answer', f[0], 'y');
         break;
-      case 'call': // no host tools are offered
-        await send('result', f[0], 'error: no such tool');
+      case 'call': {
+        // The host's one tool: a question for the user (decisions.mjs).
+        const [id, name, args] = f;
+        if (name !== ASK_TOOL.name) {
+          await send('result', id, 'error: no such tool');
+          break;
+        }
+        try {
+          turn.decision = decisionOf(JSON.parse(args || '{}'));
+          await send('result', id, ASKED);
+        } catch (e) {
+          await send('result', id, 'error: ' + e.message);
+        }
         break;
+      }
       case 'status':
         if (f[2]) turn.conversation = f[2];
         if (turn.command && first !== Infinity && !busy) done = true;

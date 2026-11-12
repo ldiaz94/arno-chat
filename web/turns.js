@@ -518,6 +518,14 @@ export function retry(card, text) {
 }
 // attachments are the metadata of uploaded files sent with the message (or, for
 // files picked offline, the files themselves).
+/** Sends text as the user's next message, as if typed: a decision card's
+ * choice (thread.js). */
+export async function answer(text) {
+  if (state.offline) return toast('Reconnect to answer');
+  if (state.busy) return toast('Wait for the current turn to finish');
+  if (!(await persist())) return;
+  await send(text);
+}
 async function send(text, editAt, replaces, attachments = []) {
   const id = state.session.id,
     gen = state.generation,

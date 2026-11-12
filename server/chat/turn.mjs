@@ -35,6 +35,7 @@ import { WEB_INSTRUCTIONS, WEB_TOOLS, research, citedSources } from './research.
 import { turnPlan } from './plan.mjs';
 import { effortSupported, seesScreenshots } from '../models.mjs';
 import { IMAGE_TOOLS, findImage } from './images.mjs';
+import { ASK_TOOL, ASKED, decisionOf } from '../decisions.mjs';
 import { renderArtifact, WIDE } from '../probe/render.mjs';
 import { reviewPage, fixRequest } from './review.mjs';
 import { prices, priceOf, cost } from '../prices.mjs';
@@ -182,6 +183,7 @@ export const chatTurn = {
           ...(plan.search ? WEB_TOOLS : []),
           ...ARTIFACT_TOOLS,
           ...IMAGE_TOOLS,
+          ASK_TOOL,
           ...mcp.specs,
         ],
         told =
@@ -197,6 +199,8 @@ export const chatTurn = {
           ]
             .filter(Boolean)
             .join('\n\n');
+      // A question the model put to the user (decisions.mjs), for the card.
+      let decision = null;
       const result = await plainChat({
         model: selected.id,
         provider: selected.provider,
@@ -237,6 +241,11 @@ export const chatTurn = {
               return { error: 'The user did not allow this action. Do not try it again.' };
             await this.activity(what);
             return callChatMcp(this.env, session.ownerId, remote, args);
+          }
+          if (name === 'ask_user') {
+            decision = decisionOf(args);
+            await this.activity('Asking you');
+            return ASKED;
           }
           await this.activity(toolStep(name, args, [...artifacts, ...listed]));
           if (name === 'find_image') return findImage(args.query);
@@ -345,6 +354,7 @@ export const chatTurn = {
       result.model = session.model;
       result.attachments = attached;
       result.artifacts = artifacts;
+      if (decision) result.decision = decision;
       result.sources = citedSources(result.summary, sources, previous);
       result.webUsage = counts;
       result.reviews = guard.spent;

@@ -15,7 +15,7 @@ import {
   copy,
   main,
 } from './core.js';
-import { editMessage, retry, retryMessage } from './turns.js';
+import { editMessage, retry, retryMessage, answer } from './turns.js';
 import { attachmentsHtml } from './attach.js';
 import { artifactCard, artifactPreview, watchPreviews } from './artifacts.js';
 import { optionTags } from './options.mjs';
@@ -97,6 +97,7 @@ export function message(role, text, result = {}) {
             ' sources</button>'
           : '') +
         '</div>';
+    if (result.decision) node.innerHTML += decisionCard(result.decision);
     if (result.artifacts?.length)
       node.innerHTML +=
         '<div class="artifact-cards">' +
@@ -142,6 +143,8 @@ export function message(role, text, result = {}) {
         esc((result.diagnostics || '') + '\n' + text) +
         '</pre></details>';
     node.querySelector('.copy-message').onclick = () => copy(cleaned);
+    const card = node.querySelector('.decision-card');
+    if (card) card.onclick = card.onsubmit = e => decide(card, e);
   }
   place(node);
   watchPreviews(node);
@@ -157,6 +160,46 @@ function copyButton(what) {
     icon('copy') +
     ' Copy</button>'
   );
+}
+/** A question the model put to the user (server/decisions.mjs): its options
+ * as buttons, the recommended first, and a box for their own words. Once a
+ * later message is sent, it is answered (style.css greys it). */
+function decisionCard(d) {
+  return (
+    '<div class="decision-card" role="group" aria-label="Arno asks"><p class="decision-question">' +
+    esc(d.question) +
+    '</p><div class="decision-options">' +
+    d.options
+      .map(
+        (o, i) =>
+          '<button type="button" class="decision-option' +
+          (i ? '' : ' first') +
+          '" data-choice="' +
+          esc(o.label) +
+          '"><strong>' +
+          esc(o.label) +
+          '</strong>' +
+          (o.detail ? '<small>' + esc(o.detail) + '</small>' : '') +
+          '</button>',
+      )
+      .join('') +
+    '</div>' +
+    (d.other
+      ? '<form class="decision-other"><input name="other" maxlength="2000" placeholder="Or answer in your own words…" aria-label="Your own answer"><button type="submit">Send</button></form>'
+      : '') +
+    '</div>'
+  );
+}
+/** Sends the choice made on card (a click on an option, or its own words). */
+function decide(card, e) {
+  const option = e.target.closest?.('.decision-option'),
+    own = e.type === 'submit' && card.querySelector('[name=other]').value.trim();
+  if (e.type === 'submit') e.preventDefault();
+  const text = option?.dataset.choice || own;
+  if (!text || card.classList.contains('decided')) return;
+  card.classList.add('decided');
+  option?.classList.add('chosen');
+  answer(text);
 }
 /** A coding turn's results worth a glance, as small cards: its last test
  * run, passed or not, and what it pushed, linked on GitHub; '' when neither. */

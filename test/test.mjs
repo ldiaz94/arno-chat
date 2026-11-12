@@ -3820,3 +3820,43 @@ test('a coding turn finds its last test run, and whether it passed', async () =>
     false,
   );
 });
+test('a coding turn’s question to the user is answered at once and kept for its card', async () => {
+  const { serveTurn } = await import('../server/code/serve.mjs');
+  const { decisionOf } = await import('../server/decisions.mjs');
+  const sent = [],
+    d = decoderOf();
+  let push;
+  const stdout = new ReadableStream({ start: c => (push = (...f) => c.enqueue(encode(...f))) });
+  const stdin = new WritableStream({
+    write(chunk) {
+      for (const m of d.push(chunk)) {
+        sent.push(m);
+        if (m[0] === 'hello') push('ready', 'c1');
+        if (m[0] === 'line') {
+          push('busy', '1');
+          push(
+            'call',
+            '7',
+            'ask_user',
+            JSON.stringify({
+              question: 'Which GC?',
+              options: ['Mark-sweep', { label: 'Copying', detail: 'faster' }],
+            }),
+          );
+        }
+        if (m[0] === 'result') push('busy', '0');
+      }
+    },
+  });
+  const turn = await serveTurn({ stdin, stdout }, { hello: {}, line: 'go' });
+  assert.deepEqual(turn.decision, {
+    question: 'Which GC?',
+    options: [
+      { label: 'Mark-sweep', detail: '' },
+      { label: 'Copying', detail: 'faster' },
+    ],
+    other: true,
+  });
+  assert.equal(sent.find(m => m[0] === 'result')[1], '7');
+  assert.throws(() => decisionOf({ question: 'x', options: [] }), /at least one option/);
+});

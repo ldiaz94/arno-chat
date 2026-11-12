@@ -2900,6 +2900,78 @@ body.light,
   font-size: 12px;
   color: var(--muted);
 }
+/* A question the model asks: its options as buttons, the recommended first. */
+.decision-card {
+  margin: 14px 0 6px;
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 14px;
+}
+.decision-question {
+  margin: 0 0 10px;
+  font-weight: 600;
+}
+.decision-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  gap: 8px;
+}
+.decision-option {
+  display: grid;
+  gap: 2px;
+  justify-content: start;
+  justify-items: start;
+  align-content: center;
+  min-height: 44px;
+  padding: 8px 12px;
+  text-align: left;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+}
+.decision-option:hover {
+  border-color: var(--accent);
+}
+.decision-option.first {
+  border-color: var(--accent);
+}
+.decision-option small {
+  font-size: 12px;
+  color: var(--muted);
+}
+.decision-other {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.decision-other input {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 12px;
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.decision-other input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+/* Answered: a later message was sent, or a choice was just made. */
+.decision-card.decided,
+.turn:has(~ .turn.user) .decision-card {
+  border-color: var(--line);
+  opacity: 0.6;
+  pointer-events: none;
+}
+.decision-option.chosen {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
 /* A coding turn's test run and push, small and quiet. */
 .result-cards {
   display: grid;
