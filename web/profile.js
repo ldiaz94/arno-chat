@@ -70,7 +70,10 @@ function composerCard(account) {
       account.reviewModel || '',
       ['', 'Same as the chat'],
     ) +
-    '</select></label><p class="caption">Checks pages the chat builds against your request, with screenshots. A stronger model catches more; costs one extra call per page.</p></section>'
+    '</select></label><p class="caption">Checks pages the chat builds against your request, with screenshots. A stronger model catches more; costs one extra call per page.</p>' +
+    '<label>Worker model<select id="worker-model" class="field">' +
+    modelOptions(state.models, account.workerModel || '', ['', 'Same as the session']) +
+    "</select></label><p class=\"caption\">The model a coding turn hands steps to (reading, searching, mechanical edits), as cheap as will do; the session's model stays the lead and takes the hard steps. It must be on the session's provider, else workers use the session's model.</p></section>"
   );
 }
 let spot = null; // the weather's place as rounded coordinates, from "Use my location"
@@ -129,6 +132,7 @@ export async function profilePrefs() {
     enterSends: $('#enter-sends').checked,
     defaultModel: $('#default-model').value,
     reviewModel: $('#review-model').value,
+    workerModel: $('#worker-model').value,
     home: {
       quote: $('#home-quote').checked,
       fact: $('#home-fact').checked,

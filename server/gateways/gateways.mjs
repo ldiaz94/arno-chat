@@ -41,13 +41,22 @@ export class ModelGateway extends WorkerEntrypoint {
     // without the runner knowing (search off also leaves out the web MCP).
     const preferences = await profile(this.env, ownerId),
       selection = providerModel(this.ctx.props.model),
-      plan = turnPlan(options || undefined);
+      plan = turnPlan(options || undefined),
+      // The owner's worker model, which arno's workers may name (workerList).
+      worker = preferences.workerModel ? providerModel(preferences.workerModel) : null,
+      alternates =
+        worker?.provider === selection.provider && worker.id !== selection.id
+          ? {
+              [worker.id]: (await effortSupported(preferences.workerModel)) ? plan.effort : 'auto',
+            }
+          : {};
     let turnId, round;
     return modelRequest(request, {
       key: await credential(this.env, ownerId, preferences, selection.provider),
       model: selection.id,
       provider: selection.provider,
       effort: (await effortSupported(this.ctx.props.model)) ? plan.effort : 'auto',
+      alternates,
       maxOutput:
         selection.provider === 'anthropic'
           ? Math.max(plan.maxOutput, CLAUDE_CODE_OUTPUT)
@@ -76,10 +85,15 @@ export class ModelGateway extends WorkerEntrypoint {
         round = Number(r.headers.get('X-Model-Round'));
         return r.ok;
       },
-      onUsage: usage =>
+      onUsage: (usage, model) =>
         task.fetch('https://internal/model-usage', {
           method: 'POST',
-          body: JSON.stringify({ turnId, usage }),
+          body: JSON.stringify({
+            turnId,
+            usage,
+            // A worker's request, priced as its model's (records.mjs charge).
+            model: model === selection.id ? undefined : preferences.workerModel,
+          }),
         }),
       onProgress: preview =>
         task.fetch('https://internal/model-progress', {

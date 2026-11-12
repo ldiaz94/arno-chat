@@ -234,6 +234,7 @@ export async function modelRequest(
     provider = 'ollama',
     instructions = '',
     effort = 'auto',
+    alternates = {},
     maxOutput,
     authorize,
     recallThinking = async () => null,
@@ -263,9 +264,11 @@ export async function modelRequest(
   } catch {
     return new Response('Invalid or oversized JSON body', { status: 400 });
   }
-  // The model is the session's, whatever the runner names: a conversation
-  // arno loads may still name the model it was started on. A long session
-  // may hold thousands of messages; the size bound above is the real limit.
+  // The model is the session's, whatever the runner names (a conversation
+  // arno loads may still name the model it was started on), unless it names
+  // one of alternates ({id: effort}): the owner's worker model. A long
+  // session may hold thousands of messages; the size bound above is the
+  // real limit.
   if (!body || !Array.isArray(body.messages) || body.messages.length > 5000 || body.stream !== true)
     return new Response(
       'Unsupported request: ' +
@@ -276,11 +279,16 @@ export async function modelRequest(
             : 'not streamed'),
       { status: 400 },
     );
+  const chosen = Object.hasOwn(alternates, body.model) ? body.model : model;
   const payload = {
-    model,
+    model: chosen,
     messages: body.messages,
     stream: true,
-    ...requestFields(provider, { model, effort, maxOutput }),
+    ...requestFields(provider, {
+      model: chosen,
+      effort: chosen === model ? effort : alternates[chosen],
+      maxOutput,
+    }),
   };
   // The runner sends back the thinking it read, which mistralDeltas made
   // reasoning_content; Mistral refuses unknown message fields.
@@ -375,7 +383,7 @@ export async function modelRequest(
       usageStream(
         async usage => {
           try {
-            await onUsage(usage);
+            await onUsage(usage, chosen);
           } catch {
             console.error('usage_record_failed');
           }

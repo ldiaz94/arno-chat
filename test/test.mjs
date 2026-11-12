@@ -3860,3 +3860,65 @@ test('a coding turn’s question to the user is answered at once and kept for it
   assert.equal(sent.find(m => m[0] === 'result')[1], '7');
   assert.throws(() => decisionOf({ question: 'x', options: [] }), /at least one option/);
 });
+test('workers run on the owner’s worker model when it shares the session’s provider', async () => {
+  const { workerList } = await import('../server/code/workspace.mjs');
+  const kimi = { provider: 'ollama', id: 'kimi-k3.1-pro' };
+  assert.equal(workerList(kimi, 'deepseek-v4.1-flash'), 'deepseek-v4.1-flash kimi-k3.1-pro');
+  assert.equal(workerList(kimi, ''), 'kimi-k3.1-pro');
+  assert.equal(workerList(kimi, 'anthropic/claude-haiku-5-5'), 'kimi-k3.1-pro', 'another provider');
+  // The gateway sends a worker's request on as its model, anything else as the session's.
+  const seen = [];
+  const ask = name =>
+    modelRequest(
+      new Request('http://model.internal/v1/chat/completions', {
+        method: 'POST',
+        body: JSON.stringify({
+          model: name,
+          messages: [{ role: 'user', content: 'hi' }],
+          stream: true,
+        }),
+      }),
+      {
+        provider: 'ollama',
+        model: 'kimi-k3.1-pro',
+        alternates: { 'deepseek-v4.1-flash': 'auto' },
+        key: 'k',
+        authorize: async () => true,
+        onUsage: async (u, m) => seen.push(m),
+        upstream: async (url, init) => {
+          seen.push(JSON.parse(init.body).model);
+          return new Response('data: [DONE]\n\n');
+        },
+      },
+    ).then(r => r.text());
+  await ask('deepseek-v4.1-flash');
+  await ask('gpt-9');
+  assert.deepEqual(seen, ['deepseek-v4.1-flash', 'kimi-k3.1-pro']);
+});
+test('the live view follows a turn’s workers: started, stepping, done', async () => {
+  const { workerOf } = await import('../server/code/serve.mjs');
+  const f = fixture({ job: { id: 'job', status: 'running' } });
+  const feed = e => workerOf(e) && f.obj.worker(workerOf(e));
+  await feed({
+    kind: 'info',
+    worker: '1',
+    model: 'deepseek-v4.1-flash',
+    text: 'worker deepseek-v4.1-flash: grep the GC',
+  });
+  await feed({ kind: 'tool', worker: '1', name: 'grep', args: '{"pattern":"Heap"}', result: '' });
+  await feed({ kind: 'tool', worker: '1', name: 'read', args: '{"path":"Heap.raz"}', result: '' });
+  assert.deepEqual(f.obj.live.workers, [
+    {
+      n: '1',
+      model: 'deepseek-v4.1-flash',
+      task: 'grep the GC',
+      steps: 2,
+      now: 'read · Heap.raz',
+      done: false,
+    },
+  ]);
+  await feed({ kind: 'tool', name: 'delegate', args: '{}', result: 'worker 1 report' });
+  assert.equal(f.obj.live.workers[0].done, true);
+  await f.obj.progress({ jobId: 'job', round: 2, text: 'x' });
+  assert.equal(f.obj.live.workers.length, 1, 'a preview keeps them');
+});

@@ -76,8 +76,23 @@ export const records = {
     result.model ||= (await this.ctx.storage.get('session'))?.model;
     // Cost: the model's tokens at list price (null when unpriced) plus searches;
     // the parts are kept per turn and summed per session for the breakdown.
-    const price = priceOf(await prices(), result.model),
-      modelCost = cost(price, result.usage),
+    const rows = await prices(),
+      price = priceOf(rows, result.model),
+      // Workers' tokens (usage.byModel) at their models' prices, the rest at
+      // the session model's.
+      shares = Object.entries(result.usage.byModel || {}),
+      own = { ...result.usage };
+    for (const [, u] of shares)
+      for (const k of [
+        'inputTokens',
+        'cachedTokens',
+        'cacheWriteTokens',
+        'outputTokens',
+        'measuredCalls',
+      ])
+        own[k] = Math.max(0, (own[k] || 0) - (u[k] || 0));
+    const costs = [cost(price, own), ...shares.map(([m, u]) => cost(priceOf(rows, m), u))],
+      modelCost = costs.every(c => c == null) ? null : costs.reduce((n, c) => n + (c || 0), 0),
       session = await this.ctx.storage.get('session'),
       webKey =
         result.webUsage?.searches || result.webUsage?.reads
@@ -89,9 +104,14 @@ export const records = {
             )
           : null,
       rates = webKey ? await webRates(webKey) : WEB_RATES,
-      parts = costParts(price, result.usage, result.webUsage, rates),
-      web = parts.search + parts.reads,
-      reviews = result.reviews || [];
+      parts = costParts(price, own, result.webUsage, rates),
+      web = parts.search + parts.reads;
+    for (const [m, u] of shares) {
+      const p = costParts(priceOf(rows, m), u, null, rates);
+      for (const k of ['input', 'cached', 'cacheWrite', 'output'])
+        if (p[k] != null) parts[k] = (parts[k] || 0) + p[k];
+    }
+    const reviews = result.reviews || [];
     parts.review = reviews.reduce((n, r) => n + (r.cost || 0), 0);
     result.usage.calls += reviews.reduce((n, r) => n + r.usage.calls, 0);
     result.usage.costParts = parts;

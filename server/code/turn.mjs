@@ -8,7 +8,7 @@ import { json } from '../http.mjs';
 import { readAttachment } from '../probe/attachments.mjs';
 import { WORKTREE_DIFF } from './publish.mjs';
 import { buildPrompt, sessionPrompt } from './context.mjs';
-import { serveTurn, replyOf, transcriptOf, activityOf, testsOf } from './serve.mjs';
+import { serveTurn, replyOf, transcriptOf, activityOf, testsOf, workerOf } from './serve.mjs';
 import { sandboxEnv } from './sandbox.mjs';
 import { collectArtifacts } from './collect.mjs';
 import { citedSources } from '../chat/research.mjs';
@@ -119,7 +119,11 @@ export const codeTurn = {
               : loaded
                 ? prompt + note
                 : buildPrompt(session, previous, prompt + note),
-          onEvent: e => this.activity(activityOf(e)),
+          onEvent: e => {
+            const w = workerOf(e);
+            if (w) this.worker(w);
+            return this.activity(activityOf(e));
+          },
           signal: stop.signal,
         });
       } finally {
@@ -187,6 +191,7 @@ export const codeTurn = {
         cachedTokens: q?.cachedTokens || 0,
         cacheWriteTokens: q?.cacheWriteTokens || 0,
         lastInputTokens: q?.lastInputTokens ?? null,
+        ...(q?.byModel && { byModel: q.byModel }),
       };
       result.requestLog = q?.requestLog || [];
       result.sources = citedSources(result.summary, q?.sources || [], previous);

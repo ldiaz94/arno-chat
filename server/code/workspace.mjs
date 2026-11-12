@@ -12,6 +12,16 @@ import { SANDBOX_HOSTS, publicSandbox } from './sandbox.mjs';
 import { codeSettings } from '../chat/plan.mjs';
 import { prices, priceOf } from '../prices.mjs';
 
+/** The models arno may hand a step to, cheapest first: the owner's worker
+ * model (when it is on the session model's provider: arno's workers share
+ * the lead's), then the session's own model for a hard step. */
+export function workerList(selected, workerModel) {
+  const worker = workerModel ? providerModel(workerModel) : null;
+  return worker && worker.provider === selected.provider && worker.id !== selected.id
+    ? worker.id + ' ' + selected.id
+    : selected.id;
+}
+
 export const workspace = {
   /** Keeps the owner's GitHub sign-in for the git gateway: the token sealed,
    * and the name and address commits are made under. */
@@ -140,7 +150,7 @@ export const workspace = {
       // network is the gateways (git push).
       'safety = auto\ncontext_files = yes\njail = no\n' +
       (price ? 'price = ' + price.inp + ' ' + price.out + ' ' + price.cached + '\n' : '') +
-      codeSettings(selected.id, options);
+      codeSettings(workerList(selected, preferences.workerModel), options);
     if (plan.search)
       config += 'mcp = web http://mcp.internal/web\ntrust = web_web_search web_web_read\n';
     for (const c of preferences.mcp || [])

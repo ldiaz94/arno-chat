@@ -122,7 +122,7 @@ export const gatewayRoutes = {
   },
   /** Add one model call's token counts to the turn's totals and request log. */
   async 'POST /model-usage'(request) {
-    const { turnId, usage } = await request.json();
+    const { turnId, usage, model } = await request.json();
     await this.ctx.storage.transaction(async txn => {
       const q = await txn.get('modelQuota');
       if (!q || q.turnId !== turnId) return;
@@ -147,6 +147,22 @@ export const gatewayRoutes = {
       ].slice(-200);
       q.cacheWriteTokens = (q.cacheWriteTokens || 0) + safe(usage.cache_write_tokens);
       q.measuredCalls = (q.measuredCalls || 0) + 1;
+      // A worker's model's share of the totals above, priced as its own.
+      if (typeof model === 'string' && model.length < 200) {
+        q.byModel ??= {};
+        const m = (q.byModel[model] ??= {
+          inputTokens: 0,
+          cachedTokens: 0,
+          cacheWriteTokens: 0,
+          outputTokens: 0,
+          measuredCalls: 0,
+        });
+        m.inputTokens += safe(usage.prompt_tokens);
+        m.cachedTokens += safe(usage.cached_tokens);
+        m.cacheWriteTokens += safe(usage.cache_write_tokens);
+        m.outputTokens += safe(usage.completion_tokens);
+        m.measuredCalls++;
+      }
       await txn.put('modelQuota', q);
     });
     return new Response(null, { status: 204 });

@@ -72,6 +72,29 @@ export const live = {
       await this.ctx.storage.put('live', this.live);
     }
   },
+  /** A coding turn's workers for the live view (serve.mjs workerOf): one
+   * started, {n, model, task}; a step of one, {n, now}, counted; or {done},
+   * every one still running over. Sent with the next activity or preview. */
+  async worker(u) {
+    const job = await this.ctx.storage.get('job');
+    if (job?.status !== 'running') return;
+    const old =
+      this.live?.jobId === job.id
+        ? this.live
+        : { jobId: job.id, round: 0, text: '', reasoning: '' };
+    let workers = old.workers || [];
+    if (u.done) workers = workers.map(w => (w.done ? w : { ...w, done: true, now: '' }));
+    else if (u.model)
+      workers = [
+        ...workers.filter(w => w.n !== u.n),
+        { n: u.n, model: u.model, task: u.task, steps: 0, now: '', done: false },
+      ];
+    else
+      workers = workers.map(w =>
+        w.n === u.n ? { ...w, now: u.now.replace(/^Worker \S+: /, ''), steps: w.steps + 1 } : w,
+      );
+    this.live = { ...old, workers: workers.slice(-8) };
+  },
   /** Take a model snapshot from the gateway as the new live view: ignored unless its turn is
    * running and its round is not older; text is clipped, and the view is saved at most once a
    * second (at once for the final one). */
@@ -87,6 +110,8 @@ export const live = {
       reasoning: String(preview.reasoning || '').slice(0, 12000),
       activity: old?.activity || '',
       steps: old?.steps || [],
+      stepCount: old?.stepCount || 0,
+      workers: old?.workers || [],
       updatedAt: Math.max(Date.now(), (old?.updatedAt || 0) + 1),
     };
     if (new TextEncoder().encode(JSON.stringify(this.live)).byteLength > 100000) {

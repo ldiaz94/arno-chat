@@ -72,6 +72,7 @@ export function publicProfile(env, p) {
     enterSends: p.enterSends ?? false, // false (default): Enter adds a line, Ctrl/⌘+Enter sends; true: Enter sends
     defaultModel: p.defaultModel || '', // '' : the app's own default
     reviewModel: p.reviewModel || '', // '' : each chat's own model reviews its pages
+    workerModel: p.workerModel || '', // '' : a coding turn's workers run on its own model
     updatedAt: p.updatedAt || 0, // when preferences were last saved; offline edits compare it
     skills: p.skills || [],
     models: p.models || [],
@@ -199,7 +200,8 @@ export async function accountRoute(request, env, userId) {
       const home = homeSettings(body.home ?? p.home ?? HOME),
         enterSends = body.enterSends ?? p.enterSends ?? false,
         defaultModel = body.defaultModel ?? p.defaultModel ?? '',
-        reviewModel = body.reviewModel ?? p.reviewModel ?? '';
+        reviewModel = body.reviewModel ?? p.reviewModel ?? '',
+        workerModel = body.workerModel ?? p.workerModel ?? '';
       if (typeof enterSends !== 'boolean') throw Error('Invalid Enter key setting');
       if (
         typeof defaultModel !== 'string' ||
@@ -211,6 +213,11 @@ export async function accountRoute(request, env, userId) {
         (reviewModel && reviewModel !== p.reviewModel && !(await modelAllowed(reviewModel)))
       )
         throw Error('Unsupported review model');
+      if (
+        typeof workerModel !== 'string' ||
+        (workerModel && workerModel !== p.workerModel && !(await modelAllowed(workerModel)))
+      )
+        throw Error('Unsupported worker model');
       if (!Array.isArray(body.skills) || body.skills.length > 10)
         throw Error('At most 10 skills are supported');
       const skills = body.skills.map(s => {
@@ -272,6 +279,7 @@ export async function accountRoute(request, env, userId) {
         enterSends,
         defaultModel,
         reviewModel,
+        workerModel,
         skills,
         mcp,
         models,

@@ -271,6 +271,24 @@ export function transcriptOf(turn) {
     .slice(-30000);
 }
 
+/** What an entry says of the turn's workers, for the live view, or null:
+ * {n, model, task} when one starts (arno notes "worker MODEL: TASK" as it),
+ * {n, now} for a step it takes, and {done: true} when the lead's delegate
+ * call returns, its workers all over. */
+export function workerOf(e) {
+  if (e.worker && e.kind === 'info' && e.text.startsWith('worker ')) {
+    const colon = e.text.indexOf(': ');
+    return {
+      n: e.worker,
+      model: e.model || e.text.slice(7, colon > 0 ? colon : undefined),
+      task: colon > 0 ? e.text.slice(colon + 2, colon + 202) : '',
+    };
+  }
+  if (e.worker && e.kind === 'tool') return { n: e.worker, now: activityOf(e).text };
+  if (!e.worker && e.kind === 'tool' && e.name === 'delegate' && e.result) return { done: true };
+  return null;
+}
+
 /** Commands that run a project's tests. */
 const TEST_COMMAND =
   /\b(npm (run )?test|npx (vitest|jest)|make (test|check)|node --test|pytest|go test|cargo test|raztest|vitest|jest)\b/;

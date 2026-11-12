@@ -90,8 +90,9 @@ function activity(job) {
     node.innerHTML =
       '<div class="activity-top"><span class="spinner"></span><strong></strong><span class="spacer"></span><span class="caption"></span></div><small></small><div class="steps">' +
       order.map(() => '<span></span>').join('') +
-      '</div><button type="button" class="steps-open" hidden>Steps</button>';
+      '</div><div class="workers" aria-label="Workers"></div><button type="button" class="steps-open" hidden>Steps</button>';
     node.querySelector('.steps-open').onclick = () => openSteps(state.session.id, job.id);
+    node.querySelector('.workers').onclick = () => openSteps(state.session.id, job.id);
   }
   const set = (sel, text) => {
     const el = node.querySelector(sel);
@@ -113,6 +114,7 @@ function activity(job) {
         : preview?.activity || 'This task continues if you close the page.',
   );
   node.querySelectorAll('.steps span').forEach((s, i) => s.classList.toggle('done', i <= at));
+  syncWorkers(node.querySelector('.workers'), preview?.workers || []);
   const count = preview?.stepCount || preview?.steps?.length || 0;
   set('.steps-open', count === 1 ? '1 step' : count + ' steps');
   node.querySelector('.steps-open').hidden = !count;
@@ -204,6 +206,37 @@ function syncSteps(list, steps) {
     if (mark.textContent !== sign) mark.textContent = sign;
     const pre = li.querySelector('pre');
     if (pre && pre.textContent !== s.detail) pre.textContent = s.detail;
+  }
+}
+/** The turn's workers as chips (server/probe/live.mjs worker): each one's
+ * model, task (its title), steps so far and what it does now, or that it
+ * is done; set in place like the card's other parts. */
+function syncWorkers(box, workers) {
+  for (const w of workers) {
+    let chip = box.querySelector('[data-n="' + CSS.escape(w.n) + '"]');
+    if (!chip) {
+      chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'worker-chip';
+      chip.dataset.n = w.n;
+      chip.innerHTML =
+        '<strong>Worker ' +
+        esc(w.n) +
+        '</strong><span class="worker-model">' +
+        esc(w.model) +
+        '</span><span class="worker-task">' +
+        esc(w.task) +
+        '</span><small></small>';
+      chip.title = w.task;
+      box.append(chip);
+    }
+    chip.classList.toggle('done', !!w.done);
+    const line =
+      (w.done ? 'Done · ' : '') +
+      (w.steps === 1 ? '1 step' : w.steps + ' steps') +
+      (w.now ? ' · ' + w.now : '');
+    const small = chip.querySelector('small');
+    if (small.textContent !== line) small.textContent = line;
   }
 }
 /** Opens the steps drawer on job's steps: beside the thread, not over it,
