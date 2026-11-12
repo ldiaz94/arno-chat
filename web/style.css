@@ -2143,6 +2143,24 @@ body.light,
 .activity-top .caption {
   white-space: nowrap;
 }
+/* Every step of the turn, opened on demand, scrolling on its own. */
+.all-steps {
+  margin-top: 8px;
+  font-size: 12px;
+}
+.all-steps > summary {
+  width: fit-content;
+  color: var(--muted);
+  cursor: pointer;
+}
+.all-steps > summary:hover {
+  color: var(--text);
+}
+.all-steps > .step-list {
+  max-height: 360px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
 /* A call in full and the start of what it gave back. */
 .step-detail {
   margin: 4px 0 8px;

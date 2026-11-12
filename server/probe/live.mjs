@@ -5,8 +5,11 @@
  * Leaves out the routes (session-routes.mjs) and the model's side (../gateways). */
 import { SECURITY, json } from '../http.mjs';
 
-/** How many recent steps the live view keeps. */
-const STEPS = 6;
+/** How many recent steps the live view keeps, and how many of the running
+ * turn's steps are kept in memory for its "All steps" list (too large to
+ * save: a step holds its call and result). */
+const STEPS = 6,
+  ALL_STEPS = 500;
 
 export const live = {
   /** Full bounded snapshots make SSE reconnects idempotent. This is a view of
@@ -47,9 +50,16 @@ export const live = {
     // its step and leaves the current line as it is.
     const steps = old.steps || [],
       known = step.n != null ? steps.findIndex(s => s.n === step.n) : -1;
+    // Every step of the turn, for GET /session/steps.
+    if (this.allSteps?.jobId !== job.id) this.allSteps = { jobId: job.id, steps: [] };
+    const all = this.allSteps.steps,
+      seen = step.n != null ? all.findIndex(s => s.n === step.n) : -1;
+    if (seen >= 0) all[seen] = { ...all[seen], ...step };
+    else if (all.length < ALL_STEPS) all.push({ ...step, at: Date.now() });
     this.live = {
       ...old,
       activity: known < 0 ? text : old.activity,
+      stepCount: this.allSteps.steps.length,
       steps:
         known < 0
           ? [...steps, { ...step, at }].slice(-STEPS)

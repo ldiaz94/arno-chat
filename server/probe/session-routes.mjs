@@ -129,6 +129,20 @@ export const sessionRoutes = {
       job ? { ...job, preview: live?.jobId === job.id ? live : undefined } : { status: 'idle' },
     );
   },
+  /** The running turn's steps from ?from (an index) on: {jobId, from, steps}.
+   * Kept in memory only; after a restart, the live view's last few. */
+  async 'GET /session/steps'(request, url) {
+    const job = await this.ctx.storage.get('job'),
+      from = Math.max(0, Number(url.searchParams.get('from')) || 0);
+    if (this.allSteps?.jobId === job?.id)
+      return json({ jobId: job.id, from, steps: this.allSteps.steps.slice(from) });
+    const live = this.live || (await this.ctx.storage.get('live'));
+    return json({
+      jobId: job?.id,
+      from: 0,
+      steps: live?.jobId === job?.id ? live.steps || [] : [],
+    });
+  },
   /** The live SSE stream (see events in live.mjs). */
   async 'GET /session/events'() {
     return this.events();

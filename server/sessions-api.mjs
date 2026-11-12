@@ -28,6 +28,7 @@ const PATH = new RegExp('^/api/sessions/(' + ID + ')(?:/([a-z-]+))?(?:/(' + ID +
 const FORWARD = {
   'GET ': ['/session/get'],
   'GET job': ['/session/job'],
+  'GET steps': ['/session/steps', 'from'],
   'GET events': ['/session/events'],
   'GET files': ['/session/files', 'path'],
   'GET history': ['/session/history'],

@@ -83,23 +83,43 @@ function activity(job) {
     thinking: 'Arno is reading, reasoning, and working',
     checkpointing: 'Saving your changes and conversation',
   };
-  node.innerHTML =
-    '<div class="activity-top"><span class="spinner"></span><strong>' +
-    esc(labels[stage] || 'Working…') +
-    '</strong><span class="spacer"></span><span class="caption">' +
+  // Built once, then updated in place, so what is open or scrolled stays so.
+  if (node.dataset.job !== 'code:' + (job.id || '')) {
+    node.dataset.job = 'code:' + (job.id || '');
+    node.className = 'activity';
+    node.innerHTML =
+      '<div class="activity-top"><span class="spinner"></span><strong></strong><span class="spacer"></span><span class="caption"></span></div><small></small><div class="steps">' +
+      order.map(() => '<span></span>').join('') +
+      '</div><ol class="step-list recent" aria-label="Recent steps"></ol><details class="all-steps"><summary>All steps</summary><ol class="step-list"></ol></details>';
+    const all = node.querySelector('.all-steps');
+    all.ontoggle = () => all.open && followSteps(state.session.id, job.id, all);
+  }
+  const set = (sel, text) => {
+    const el = node.querySelector(sel);
+    if (el.textContent !== text) el.textContent = text;
+  };
+  set('.activity-top strong', labels[stage] || 'Working…');
+  set(
+    '.activity-top .caption',
     duration(Date.now() - (job.createdAt || Date.now())) +
-    // A turn going on from one stopped at its time limit: the time in all, too.
-    (job.chainStartedAt ? ' · ' + duration(Date.now() - job.chainStartedAt) + ' in all' : '') +
-    '</span></div><small>' +
-    (stage === 'restoring'
+      // A turn going on from one stopped at its time limit: the time in all, too.
+      (job.chainStartedAt ? ' · ' + duration(Date.now() - job.chainStartedAt) + ' in all' : ''),
+  );
+  set(
+    ':scope > small',
+    stage === 'restoring'
       ? 'Your existing workspace is being restored, not checked out again.'
       : stage === 'checkpointing'
         ? 'Your answer will appear when its workspace checkpoint is safely saved.'
-        : esc(preview?.activity || 'This task continues if you close the page.')) +
-    '</small><div class="steps">' +
-    order.map((s, i) => '<span class="' + (i <= at ? 'done' : '') + '"></span>').join('') +
-    '</div>' +
-    stepsHtml(preview?.steps, preview?.activity);
+        : preview?.activity || 'This task continues if you close the page.',
+  );
+  node.querySelectorAll('.steps span').forEach((s, i) => s.classList.toggle('done', i <= at));
+  const steps = preview?.steps || [],
+    recent = steps.at(-1)?.text === preview?.activity ? steps.slice(0, -1) : steps;
+  syncSteps(node.querySelector('.step-list.recent'), recent, true);
+  const count = preview?.stepCount || 0;
+  set('.all-steps summary', count ? 'All ' + count + ' steps' : 'All steps');
+  node.querySelector('.all-steps').hidden = count <= recent.length + 1;
   scrollDown();
 }
 /** A chat turn's card: what it does now, with a pulsing dot and a ticking
@@ -108,6 +128,7 @@ function activity(job) {
 function chatActivity(node, job, preview) {
   if (node.className !== 'chat-activity') {
     node.className = 'chat-activity';
+    delete node.dataset.job;
     node.innerHTML =
       '<div class="activity-now"><span class="pulse-dot" aria-hidden="true"></span><span class="activity-label" role="status"></span><span class="activity-clock"></span></div><div class="activity-steps"></div><p class="activity-quote"></p>';
     const began = job.createdAt || Date.now(),
@@ -161,34 +182,53 @@ function stepsHtml(steps = [], current) {
   if (!done.length) return '';
   const mark = s =>
     '<span aria-hidden="true">' + (s.done === false ? '…' : '✓') + '</span> ' + esc(s.text);
-  // A coding turn's call opens to show itself in full and its result; one
-  // opened stays open as the card is drawn again (openSteps).
-  const item = s =>
-    s.detail
-      ? '<li><details data-n="' +
-        s.n +
-        '"' +
-        (openSteps.has(s.n) ? ' open' : '') +
-        '><summary>' +
-        mark(s) +
-        '</summary><pre class="step-detail">' +
-        esc(s.detail) +
-        '</pre></details></li>'
-      : '<li>' + mark(s) + '</li>';
+  const item = s => '<li>' + mark(s) + '</li>';
   return '<ol class="step-list" aria-label="Recent steps">' + done.map(item).join('') + '</ol>';
 }
-/** The steps opened on the activity card, by their call's number. */
-const openSteps = new Set();
-document.addEventListener(
-  'toggle',
-  e => {
-    const n = e.target.closest?.('.step-list details')?.dataset.n;
-    if (n == null) return;
-    if (e.target.open) openSteps.add(Number(n));
-    else openSteps.delete(Number(n));
-  },
-  true,
-);
+/** Brings list up to steps, keyed by their call's number: a new step is
+ * added, a known one has its mark and detail set when they change, and
+ * nothing else is touched, so an open step and its scroll stay put. With
+ * prune, steps no longer given go. */
+function syncSteps(list, steps, prune = false) {
+  const keys = new Set();
+  for (const s of steps) {
+    const key = String(s.n ?? s.text + '@' + s.at);
+    keys.add(key);
+    let li = [...list.children].find(l => l.dataset.key === key);
+    if (!li) {
+      li = document.createElement('li');
+      li.dataset.key = key;
+      li.innerHTML = s.detail
+        ? '<details><summary><span aria-hidden="true"></span> ' +
+          esc(s.text) +
+          '</summary><pre class="step-detail"></pre></details>'
+        : '<span aria-hidden="true"></span> ' + esc(s.text);
+      list.append(li);
+    }
+    const mark = li.querySelector('span'),
+      sign = s.done === false ? '…' : '✓';
+    if (mark.textContent !== sign) mark.textContent = sign;
+    const pre = li.querySelector('pre');
+    if (pre && pre.textContent !== s.detail) pre.textContent = s.detail;
+  }
+  if (prune) for (const li of [...list.children]) if (!keys.has(li.dataset.key)) li.remove();
+}
+/** Fills the "All steps" list of the card while it is open: every step of
+ * job so far, then every 3 s what is new or has finished since. */
+async function followSteps(sid, jobId, box) {
+  const list = box.querySelector('ol');
+  while (box.open && box.isConnected && state.session?.id === sid) {
+    // From the first step still running, so its result comes in too.
+    const items = [...list.children],
+      running = items.findIndex(li => li.querySelector('span')?.textContent === '…'),
+      from = running < 0 ? items.length : running;
+    const r = await api('/api/sessions/' + sid + '/steps?from=' + from).catch(() => null);
+    if (!r || r.jobId !== jobId) return;
+    if (r.from === 0 && from > 0 && r.steps.length < from) list.textContent = '';
+    syncSteps(list, r.steps);
+    await new Promise(done => setTimeout(done, 3000));
+  }
+}
 /** How often the activity card's quote changes, in seconds. */
 const QUOTE_SECONDS = 15;
 /** Quotes on making, finding out and keeping it simple, as [words, who]. */
