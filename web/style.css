@@ -935,16 +935,22 @@ th:hover .col-resize::after,
   margin: 7px auto 0;
   text-align: center;
 }
-/* How full the model's context is: a ring and a share, beside the model. */
+/* How full the model's context is (a ring and a share) and what the
+ * conversation has cost, beside the model. */
 .context-meter {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   min-height: 36px;
   padding: 6px 8px;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
+}
+.context-meter .meter-context {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .context-meter .ring {
   width: 14px;
@@ -953,11 +959,27 @@ th:hover .col-resize::after,
   background: conic-gradient(var(--accent) var(--fill), var(--line) 0);
   mask: radial-gradient(circle, transparent 45%, #000 47%);
 }
-.context-meter.warn {
+.context-meter.warn .meter-context {
   color: var(--red);
 }
 .context-meter.warn .ring {
   background: conic-gradient(var(--red) var(--fill), var(--line) 0);
+}
+/* On a phone the two meters take turns in one place (info.js toggles alt). */
+@media (max-width: 640px) {
+  .context-meter.both:not(.alt) .meter-cost,
+  .context-meter.both.alt .meter-context {
+    display: none;
+  }
+}
+/* Dictating or reading aloud: the button lit while it runs. */
+.mic-button.on,
+.listen-message.on,
+#artifact-listen.on {
+  color: var(--accent);
+}
+.mic-button.on svg {
+  animation: pulse 1.2s ease-in-out infinite;
 }
 .model-button {
   max-width: 70%;

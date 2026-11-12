@@ -17,6 +17,7 @@ import {
 } from './core.js';
 import { editMessage, retry, retryMessage, answer } from './turns.js';
 import { attachmentsHtml } from './attach.js';
+import { listenButton, speak } from './voice.js';
 import { artifactCard, artifactPreview, watchPreviews } from './artifacts.js';
 import { optionTags } from './options.mjs';
 // Draws one message in the thread, with its tools, sources, artifacts and footer, and returns
@@ -121,6 +122,7 @@ export function message(role, text, result = {}) {
       optionTags(result.options)
         .map(t => '<span class="tag option-tag">' + esc(t) + '</span>')
         .join('') +
+      listenButton('answer') +
       copyButton('answer') +
       '</div>';
     if (result.diff)
@@ -142,7 +144,9 @@ export function message(role, text, result = {}) {
         '<details class="details"><summary>Execution details</summary><pre>' +
         esc((result.diagnostics || '') + '\n' + text) +
         '</pre></details>';
-    node.querySelector('.copy-message').onclick = () => copy(cleaned);
+    node.querySelector('.copy-message:not(.listen-message)').onclick = () => copy(cleaned);
+    const listen = node.querySelector('.listen-message');
+    if (listen) listen.onclick = () => speak(cleaned, listen);
     const card = node.querySelector('.decision-card');
     if (card) card.onclick = card.onsubmit = e => decide(card, e);
   }

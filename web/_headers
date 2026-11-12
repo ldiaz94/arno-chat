@@ -7,7 +7,7 @@
 /
   Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com; img-src 'self' data: blob:; frame-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self' https://github.com; manifest-src 'self'; worker-src 'self'
   X-Frame-Options: DENY
-  Permissions-Policy: camera=(), microphone=(), geolocation=(self)
+  Permissions-Policy: camera=(), microphone=(self), geolocation=(self)
 
 # The service worker (web/sw.js) is checked for updates on every visit.
 /sw.js

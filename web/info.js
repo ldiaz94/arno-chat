@@ -94,30 +94,51 @@ function texts(history) {
   return history.flatMap(t => [t.prompt, t.summary]).filter(Boolean);
 }
 
-/** The composer's context meter: how much of the model's window the lead's
- * last request filled (live, while a turn runs, else the latest turn's),
- * as a ring and a share; past 70% it suggests /compact. Hidden with no
- * window or nothing measured yet; a click opens the conversation's details. */
+/** The composer's meters: how much of the model's window the lead's last
+ * request filled (live, while a turn runs, else the latest turn's), as a
+ * ring and a share, past 70% suggesting /compact; and what the conversation
+ * has cost so far. On a phone the two take turns in one place (style.css).
+ * Each hides with nothing measured; a click opens the conversation's details. */
 export function contextMeter(live) {
   const button = $('#context-meter'),
     s = state.session,
     window = s?.contextWindow,
-    used = live || s?.history?.findLast(t => t.usage?.lastInputTokens > 0)?.usage.lastInputTokens;
-  button.hidden = !(window > 0 && used > 0);
-  if (button.hidden) return;
-  const pct = Math.min(100, Math.round((used / window) * 100));
-  button.style.setProperty('--fill', pct + '%');
+    used = live || s?.history?.findLast(t => t.usage?.lastInputTokens > 0)?.usage.lastInputTokens,
+    spent = s?.stats?.cost || 0,
+    parts = [],
+    labels = [];
+  let pct = 0;
+  if (window > 0 && used > 0) {
+    pct = Math.min(100, Math.round((used / window) * 100));
+    button.style.setProperty('--fill', pct + '%');
+    parts.push(
+      '<span class="meter-context"><span class="ring" aria-hidden="true"></span>' +
+        pct +
+        '%</span>',
+    );
+    labels.push(
+      num(used) +
+        ' of ' +
+        num(window) +
+        ' tokens of context' +
+        (pct > 70 ? ' · send /compact to shrink it' : ''),
+    );
+  }
+  if (spent > 0) {
+    const shown = spent < 0.01 ? '<$0.01' : money(spent);
+    parts.push('<span class="meter-cost">' + esc(shown) + '</span>');
+    labels.push(shown + ' spent in this conversation');
+  }
+  button.hidden = !parts.length;
   button.classList.toggle('warn', pct > 70);
-  button.innerHTML = '<span class="ring" aria-hidden="true"></span>' + pct + '%';
-  button.title =
-    num(used) +
-    ' of ' +
-    num(window) +
-    ' tokens of context' +
-    (pct > 70 ? ' · send /compact to shrink it' : '');
-  button.setAttribute('aria-label', 'Context ' + pct + '% full');
+  button.classList.toggle('both', parts.length === 2);
+  button.innerHTML = parts.join('');
+  button.title = labels.join('\n');
+  button.setAttribute('aria-label', labels.join('; '));
 }
 $('#context-meter').onclick = () => openInfo();
+// On a phone the meters take turns every few seconds.
+setInterval(() => $('#context-meter').classList.toggle('alt'), 4000);
 // Input tokens of the latest turn that recorded them, against the model's window.
 function contextSection(history) {
   const used = history.findLast(t => t.usage?.lastInputTokens > 0)?.usage.lastInputTokens,

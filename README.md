@@ -79,6 +79,9 @@ the most recently active first.
 | **Artifacts** in the sidebar | Every conversation's artifacts, searchable, by kind |
 | `</>` | The session's files, its changes, and its commit history |
 | Model button | The model for this conversation, from every provider you have a key for |
+| Ring and $ beside the model | How full the model's context is and what the conversation has cost; on a phone they take turns. A tap opens the details |
+| Mic | Dictate into the message box, on-device where the browser offers it (Chrome downloads its language pack on first use) |
+| **Listen** under an answer, or on a document or page | Read it aloud with the device's own voices; tap again to stop |
 | Sliders button | This conversation's options (below) |
 | **Edit** in the sidebar | Select conversations and delete them together |
 | You → About | The version the device runs, the server's build, Check for updates |
@@ -242,6 +245,9 @@ code in 31, and 4,300 lines of tests (`wc -l`, comments included).
 - **Go, Rust and other toolchains** in the runner image, to keep it near
   1.4 GB on a 4 GB disk.
 - **Images in coding sessions**, and MCP resources and prompts (tools only).
+- **Speech models of our own.** Dictation and reading aloud use the
+  browser's engines: no voice choice, and no mic in a browser without
+  speech recognition (Firefox).
 - **Spending caps per day**: budgets are per message.
 - **Accounts for anyone.** It is a private deployment for its owner while
   it uses shared provider keys.
