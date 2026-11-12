@@ -112,7 +112,9 @@ export const workspace = {
         'openai') +
       '\nmodel = ' +
       selected.id +
-      '\nurl = http://model.internal/v1\nkey =\ntimeout = 180\nmax_retries = 2\n' +
+      // timeout bounds a whole request, reply and all: Claude thinking and
+      // then writing a file streams for minutes. The turn's limit bounds it.
+      '\nurl = http://model.internal/v1\nkey =\ntimeout = 600\nmax_retries = 2\n' +
       // Staged in a copy, every change applied at the turn's end. The
       // container is the sandbox, and may forbid arno's own jail; its only
       // network is the gateways (git push).
