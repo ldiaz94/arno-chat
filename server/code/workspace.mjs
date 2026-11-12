@@ -179,6 +179,10 @@ export const workspace = {
       'git.internal',
       this.ctx.exports.GitGateway({ props: { task: this.ctx.id.toString() } }),
     );
+    await container.interceptOutboundHttp(
+      'github.internal',
+      this.ctx.exports.GithubGateway({ props: { task: this.ctx.id.toString() } }),
+    );
     for (const host of SANDBOX_HOSTS)
       await container.interceptOutboundHttp(
         host,

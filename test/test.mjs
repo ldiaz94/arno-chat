@@ -91,6 +91,7 @@ function fixture(values = {}) {
       ModelGateway: () => ({}),
       McpGateway: () => ({}),
       GitGateway: () => ({}),
+      GithubGateway: () => ({}),
       RegistryGateway: () => ({}),
       CloudflareGateway: () => ({}),
     },
@@ -2703,7 +2704,7 @@ test('repository access: GitHub App installations decide what is reachable', asy
 
 // A pkt-line: four hex digits of length, then the payload.
 const pkt = s => (s.length + 4).toString(16).padStart(4, '0') + s;
-test('git gateway reaches only the session repository and refuses deleting a branch', async () => {
+test('git gateway reaches any repository the token can, and refuses deleting a branch', async () => {
   const seen = [];
   const upstream = async (url, init) => {
     seen.push({ url, auth: init.headers.get('Authorization') });
@@ -2712,13 +2713,15 @@ test('git gateway reaches only the session repository and refuses deleting a bra
       headers: { 'Content-Type': 'application/x-git-receive-pack-result' },
     });
   };
-  const opts = { repo: 'o/r', token: 'ghu_x', upstream };
+  const opts = { token: 'ghu_x', upstream };
   const get = path => gitProxy(new Request('http://git.internal' + path), opts);
   assert.equal((await get('/o/r.git/info/refs?service=git-upload-pack')).status, 200);
   assert.equal(seen[0].url, 'https://github.com/o/r.git/info/refs?service=git-upload-pack');
   assert.equal(seen[0].auth, 'Basic ' + btoa('x-access-token:ghu_x'));
-  assert.equal((await get('/other/r.git/info/refs?service=git-upload-pack')).status, 403);
+  assert.equal((await get('/other/r.git/info/refs?service=git-upload-pack')).status, 200);
+  assert.equal(seen[1].url, 'https://github.com/other/r.git/info/refs?service=git-upload-pack');
   assert.equal((await get('/o/r.git/HEAD')).status, 403);
+  assert.equal((await get('/../x.git/info/refs?service=git-upload-pack')).status, 403);
   const push = cmd =>
     gitProxy(
       new Request('http://git.internal/o/r.git/git-receive-pack', {
@@ -2732,8 +2735,25 @@ test('git gateway reaches only the session repository and refuses deleting a bra
     zero = '0'.repeat(40);
   assert.equal((await push(a + ' ' + b + ' refs/heads/main')).status, 200);
   assert.equal((await push(a + ' ' + zero + ' refs/heads/main')).status, 403);
-  assert.equal(seen.length, 2, 'the deletion never reached GitHub');
+  assert.equal(seen.length, 3, 'the deletion never reached GitHub');
   assert.equal(refUpdates(new TextEncoder().encode(pkt(a + ' ' + b + ' refs/heads/x'))), null);
+});
+test('GitHub API gateway adds the token, refuses DELETE, and follows a download without it', async () => {
+  const { githubProxy } = await import('../server/code/sandbox.mjs');
+  const seen = [];
+  const upstream = async (url, init) => {
+    seen.push({ url, auth: new Headers(init.headers).get('Authorization') });
+    return url.includes('/assets/')
+      ? new Response('', { status: 302, headers: { Location: 'https://objects.example/x' } })
+      : new Response('[]');
+  };
+  const call = (path, method = 'GET') =>
+    githubProxy(new Request('http://github.internal' + path, { method }), 'ghu_x', upstream);
+  assert.equal((await call('/user/repos')).status, 200);
+  assert.deepEqual(seen[0], { url: 'https://api.github.com/user/repos', auth: 'Bearer ghu_x' });
+  assert.equal((await call('/repos/o/r', 'DELETE')).status, 403);
+  assert.equal((await call('/repos/o/r/releases/assets/1')).status, 200);
+  assert.deepEqual(seen.at(-1), { url: 'https://objects.example/x', auth: null });
 });
 test('code options reach arno only in coding sessions', () => {
   const o = checkOptions({ approach: 'build', workers: 'off', budget: '3' }, 'code');
@@ -3251,14 +3271,7 @@ test('markdown: a table straight after a line of text is a table', () => {
   assert.match(html, /^<p><strong>DIY per-minute<\/strong><\/p><div class="table-wrap"><table>/);
   assert.match(html, /<td>SIP<\/td><td class="num">0.003<\/td>/);
 });
-test('git gateway serves a session’s extra repositories, and only those', async () => {
-  const seen = [];
-  const upstream = async url => (seen.push(url), new Response('ok'));
-  const opts = { repos: ['ldiaz94/concha', 'ldiaz94/raz'], token: 'ghu_x', upstream };
-  const get = path => gitProxy(new Request('http://git.internal' + path), opts);
-  assert.equal((await get('/ldiaz94/raz.git/info/refs?service=git-receive-pack')).status, 200);
-  assert.equal(seen[0], 'https://github.com/ldiaz94/raz.git/info/refs?service=git-receive-pack');
-  assert.equal((await get('/ldiaz94/other.git/info/refs?service=git-upload-pack')).status, 403);
+test('extra repositories go beside the project, under names of their own', async () => {
   const { extraPath } = await import('../server/code/extras.mjs');
   assert.equal(extraPath('ldiaz94/raz'), '/workspace/raz');
   assert.equal(extraPath('someone/repo'), '/workspace/someone-repo', 'repo is the project’s');

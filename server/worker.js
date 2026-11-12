@@ -20,6 +20,7 @@ export {
   ModelGateway,
   McpGateway,
   GitGateway,
+  GithubGateway,
   RegistryGateway,
   CloudflareGateway,
 } from './gateways/gateways.mjs';

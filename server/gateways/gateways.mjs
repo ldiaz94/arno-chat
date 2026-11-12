@@ -3,6 +3,7 @@
  *   container → ModelGateway      model requests (model.mjs)
  *             → McpGateway        the owner's MCP servers, and web research
  *             → GitGateway        git fetch and push (code/git.mjs)
+ *             → GithubGateway     GitHub's REST API (code/sandbox.mjs)
  *             → RegistryGateway   npm and PyPI (code/sandbox.mjs)
  *             → CloudflareGateway Cloudflare's API (code/sandbox.mjs)
  *
@@ -23,7 +24,7 @@ import { turnPlan } from '../chat/plan.mjs';
 import { effortSupported } from '../models.mjs';
 import { gitProxy } from '../code/git.mjs';
 import { mcpBearer } from './mcp-oauth.mjs';
-import { registryProxy, cloudflareProxy, cloudflareToken } from '../code/sandbox.mjs';
+import { registryProxy, cloudflareProxy, cloudflareToken, githubProxy } from '../code/sandbox.mjs';
 
 /** Claude's output limit in coding turns: it thinks, then writes a whole file
  * in one tool call, and at the usual 16k tokens such a reply was cut off mid
@@ -118,11 +119,20 @@ export class GitGateway extends WorkerEntrypoint {
     const task = this.env.PROBE.get(this.env.PROBE.idFromString(this.ctx.props.task)),
       r = await task.fetch('https://internal/git-account');
     if (!r.ok) return new Response('No repository for this session\n', { status: 403 });
-    const { repo, repos, ownerId, token } = await r.json();
+    const { ownerId, token } = await r.json();
     return gitProxy(request, {
-      repos: repos || [repo],
       token: token ? await unseal(this.env, ownerId, 'github', token) : '',
     });
+  }
+}
+/** GitHub's REST API for the container, with the same token (sandbox.mjs). */
+export class GithubGateway extends WorkerEntrypoint {
+  async fetch(request) {
+    const task = this.env.PROBE.get(this.env.PROBE.idFromString(this.ctx.props.task)),
+      r = await task.fetch('https://internal/git-account');
+    if (!r.ok) return new Response('GitHub is reached only while a turn runs\n', { status: 403 });
+    const { ownerId, token } = await r.json();
+    return githubProxy(request, token ? await unseal(this.env, ownerId, 'github', token) : '');
   }
 }
 /** Reading packages from npm and PyPI (sandbox.mjs). */

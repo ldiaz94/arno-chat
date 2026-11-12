@@ -28,6 +28,7 @@ export function sessionPrompt(session, net = {}) {
       : []),
     // Git.
     'Git: origin goes through the app, which adds the user’s GitHub credentials, so fetch and push work from the shell; commits are made under the user’s name. Deleting a branch or tag on GitHub is refused.',
+    'Other GitHub repositories the user can reach clone the same way: git clone http://git.internal/OWNER/NAME.git (into /workspace, beside the project). GitHub’s REST API is at http://github.internal/ with the user’s credentials added, e.g. curl -s http://github.internal/user/repos?per_page=100 lists the user’s repositories; curl -sL -H "Accept: application/octet-stream" http://github.internal/repos/OWNER/NAME/releases/assets/ID downloads a release asset. DELETE requests are refused.',
     'Never commit or push unless the user asks you to in this conversation. When work is done, say what changed and offer to commit and push; let the user decide. When asked to push, push the current branch (git push origin HEAD:' +
       session.ref +
       ', or a new branch if the user wants one), never force-push, and say the branch and the commit.',

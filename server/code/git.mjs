@@ -6,8 +6,8 @@
  *   git (container) ── http://git.internal/o/r.git/... ──► GitGateway
  *        ──► https://github.com/o/r.git/...  + Authorization: Basic x-access-token
  *
- * Only the session's own repository is reached, only the four requests of
- * fetching and pushing, and a push may not delete a branch or tag. Force
+ * Any repository the owner's token reaches (GitHub decides), only the four
+ * requests of fetching and pushing, and a push may not delete a branch or tag. Force
  * pushes cannot be told from the request; protect a branch on GitHub to
  * refuse them there. */
 
@@ -92,15 +92,15 @@ async function peekPush(body) {
   return { updates, body: replay };
 }
 
-/** Forwards one of git's requests for repo to GitHub with token, or refuses it. */
-export async function gitProxy(request, { repo: only, repos = [only], token, upstream = fetch }) {
+/** Forwards one of git's requests, for the repository its path names, to
+ * GitHub with token, or refuses it. */
+export async function gitProxy(request, { token, upstream = fetch }) {
   const url = new URL(request.url),
-    // The session's repository (the project or an extra, extras.mjs) the path names.
-    repo = repos.find(r => url.pathname.startsWith('/' + r + '.git/')) || repos[0],
+    repo = /^\/([\w.-]+\/[\w.-]+?)\.git\//.exec(url.pathname)?.[1] || '',
     service = gitService(url, request.method, repo);
   const refuse = (text, status = 403) =>
     new Response(text + '\n', { status, headers: { 'Content-Type': 'text/plain' } });
-  if (!service) return refuse('git.internal reaches only this session’s repository');
+  if (!service) return refuse('git.internal serves only fetching and pushing a repository');
   if (!token) return refuse('Sign in again: GitHub access for this session has expired', 401);
   const headers = new Headers({
     Authorization: 'Basic ' + btoa('x-access-token:' + token),

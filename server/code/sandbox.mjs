@@ -6,6 +6,8 @@
  *   pyfiles.internal  → https://files.pythonhosted.org  always, read only
  *   cf.internal       → https://api.cloudflare.com      with the owner's
  *                       Cloudflare API token, added here, while a turn runs
+ *   github.internal   → https://api.github.com          with the owner's
+ *                       GitHub token, while a turn runs; no DELETE
  *   the internet      only when the owner turns on full internet access
  *
  * The container reaches each .internal name over plain HTTP, intercepted by a
@@ -108,6 +110,41 @@ export async function cloudflareProxy(request, token, upstream = fetch) {
     return new Response(r.body, { status: r.status, headers: r.headers });
   } catch {
     return new Response('Cloudflare’s API could not be reached\n', { status: 502 });
+  }
+}
+
+/** One request to GitHub's REST API with token, the owner's. A DELETE is
+ * refused, as git refuses deleting a branch. A redirect (a release asset's
+ * download) is followed here, without the token, since the container cannot
+ * reach where it points. */
+export async function githubProxy(request, token, upstream = fetch) {
+  const url = new URL(request.url);
+  if (url.hostname !== 'github.internal' || url.port)
+    return new Response('github.internal reaches only GitHub’s API\n', { status: 403 });
+  if (request.method === 'DELETE')
+    return new Response('Deleting on GitHub is not allowed from a session\n', { status: 403 });
+  if (!token)
+    return new Response('Sign in again: GitHub access for this session has expired\n', {
+      status: 401,
+    });
+  const headers = new Headers(request.headers);
+  for (const h of ['Host', 'Content-Length', 'Connection']) headers.delete(h);
+  headers.set('Authorization', 'Bearer ' + token);
+  headers.set('User-Agent', 'arno-chat');
+  const body = ['GET', 'HEAD'].includes(request.method) ? undefined : request.body;
+  try {
+    let r = await upstream('https://api.github.com' + url.pathname + url.search, {
+      method: request.method,
+      headers,
+      body,
+      redirect: 'manual',
+      ...(body && { duplex: 'half' }),
+    });
+    const to = r.status >= 300 && r.status < 400 && r.headers.get('Location');
+    if (to) r = await upstream(to, { headers: { 'User-Agent': 'arno-chat' } });
+    return new Response(r.body, { status: r.status, headers: r.headers });
+  } catch {
+    return new Response('GitHub’s API could not be reached\n', { status: 502 });
   }
 }
 
