@@ -204,6 +204,8 @@ export const codeTurn = {
       result.timing.checkpointMs = Date.now() - checkpointBegan;
       result.timing.totalMs = Date.now() - began;
       await this.saveTurn(result, prompt, snapshot, q?.sources || [], editAt);
+      // A command (/compact, ...) says nothing worth naming a session by.
+      if (!prompt.startsWith('/') && reply) await this.nameIfNew(prompt, reply);
       return json(result);
     } finally {
       this.inFlight = false;

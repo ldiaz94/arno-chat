@@ -3922,3 +3922,32 @@ test('the live view follows a turn’s workers: started, stepping, done', async 
   await f.obj.progress({ jobId: 'job', round: 2, text: 'x' });
   assert.equal(f.obj.live.workers.length, 1, 'a preview keeps them');
 });
+test('a coding session is named after its turn, but never over a name the user gave', async () => {
+  const f = fixture({
+    session: { id: 's1', ownerId: 'u1', repo: 'ldiaz94/plir', model: 'kimi-k3.1-pro' },
+  });
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async url =>
+    String(url).includes('chat/completions')
+      ? new Response(
+          'data: {"choices":[{"delta":{"content":"Lisp interpreter in raz"}}]}\n\ndata: [DONE]\n\n',
+        )
+      : Response.json({});
+  f.obj.env = {
+    OLLAMA_API_KEY: 'k',
+    PROBE: { getByName: () => ({ fetch: async () => Response.json({}) }) },
+  };
+  try {
+    await f.obj.nameIfNew('Build plir', 'Pushed the reader.');
+    assert.equal((await f.ctx.storage.get('session')).title, 'Lisp interpreter in raz');
+    await f.ctx.storage.put('session', {
+      ...(await f.ctx.storage.get('session')),
+      title: 'Mine',
+      customTitle: true,
+    });
+    await f.obj.nameIfNew('Again', 'x');
+    assert.equal((await f.ctx.storage.get('session')).title, 'Mine');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

@@ -26,7 +26,6 @@
  * model to fix. The reviews' cost joins the turn's (probe/records.mjs). */
 import { json } from '../http.mjs';
 import { plainChat } from './chat.mjs';
-import { nameChat } from './title.mjs';
 import { modelInput } from '../probe/attachments.mjs';
 import { profile, credential, instructions, searchConnection } from '../account.mjs';
 import { providerModel } from '../providers.mjs';
@@ -375,30 +374,7 @@ export const chatTurn = {
       delete result.toolLog; // for the log line, not the saved turn
       await this.saveTurn(result, prompt, null, sources, editAt);
       logTurn(session, job, result, toolLog);
-      const current = await this.ctx.storage.get('session');
-      if (
-        current.title === 'General chat' &&
-        !current.customTitle &&
-        session.ownerId &&
-        session.id
-      ) {
-        const title = await nameChat({
-          model: selected.id,
-          provider: selected.provider,
-          key: await credential(this.env, session.ownerId, p, selected.provider),
-          message: prompt,
-          answer: result.summary || '',
-        });
-        // The user may have renamed it meanwhile.
-        const latest = await this.ctx.storage.get('session');
-        if (latest.customTitle) return json(result);
-        const meta = { ...latest, title: title || prompt.slice(0, 70) };
-        await this.ctx.storage.put('session', meta);
-        await this.env.PROBE.getByName('index:' + session.ownerId).fetch(
-          'https://internal/index/add',
-          { method: 'POST', body: JSON.stringify(meta) },
-        );
-      }
+      await this.nameIfNew(prompt, result.summary || '');
       return json(result);
     } finally {
       clearTimeout(this.chatTimer);

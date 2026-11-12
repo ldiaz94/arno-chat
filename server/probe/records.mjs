@@ -6,6 +6,8 @@
 import { profile, credential } from '../account.mjs';
 import { prices, priceOf, cost, costParts, webRates, WEB_RATES } from '../prices.mjs';
 import { notifyOwner, turnNotice } from '../push.mjs';
+import { providerModel } from '../providers.mjs';
+import { nameChat } from '../chat/title.mjs';
 
 export const records = {
   /** Save a finished turn (plain or coding) with its usage and cost, and update the totals. editAt
@@ -54,6 +56,35 @@ export const records = {
     await this.ctx.storage.put(records);
     if (legacy) await this.ctx.storage.delete('history');
     await this.trimTurns();
+  },
+  /** Names the conversation from prompt and the answer to it, by its own
+   * model (chat/title.mjs), when it has no name yet: a chat still called
+   * "General chat", a coding session with none (its repository stands in).
+   * A name the user gave is never replaced, even one given meanwhile. A chat
+   * the model can't name is named after the prompt. */
+  async nameIfNew(prompt, answer) {
+    const s = await this.ctx.storage.get('session'),
+      chat = s?.kind === 'chat';
+    if (!s?.ownerId || !s.id || s.customTitle || (chat ? s.title !== 'General chat' : s.title))
+      return;
+    const p = await profile(this.env, s.ownerId),
+      selected = providerModel(s.model);
+    const named = await nameChat({
+      model: selected.id,
+      provider: selected.provider,
+      key: await credential(this.env, s.ownerId, p, selected.provider),
+      message: prompt,
+      answer,
+    });
+    const latest = await this.ctx.storage.get('session'),
+      title = named || (chat ? prompt.slice(0, 70) : '');
+    if (latest.customTitle || !title) return;
+    const meta = { ...latest, title };
+    await this.ctx.storage.put('session', meta);
+    await this.env.PROBE.getByName('index:' + s.ownerId).fetch('https://internal/index/add', {
+      method: 'POST',
+      body: JSON.stringify(meta),
+    });
   },
   /** The session's running totals. */
   async stats() {

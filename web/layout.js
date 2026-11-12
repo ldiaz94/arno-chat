@@ -163,7 +163,8 @@ export function sidebar() {
       '"><strong>' +
       name +
       '</strong><small>' +
-      (code ? esc(s.ref || 'main') + ' · ' : '') +
+      // A named session says which repository it is on, beside its branch.
+      (code ? (s.title ? esc(s.repo) + ' · ' : '') + esc(s.ref || 'main') + ' · ' : '') +
       '<time>' +
       ago(activeAt(s)) +
       '</time>' +
