@@ -95,6 +95,12 @@ export const sessionRoutes = {
    * is being saved. */
   async 'POST /session/cancel'() {
     const job = await this.ctx.storage.get('job');
+    // Between a turn stopped at its time limit and the one going on from it.
+    if (job?.goesOnAs) {
+      const { goesOnAs, ...done } = job;
+      await this.ctx.storage.put('job', done);
+      return json({ status: 'cancelled', goesOnAs });
+    }
     if (!job || !['queued', 'running'].includes(job.status))
       return json({ error: 'No active task' }, 409);
     if (['checkpointing', 'saving'].includes(job.stage))

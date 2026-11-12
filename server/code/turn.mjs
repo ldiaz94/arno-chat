@@ -149,6 +149,7 @@ export const codeTurn = {
         diagnostics: (transcriptOf(turn) + (stderr ? '\n\n' + stderr : '')).slice(-40000),
         arno: turn.stats,
         pushed: pushed || undefined,
+        timedOut: turn.cancelled || undefined,
         reasoning:
           this.live?.jobId === (await this.ctx.storage.get('job'))?.id
             ? this.live?.reasoning || ''

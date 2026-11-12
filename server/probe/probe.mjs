@@ -32,6 +32,12 @@ import { adminRoutes } from '../admin.mjs';
 
 /** The most alarms one chat turn may run across (each up to 9 minutes of rounds). */
 const MAX_RUNS = 20;
+/** How many turns in a row a coding job goes on by itself when its turn ends
+ * at the time limit (an alarm may last 15 minutes; a job may need more). */
+const CONTINUES = 5;
+/** What such a turn is asked; arno's conversation and staged edits carry the rest. */
+export const CONTINUE_PROMPT =
+  'Continue where you left off: your last turn stopped at its time limit.';
 
 /** Every route table, merged into one lookup by "METHOD /path". */
 const ROUTES = {
@@ -64,6 +70,22 @@ export class ArnoProbe extends DurableObject {
    * or the one before ended early. Cancelled jobs remain cancelled on every path. */
   async alarm() {
     let job = await this.ctx.storage.get('job');
+    // A coding turn stopped at its time limit goes on as a new turn, unless
+    // a message sent meanwhile took the job's place.
+    if (job?.status === 'completed' && job.goesOnAs) {
+      job = {
+        id: job.goesOnAs,
+        prompt: CONTINUE_PROMPT,
+        options: job.options,
+        attachments: [],
+        editAt: null,
+        replaces: null,
+        continues: (job.continues || 0) + 1,
+        status: 'queued',
+        createdAt: Date.now(),
+      };
+      await this.ctx.storage.put('job', job);
+    }
     const goesOn = job?.status === 'running' && (await this.chatGoesOn(job));
     if (goesOn) await this.ctx.storage.put('job', (job = { ...job, runs: (job.runs || 1) + 1 }));
     if (job?.status === 'queued' || goesOn) {
@@ -80,6 +102,10 @@ export class ArnoProbe extends DurableObject {
         if (!ok && !result.error) result.error = result.summary || 'The coding task failed.';
         const current = await this.ctx.storage.get('job');
         if (!ok && current?.status !== 'cancelled') await this.recordFailure(job, result.error);
+        const goesOnAs =
+          ok && result.timedOut && result.usage?.calls && (job.continues || 0) < CONTINUES
+            ? crypto.randomUUID()
+            : undefined;
         if (current?.status !== 'cancelled')
           await this.ctx.storage.put('job', {
             ...current,
@@ -87,9 +113,12 @@ export class ArnoProbe extends DurableObject {
             status: ok ? 'completed' : 'failed',
             result,
             finishedAt: Date.now(),
+            ...(goesOnAs && { goesOnAs }),
           });
         if (current?.status !== 'cancelled') {
           await this.touch();
+          // The browser has a moment to show this turn before the next starts.
+          if (goesOnAs) return this.ctx.storage.setAlarm(Date.now() + 3000);
           await this.notify(result);
         }
       } catch (e) {

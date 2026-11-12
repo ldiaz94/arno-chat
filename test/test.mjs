@@ -339,6 +339,31 @@ test('alarm runs a saved job and persists its result without the submitting requ
   assert.equal((await f.ctx.storage.get('job')).status, 'completed');
   assert.equal((await f.ctx.storage.get('job')).result.summary, 'completed offline');
 });
+test('a coding turn stopped at its time limit goes on by itself, at most CONTINUES times', async () => {
+  const { CONTINUE_PROMPT } = await import('../server/probe/probe.mjs');
+  const f = fixture({
+    session: { kind: 'code', repo: 'o/r' },
+    job: { id: 'one', prompt: 'build it', status: 'queued', options: { approach: 'build' } },
+  });
+  const prompts = [],
+    original = f.obj.fetch.bind(f.obj);
+  f.obj.fetch = async req => {
+    if (new URL(req.url).pathname !== '/session/run') return original(req);
+    prompts.push((await req.json()).prompt);
+    return Response.json({ summary: 'more to do', timedOut: true, usage: { calls: 3 } });
+  };
+  for (let i = 0; i < 8; i++) await f.obj.alarm();
+  assert.deepEqual(prompts, ['build it', ...Array(5).fill(CONTINUE_PROMPT)]);
+  const job = await f.ctx.storage.get('job');
+  assert.equal(job.status, 'completed');
+  assert.equal(job.goesOnAs, undefined, 'the sixth stop ends the job');
+  assert.deepEqual(job.options, { approach: 'build' });
+  // Stop, between a stopped turn and the next, keeps the next from starting.
+  await f.ctx.storage.put('job', { ...job, continues: 0, goesOnAs: 'x' });
+  await f.obj.fetch(new Request('https://internal/session/cancel', { method: 'POST' }));
+  await f.obj.alarm();
+  assert.equal(prompts.length, 6);
+});
 test('Markdown renders formatting while escaping HTML and refusing executable links', () => {
   const html = markdown(
     '## Heading\n\n**bold** and [link](https://example.com)\n\n<script>alert(1)</script>\n\n[x](javascript:alert(1))\n\n`code`',

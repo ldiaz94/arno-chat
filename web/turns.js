@@ -269,6 +269,17 @@ function watchLive(id, gen) {
   // of truth for final results, errors, cancellation, and workspace checkpoints.
   return () => stream.close();
 }
+/** Follows the turn the server starts from one stopped at its time limit
+ * (next, its job id; server/probe/probe.mjs), unless a message sent or Stop
+ * took its place. */
+async function followOn(id, gen, next) {
+  for (let i = 0; i < 10 && gen === state.generation; i++) {
+    await new Promise(r => setTimeout(r, 2000));
+    const job = await api('/api/sessions/' + id + '/job').catch(() => null);
+    if (job?.id === next) return watchJob(id, gen);
+    if (job && !job.goesOnAs) return;
+  }
+}
 // Poll durable task state. expected is an idempotency record for a new send;
 // without it, resume only follows an active job and avoids duplicate old answers.
 export async function watchJob(id, gen, expected) {
@@ -326,8 +337,13 @@ export async function watchJob(id, gen, expected) {
           }
           bump(id); // the conversation moves to the top of the list
           toast(
-            state.session?.kind === 'chat' ? 'Response saved' : 'Turn complete · workspace saved',
+            job.goesOnAs
+              ? 'Time limit reached · continuing'
+              : state.session?.kind === 'chat'
+                ? 'Response saved'
+                : 'Turn complete · workspace saved',
           );
+          if (job.goesOnAs) followOn(id, gen, job.goesOnAs);
         } else {
           const card = failure(
             job.prompt,
