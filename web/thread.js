@@ -49,7 +49,8 @@ export function message(role, text, result = {}) {
         '</div>';
     node.innerHTML += '<div class="turn-footer user-footer">' + copyButton('message') + '</div>';
     if (result.at) node.dataset.at = result.at;
-    if (state.session?.kind === 'chat') {
+    // A coding turn saved before turns kept their starting workspace can't be redone.
+    if (result.rewindable !== false) {
       node
         .querySelector('.spacer')
         .insertAdjacentHTML(

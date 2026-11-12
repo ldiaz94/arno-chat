@@ -256,8 +256,6 @@ export const sessionRoutes = {
         return json({ error: 'A turn is already running' }, 409);
       const session = await txn.get('session');
       if (!session) return json({ error: 'Session not found' }, 404);
-      if (body.editAt && session.kind !== 'chat')
-        return json({ error: 'Only chat messages can be edited' }, 400);
       const refused = session.kind !== 'chat' && hostCommand(body.prompt);
       if (refused) return json({ error: refused }, 400);
       const options = checkOptions(body.options, session.kind);
@@ -318,6 +316,6 @@ export const sessionRoutes = {
       return json({ error: 'Invalid prompt' }, 400);
     if (this.inFlight) return json({ error: 'Arno is already working' }, 409);
     if (session.kind === 'chat') return this.plainTurn(session, prompt.trim(), editAt);
-    return this.codeTurn(session, prompt.trim());
+    return this.codeTurn(session, prompt.trim(), editAt);
   },
 };

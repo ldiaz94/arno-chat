@@ -364,6 +364,24 @@ test('a coding turn stopped at its time limit goes on by itself, at most CONTINU
   await f.obj.alarm();
   assert.equal(prompts.length, 6);
 });
+test('editing a coding turn puts back the workspace that turn started from', async () => {
+  const f = fixture({
+    session: { kind: 'code', repo: 'o/r' },
+    snapshot: { id: 'after-two' },
+    'turn:0000000000000100:a': { prompt: 'one', at: 100, before: { id: 'start' } },
+    'turn:0000000000000200:b': { prompt: 'two', at: 200, before: { id: 'after-one' } },
+    'turn:0000000000000050:old': { prompt: 'old', at: 50 },
+  });
+  let destroyed = false;
+  f.ctx.container.running = true;
+  f.ctx.container.destroy = async () => void (destroyed = true);
+  await f.obj.rewind(200);
+  assert.deepEqual(await f.ctx.storage.get('snapshot'), { id: 'after-one' });
+  assert.ok(destroyed, 'the running container goes, so the next start restores');
+  await f.obj.rewind(100);
+  assert.deepEqual(await f.ctx.storage.get('snapshot'), { id: 'start' });
+  await assert.rejects(f.obj.rewind(50), /saved before/);
+});
 test('Markdown renders formatting while escaping HTML and refusing executable links', () => {
   const html = markdown(
     '## Heading\n\n**bold** and [link](https://example.com)\n\n<script>alert(1)</script>\n\n[x](javascript:alert(1))\n\n`code`',

@@ -421,7 +421,7 @@ export async function submit(e) {
   sessionStorage.removeItem('draft:' + state.session.id);
   await send(text, undefined, undefined, takeReady());
 }
-/** Edit a saved chat message in place; sending replaces it and every later turn. */
+/** Edit a saved message in place; sending replaces it and every later turn. */
 export function editMessage(node, text) {
   if (state.offline) return toast('Reconnect to edit');
   if (state.busy) return toast('Wait for the current turn to finish');
@@ -444,23 +444,35 @@ export function editMessage(node, text) {
   };
   save.onclick = () => {
     const v = area.value.trim();
-    if (v && !state.busy) replaceFrom(node, v, at);
+    if (v && !state.busy && replaceOk(node, 'Edit')) replaceFrom(node, v, at);
   };
 }
-/** Send a saved chat message again as it is: its answer and every later turn
- * are replaced. */
+/** Send a saved message again as it is: its answer and every later turn
+ * are replaced (in a coding session, the workspace too). */
 export function retryMessage(node, text) {
   if (state.offline) return toast('Reconnect to retry');
   if (state.busy) return toast('Wait for the current turn to finish');
   const at = Number(node.dataset.at);
   if (!at) return toast('This message can be retried once its answer is saved');
+  if (replaceOk(node, 'Retry')) replaceFrom(node, text, at);
+}
+/** Whether to replace node's turn, asked when that loses more than its answer:
+ * later messages, or a coding session's workspace changes since. */
+function replaceOk(node, verb) {
   const later = [...node.parentNode.querySelectorAll('.turn.user')].filter(
-    n => n.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_PRECEDING,
-  ).length;
-  const lost = later === 1 ? 'The message after it' : 'The ' + later + ' messages after it';
-  if (later && !confirm('Retry this message? ' + lost + ' and their answers will be removed.'))
-    return;
-  replaceFrom(node, text, at);
+      n => n.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_PRECEDING,
+    ).length,
+    notes = [];
+  if (later)
+    notes.push(
+      (later === 1 ? 'The message after it' : 'The ' + later + ' messages after it') +
+        ' and their answers will be removed.',
+    );
+  if (state.session?.kind !== 'chat')
+    notes.push(
+      'The workspace goes back to how this message found it; what was pushed stays on GitHub.',
+    );
+  return !notes.length || confirm(verb + ' this message? ' + notes.join(' '));
 }
 /** Clear node (a saved message, sent at at) and everything after it, and send
  * text in its place. */

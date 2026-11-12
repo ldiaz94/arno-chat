@@ -88,7 +88,11 @@ function show(s, gen) {
   if (!s.history?.length) $('#thread').innerHTML = suggestions();
   else
     for (const t of s.history) {
-      message('You', t.prompt, { at: t.at, attachments: t.attachments });
+      message('You', t.prompt, {
+        at: t.at,
+        attachments: t.attachments,
+        rewindable: s.kind === 'chat' || 'before' in t,
+      });
       if (t.failed) failure(t.prompt, t.error, t.at, t.attachments, t.usage);
       else message('Arno', t.summary, t);
     }

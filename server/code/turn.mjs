@@ -15,12 +15,17 @@ import { citedSources } from '../chat/research.mjs';
 import { turnPlan, codeLimits } from '../chat/plan.mjs';
 
 export const codeTurn = {
-  /** Runs prompt in session's workspace: the turn's result, saved. */
-  async codeTurn(session, prompt) {
+  /** Runs prompt in session's workspace: the turn's result, saved. editAt
+   * names the turn an edited or retried message replaces: the workspace goes
+   * back to how that turn found it, and it and every later turn are dropped. */
+  async codeTurn(session, prompt, editAt) {
     this.inFlight = true;
     try {
       const began = Date.now(),
         turnId = crypto.randomUUID();
+      if (editAt) await this.rewind(editAt);
+      // How this turn finds the workspace, for an edit or retry of it later.
+      const before = (await this.ctx.storage.get('snapshot')) || null;
       await this.phase(this.ctx.container.running ? 'preparing' : 'restoring');
       const workspace = await this.start(session.model);
       if ((await this.ctx.storage.get('job'))?.status === 'cancelled')
@@ -32,7 +37,7 @@ export const codeTurn = {
       await this.gitSetup(session);
       const startupMs = Date.now() - began;
       await this.phase('thinking', { workspace, startupMs });
-      const previous = await this.history();
+      const previous = (await this.history()).filter(t => !editAt || t.at < editAt);
       // Attached files go into the workspace, outside the repository, and the
       // prompt names them: the prompt is a command-line argument, too small for
       // inlining.
@@ -150,6 +155,7 @@ export const codeTurn = {
         arno: turn.stats,
         pushed: pushed || undefined,
         timedOut: turn.cancelled || undefined,
+        before,
         reasoning:
           this.live?.jobId === (await this.ctx.storage.get('job'))?.id
             ? this.live?.reasoning || ''
@@ -176,7 +182,7 @@ export const codeTurn = {
       const snapshot = await this.ctx.container.snapshotContainer({});
       result.timing.checkpointMs = Date.now() - checkpointBegan;
       result.timing.totalMs = Date.now() - began;
-      await this.saveTurn(result, prompt, snapshot, q?.sources || []);
+      await this.saveTurn(result, prompt, snapshot, q?.sources || [], editAt);
       return json(result);
     } finally {
       this.inFlight = false;
@@ -184,5 +190,21 @@ export const codeTurn = {
       await this.ctx.storage.delete(['modelQuota', 'thinking', ...thinking.keys()]);
       await this.ctx.storage.setAlarm(Date.now() + 35 * 60 * 1000);
     }
+  },
+  /** Puts the workspace back as the turn saved at editAt found it: that
+   * turn's starting snapshot (none: a fresh clone), the container stopped so
+   * the next start restores it. arno's conversation and staged edits live in
+   * the workspace, so they go back too; what was pushed stays on GitHub. */
+  async rewind(editAt) {
+    const turns = await this.history(true),
+      turn = turns.find(t => t.at >= editAt);
+    if (!turn) throw Error('That message is no longer saved');
+    if (!('before' in turn))
+      throw Error(
+        'That turn was saved before its workspace could be restored; send a new message instead',
+      );
+    if (this.ctx.container.running) await this.ctx.container.destroy();
+    if (turn.before) await this.ctx.storage.put('snapshot', turn.before);
+    else await this.ctx.storage.delete('snapshot');
   },
 };
