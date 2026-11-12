@@ -90,9 +90,8 @@ function activity(job) {
     node.innerHTML =
       '<div class="activity-top"><span class="spinner"></span><strong></strong><span class="spacer"></span><span class="caption"></span></div><small></small><div class="steps">' +
       order.map(() => '<span></span>').join('') +
-      '</div><ol class="step-list recent" aria-label="Recent steps"></ol><details class="all-steps"><summary>All steps</summary><ol class="step-list"></ol></details>';
-    const all = node.querySelector('.all-steps');
-    all.ontoggle = () => all.open && followSteps(state.session.id, job.id, all);
+      '</div><button type="button" class="steps-open" hidden>Steps</button>';
+    node.querySelector('.steps-open').onclick = () => openSteps(state.session.id, job.id);
   }
   const set = (sel, text) => {
     const el = node.querySelector(sel);
@@ -114,12 +113,9 @@ function activity(job) {
         : preview?.activity || 'This task continues if you close the page.',
   );
   node.querySelectorAll('.steps span').forEach((s, i) => s.classList.toggle('done', i <= at));
-  const steps = preview?.steps || [],
-    recent = steps.at(-1)?.text === preview?.activity ? steps.slice(0, -1) : steps;
-  syncSteps(node.querySelector('.step-list.recent'), recent, true);
-  const count = preview?.stepCount || 0;
-  set('.all-steps summary', count ? 'All ' + count + ' steps' : 'All steps');
-  node.querySelector('.all-steps').hidden = count <= recent.length + 1;
+  const count = preview?.stepCount || preview?.steps?.length || 0;
+  set('.steps-open', count === 1 ? '1 step' : count + ' steps');
+  node.querySelector('.steps-open').hidden = !count;
   scrollDown();
 }
 /** A chat turn's card: what it does now, with a pulsing dot and a ticking
@@ -186,14 +182,12 @@ function stepsHtml(steps = [], current) {
   return '<ol class="step-list" aria-label="Recent steps">' + done.map(item).join('') + '</ol>';
 }
 /** Brings list up to steps, keyed by their call's number: a new step is
- * added, a known one has its mark and detail set when they change, and
- * nothing else is touched, so an open step and its scroll stay put. With
- * prune, steps no longer given go. */
-function syncSteps(list, steps, prune = false) {
-  const keys = new Set();
+ * added at the end, a known one has its mark and detail set when they
+ * change, and nothing else is touched, so an open step and the scroll stay
+ * put. */
+function syncSteps(list, steps) {
   for (const s of steps) {
     const key = String(s.n ?? s.text + '@' + s.at);
-    keys.add(key);
     let li = [...list.children].find(l => l.dataset.key === key);
     if (!li) {
       li = document.createElement('li');
@@ -211,13 +205,29 @@ function syncSteps(list, steps, prune = false) {
     const pre = li.querySelector('pre');
     if (pre && pre.textContent !== s.detail) pre.textContent = s.detail;
   }
-  if (prune) for (const li of [...list.children]) if (!keys.has(li.dataset.key)) li.remove();
 }
-/** Fills the "All steps" list of the card while it is open: every step of
- * job so far, then every 3 s what is new or has finished since. */
+/** Opens the steps drawer on job's steps: beside the thread, not over it,
+ * filled every 2 s while open (followSteps). */
+function openSteps(sid, jobId) {
+  const box = $('#steps-dialog'),
+    list = $('#steps-list');
+  if (box.dataset.job !== jobId) {
+    box.dataset.job = jobId;
+    list.textContent = '';
+  }
+  if (!box.open) {
+    box.show();
+    // Open beside the thread, so Escape is not the browser's to handle.
+    box.onkeydown = e => e.key === 'Escape' && box.close();
+    followSteps(sid, jobId, box);
+  }
+}
+/** Fills the drawer's list while it is open: every step of job so far, then
+ * what is new or has finished since; it keeps to the end of the list unless
+ * the reader has scrolled up. */
 async function followSteps(sid, jobId, box) {
-  const list = box.querySelector('ol');
-  while (box.open && box.isConnected && state.session?.id === sid) {
+  const list = $('#steps-list');
+  while (box.open && box.dataset.job === jobId && state.session?.id === sid) {
     // From the first step still running, so its result comes in too.
     const items = [...list.children],
       running = items.findIndex(li => li.querySelector('span')?.textContent === '…'),
@@ -225,8 +235,12 @@ async function followSteps(sid, jobId, box) {
     const r = await api('/api/sessions/' + sid + '/steps?from=' + from).catch(() => null);
     if (!r || r.jobId !== jobId) return;
     if (r.from === 0 && from > 0 && r.steps.length < from) list.textContent = '';
+    const atEnd = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
     syncSteps(list, r.steps);
-    await new Promise(done => setTimeout(done, 3000));
+    if (atEnd) list.scrollTop = list.scrollHeight;
+    // The turn is over and every step has its result: nothing more will come.
+    if (!$('#activity') && !r.steps.some(s => s.done === false)) return;
+    await new Promise(done => setTimeout(done, 2000));
   }
 }
 /** How often the activity card's quote changes, in seconds. */

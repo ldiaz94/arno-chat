@@ -2143,23 +2143,79 @@ body.light,
 .activity-top .caption {
   white-space: nowrap;
 }
-/* Every step of the turn, opened on demand, scrolling on its own. */
-.all-steps {
-  margin-top: 8px;
+/* The card's way into its steps: quiet until wanted. */
+.steps-open {
+  margin-top: 10px;
+  min-height: 32px;
+  padding: 4px 10px;
   font-size: 12px;
-}
-.all-steps > summary {
-  width: fit-content;
   color: var(--muted);
-  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 8px;
 }
-.all-steps > summary:hover {
+.steps-open:hover {
   color: var(--text);
+  border-color: var(--accent);
 }
-.all-steps > .step-list {
-  max-height: 360px;
+/* Every step of the turn, in a drawer beside the thread: new ones are added
+   at the end, nothing else is drawn again. */
+.steps-drawer {
+  position: fixed;
+  inset: 0 0 0 auto;
+  z-index: 40;
+  width: min(480px, 100vw);
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  color: var(--text);
+  background: var(--panel);
+  border: 0;
+  border-left: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+.steps-drawer[open] {
+  display: flex;
+  flex-direction: column;
+}
+.steps-drawer .modal-head {
+  flex: none;
+}
+.step-log {
+  flex: 1;
+  margin: 0;
+  padding: 8px 12px 24px;
   overflow: auto;
   overscroll-behavior: contain;
+  list-style: none;
+  font-size: 12px;
+}
+.step-log li {
+  padding: 2px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
+}
+.step-log summary {
+  padding: 4px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  list-style: none;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.step-log summary::-webkit-details-marker {
+  display: none;
+}
+.step-log summary:hover {
+  background: var(--bg);
+}
+.step-log details[open] summary {
+  white-space: normal;
+}
+.step-log summary span,
+.step-log li > span {
+  color: var(--accent);
 }
 /* A call in full and the start of what it gave back. */
 .step-detail {
