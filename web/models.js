@@ -37,41 +37,73 @@ export function modelButton() {
   const id = state.session?.model || startModel();
   $('#model-button').innerHTML = modelLabel(id) + '<span aria-hidden="true">⌄</span>';
 }
+/** A setting's pick in progress (pickModel): {current, blank, only, resolve}. */
+let pending = null;
 // Opens the model picker for a target: a session id, or 'new' for the next new conversation.
 export function openModels(target) {
   if (state.busy) return;
   state.modelTarget = target;
+  pending = null;
+  showPicker('Choose your model', 'Changing models keeps your repository and conversation.');
+}
+/** Opens the model picker for a setting: current is its value, blank an
+ * ['', label] choice for none (or null), only a filter of the models it may
+ * be. Resolves to the id picked, or null when closed without one. */
+export function pickModel({ title, current = '', blank = null, only = () => true, caption = '' }) {
+  return new Promise(resolve => {
+    pending = { current, blank, only, resolve };
+    showPicker(title, caption);
+  });
+}
+function showPicker(title, caption) {
+  $('#model-heading').textContent = title;
+  const note = $('#model-dialog .caption');
+  note.textContent = caption;
+  note.hidden = !caption;
   $('#model-search').value = '';
   renderModels();
   $('#model-dialog').showModal();
   $('#model-search').focus();
 }
+$('#model-dialog').addEventListener('close', () => {
+  pending?.resolve(null);
+  pending = null;
+});
 // Lists the models that match the picker's search box.
 export function renderModels() {
   const q = $('#model-search').value.toLowerCase(),
-    current = state.session?.model || startModel();
-  const models = state.models.some(m => m.id === current)
-    ? state.models
-    : [{ id: current, name: current }, ...state.models];
+    current = pending ? pending.current : state.session?.model || startModel(),
+    listed = pending ? state.models.filter(pending.only) : state.models;
+  const models =
+    !current || listed.some(m => m.id === current)
+      ? listed
+      : [{ id: current, name: current }, ...listed];
+  const option = (id, label) =>
+    '<button class="model-option ' +
+    (id === current ? 'selected' : '') +
+    '" data-model="' +
+    esc(id) +
+    '"><span class="model-id">' +
+    label +
+    '</span>' +
+    (id === current ? icon('check') : '') +
+    '</button>';
+  const blank = pending?.blank;
   $('#model-options').innerHTML =
-    models
-      .filter(m => (m.id + ' ' + m.name).toLowerCase().includes(q))
-      .map(
-        m =>
-          '<button class="model-option ' +
-          (m.id === current ? 'selected' : '') +
-          '" data-model="' +
-          esc(m.id) +
-          '"><span class="model-id">' +
-          modelLabel(m.id) +
-          '</span>' +
-          (m.id === current ? icon('check') : '') +
-          '</button>',
-      )
-      .join('') || '<p class="empty">No matching models.</p>';
+    (blank && blank[1].toLowerCase().includes(q) ? option('', esc(blank[1])) : '') +
+      models
+        .filter(m => (m.id + ' ' + m.name).toLowerCase().includes(q))
+        .map(m => option(m.id, modelLabel(m.id)))
+        .join('') || '<p class="empty">No matching models.</p>';
 }
 // Applies a picked model to the picker's target; offline it does nothing.
 export async function chooseModel(id) {
+  if (pending) {
+    const { resolve } = pending;
+    pending = null;
+    $('#model-dialog').close();
+    return resolve(id);
+  }
   $('#model-dialog').close();
   if (state.offline) return toast('Reconnect to send');
   if (!state.session) {

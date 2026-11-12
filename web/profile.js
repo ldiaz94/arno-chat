@@ -2,7 +2,8 @@
  * profile picture, the composer and default model, the home page's widgets, the
  * privacy notice and account deletion. Depends on core, layout, models, home and offline.
  */
-import { $, state, esc, api, avatar, toast, copy, modelName } from './core.js';
+import { $, state, esc, api, avatar, toast, copy } from './core.js';
+import { modelLabel, pickModel } from './models.js';
 import { sidebar } from './layout.js';
 import { geocode } from './home.js';
 import { clearData } from './offline.js';
@@ -32,24 +33,45 @@ export function profilePanel(account) {
     '</section>'
   );
 }
-// The models in list as a select's options, after first ([value, label]),
-// with chosen selected (and added at the top when list lacks it).
-function modelOptions(list, chosen, first) {
-  const models =
-    list.some(m => m.id === chosen) || !chosen ? list : [{ id: chosen, name: chosen }, ...list];
-  return [first, ...models.map(m => [m.id, modelName(m.id)])]
-    .map(
-      ([id, label]) =>
-        '<option value="' +
-        esc(id) +
-        '"' +
-        (id === chosen ? ' selected' : '') +
-        '>' +
-        esc(label) +
-        '</option>',
-    )
-    .join('');
+/** A model setting's button: the model chosen (its provider's mark and
+ * name) or blank's label, opening the model picker (models.js pickModel)
+ * when pressed; its value is in data-value. */
+function modelField(id, chosen, blank) {
+  return (
+    '<button type="button" class="field model-field" id="' +
+    id +
+    '" data-value="' +
+    esc(chosen) +
+    '" data-blank="' +
+    esc(blank) +
+    '">' +
+    (chosen ? modelLabel(chosen) : '<span>' + esc(blank) + '</span>') +
+    '<span aria-hidden="true">⌄</span></button>'
+  );
 }
+/** What each model setting's picker is called, and the models it offers. */
+const MODEL_FIELDS = {
+  'default-model': { title: 'Default model' },
+  'review-model': { title: 'Review model', only: m => m.vision },
+  'worker-model': { title: 'Worker model' },
+};
+// A model setting's button opens the picker; the model picked is shown and kept.
+document.addEventListener('click', async e => {
+  const field = e.target.closest('.model-field');
+  if (!field) return;
+  const { title, only } = MODEL_FIELDS[field.id];
+  const id = await pickModel({
+    title,
+    current: field.dataset.value,
+    blank: ['', field.dataset.blank],
+    only,
+  });
+  if (id == null) return;
+  field.dataset.value = id;
+  field.innerHTML =
+    (id ? modelLabel(id) : '<span>' + esc(field.dataset.blank) + '</span>') +
+    '<span aria-hidden="true">⌄</span>';
+});
 // The composer settings: send key, default model and review model (only
 // models that see images: the review looks at screenshots).
 function composerCard(account) {
@@ -61,19 +83,15 @@ function composerCard(account) {
     '<label class="check-label"><input type="radio" name="enter-key" id="enter-line"' +
     (account.enterSends !== true ? ' checked' : '') +
     '> Enter adds a new line · ⌘ / Ctrl + Enter sends</label>' +
-    '<label>Default model<select id="default-model" class="field">' +
-    modelOptions(state.models, account.defaultModel || '', ['', 'App default']) +
-    '</select></label><p class="caption">New chats and coding sessions start with this model. The send button always sends.</p>' +
-    '<label>Review model<select id="review-model" class="field">' +
-    modelOptions(
-      state.models.filter(m => m.vision),
-      account.reviewModel || '',
-      ['', 'Same as the chat'],
-    ) +
-    '</select></label><p class="caption">Checks pages the chat builds against your request, with screenshots. A stronger model catches more; costs one extra call per page.</p>' +
-    '<label>Worker model<select id="worker-model" class="field">' +
-    modelOptions(state.models, account.workerModel || '', ['', 'Same as the session']) +
-    "</select></label><p class=\"caption\">The model a coding turn hands steps to (reading, searching, mechanical edits), as cheap as will do; the session's model stays the lead and takes the hard steps. It must be on the session's provider, else workers use the session's model.</p></section>"
+    '<label>Default model' +
+    modelField('default-model', account.defaultModel || '', 'App default') +
+    '</label><p class="caption">New chats and coding sessions start with this model. The send button always sends.</p>' +
+    '<label>Review model' +
+    modelField('review-model', account.reviewModel || '', 'Same as the chat') +
+    '</label><p class="caption">Checks pages the chat builds against your request, with screenshots. A stronger model catches more; costs one extra call per page.</p>' +
+    '<label>Worker model' +
+    modelField('worker-model', account.workerModel || '', 'Same as the session') +
+    "</label><p class=\"caption\">The model a coding turn hands steps to (reading, searching, mechanical edits), as cheap as will do; the session's model stays the lead and takes the hard steps. It must be on the session's provider, else workers use the session's model.</p></section>"
   );
 }
 let spot = null; // the weather's place as rounded coordinates, from "Use my location"
@@ -130,9 +148,9 @@ export async function profilePrefs() {
     name: $('#name').value,
     about: $('#about').value,
     enterSends: $('#enter-sends').checked,
-    defaultModel: $('#default-model').value,
-    reviewModel: $('#review-model').value,
-    workerModel: $('#worker-model').value,
+    defaultModel: $('#default-model').dataset.value,
+    reviewModel: $('#review-model').dataset.value,
+    workerModel: $('#worker-model').dataset.value,
     home: {
       quote: $('#home-quote').checked,
       fact: $('#home-fact').checked,

@@ -52,6 +52,13 @@ export async function modelAllowed(model) {
     (await catalog()).models.some(m => m.id === model) || FALLBACK_MODELS.some(m => m.id === model)
   );
 }
+/** The model a coding turn's workers run on: the session's own choice
+ * (options.workerModel) when it is allowed, else the owner's (preferences);
+ * '' for the session's model. */
+export async function workerModelOf(options, preferences) {
+  const own = options?.workerModel;
+  return own && (await modelAllowed(own)) ? own : preferences?.workerModel || '';
+}
 
 /** Cache of ollamaShow results by model id. */
 const shown = new Map();

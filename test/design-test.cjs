@@ -875,7 +875,11 @@ const { chromium } = require('playwright'),
     // Settings: Enter adds a new line, and new chats start with Kimi.
     await page.getByRole('button', { name: 'Account settings', exact: true }).click();
     await page.locator('#enter-line').check();
-    await page.locator('#default-model').selectOption('kimi-k3.1-pro');
+    // The default model is picked as in the chat's picker: searched, then chosen.
+    await page.locator('#default-model').click();
+    await page.locator('#model-search').fill('kimi');
+    await page.locator('#model-options [data-model="kimi-k3.1-pro"]').click();
+    assert.equal(await page.locator('#default-model').getAttribute('data-value'), 'kimi-k3.1-pro');
     await page.getByRole('button', { name: 'Save preferences' }).click();
     await page.waitForFunction(() =>
       document.querySelector('#account-save-status').textContent.startsWith('Saved.'),
@@ -942,6 +946,7 @@ const { chromium } = require('playwright'),
       approach: 'auto',
       workers: '4',
       budget: 'auto',
+      workerModel: '',
     });
     assert.equal(await page.locator('#attach-chips .attach-chip').count(), 0);
     await page.locator('.chat-activity').waitFor();

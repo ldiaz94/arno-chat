@@ -6,6 +6,7 @@
 import { json } from '../http.mjs';
 import { profile } from '../account.mjs';
 import { providerModel } from '../providers.mjs';
+import { workerModelOf } from '../models.mjs';
 import { seal } from '../secrets.mjs';
 import { gitRemote } from './git.mjs';
 import { SANDBOX_HOSTS, publicSandbox } from './sandbox.mjs';
@@ -150,7 +151,7 @@ export const workspace = {
       // network is the gateways (git push).
       'safety = auto\ncontext_files = yes\njail = no\n' +
       (price ? 'price = ' + price.inp + ' ' + price.out + ' ' + price.cached + '\n' : '') +
-      codeSettings(workerList(selected, preferences.workerModel), options);
+      codeSettings(workerList(selected, await workerModelOf(options, preferences)), options);
     if (plan.search)
       config += 'mcp = web http://mcp.internal/web\ntrust = web_web_search web_web_read\n';
     for (const c of preferences.mcp || [])

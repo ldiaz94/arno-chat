@@ -21,7 +21,7 @@ import { unseal } from '../secrets.mjs';
 import { proxyMcp } from './mcp.mjs';
 import { WEB_INSTRUCTIONS, webMcp } from '../chat/research.mjs';
 import { turnPlan } from '../chat/plan.mjs';
-import { effortSupported } from '../models.mjs';
+import { effortSupported, workerModelOf } from '../models.mjs';
 import { gitProxy } from '../code/git.mjs';
 import { mcpBearer } from './mcp-oauth.mjs';
 import { registryProxy, cloudflareProxy, cloudflareToken, githubProxy } from '../code/sandbox.mjs';
@@ -43,11 +43,12 @@ export class ModelGateway extends WorkerEntrypoint {
       selection = providerModel(this.ctx.props.model),
       plan = turnPlan(options || undefined),
       // The owner's worker model, which arno's workers may name (workerList).
-      worker = preferences.workerModel ? providerModel(preferences.workerModel) : null,
+      workerModel = await workerModelOf(options, preferences),
+      worker = workerModel ? providerModel(workerModel) : null,
       alternates =
         worker?.provider === selection.provider && worker.id !== selection.id
           ? {
-              [worker.id]: (await effortSupported(preferences.workerModel)) ? plan.effort : 'auto',
+              [worker.id]: (await effortSupported(workerModel)) ? plan.effort : 'auto',
             }
           : {};
     let turnId, round;
@@ -92,7 +93,7 @@ export class ModelGateway extends WorkerEntrypoint {
             turnId,
             usage,
             // A worker's request, priced as its model's (records.mjs charge).
-            model: model === selection.id ? undefined : preferences.workerModel,
+            model: model === selection.id ? undefined : workerModel,
           }),
         }),
       onProgress: preview =>

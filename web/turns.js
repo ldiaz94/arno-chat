@@ -92,7 +92,10 @@ function activity(job) {
       order.map(() => '<span></span>').join('') +
       '</div><div class="workers" aria-label="Workers"></div><button type="button" class="steps-open" hidden>Steps</button>';
     node.querySelector('.steps-open').onclick = () => openSteps(state.session.id, job.id);
-    node.querySelector('.workers').onclick = () => openSteps(state.session.id, job.id);
+    node.querySelector('.workers').onclick = e => {
+      const chip = e.target.closest('.worker-chip');
+      if (chip) openSteps(state.session.id, job.id, chip.dataset.n);
+    };
   }
   const set = (sel, text) => {
     const el = node.querySelector(sel);
@@ -194,6 +197,7 @@ function syncSteps(list, steps) {
     if (!li) {
       li = document.createElement('li');
       li.dataset.key = key;
+      li.dataset.who = /^Worker (\S+): /.exec(s.text)?.[1] || 'lead';
       li.innerHTML = s.detail
         ? '<details><summary><span aria-hidden="true"></span> ' +
           esc(s.text) +
@@ -241,13 +245,14 @@ function syncWorkers(box, workers) {
 }
 /** Opens the steps drawer on job's steps: beside the thread, not over it,
  * filled every 2 s while open (followSteps). */
-function openSteps(sid, jobId) {
+function openSteps(sid, jobId, who = '') {
   const box = $('#steps-dialog'),
     list = $('#steps-list');
   if (box.dataset.job !== jobId) {
     box.dataset.job = jobId;
     list.textContent = '';
   }
+  showOnly(who);
   if (!box.open) {
     box.show();
     // Open beside the thread, so Escape is not the browser's to handle.
@@ -255,6 +260,34 @@ function openSteps(sid, jobId) {
     followSteps(sid, jobId, box);
   }
 }
+/** Shows the drawer's steps of who alone ('lead', a worker's number), or
+ * all with ''; its buttons offer everyone who has a step so far. */
+function showOnly(who) {
+  const bar = $('#steps-filter'),
+    items = [...$('#steps-list').children],
+    whos = [...new Set(items.map(li => li.dataset.who))];
+  bar.dataset.who = who;
+  const names = ['', ...whos.filter(w => w === 'lead'), ...whos.filter(w => w !== 'lead')];
+  const html = names
+    .map(
+      w =>
+        '<button type="button" data-who="' +
+        esc(w) +
+        '" aria-pressed="' +
+        (w === who) +
+        '">' +
+        (w === '' ? 'All' : w === 'lead' ? 'Lead' : 'Worker ' + esc(w)) +
+        '</button>',
+    )
+    .join('');
+  if (bar.innerHTML !== html) bar.innerHTML = html;
+  bar.hidden = whos.length < 2 && !who;
+  for (const li of items) li.hidden = !!who && li.dataset.who !== who;
+}
+$('#steps-filter').onclick = e => {
+  const b = e.target.closest('[data-who]');
+  if (b) showOnly(b.dataset.who);
+};
 /** Fills the drawer's list while it is open: every step of job so far, then
  * what is new or has finished since; it keeps to the end of the list unless
  * the reader has scrolled up. */
@@ -270,6 +303,7 @@ async function followSteps(sid, jobId, box) {
     if (r.from === 0 && from > 0 && r.steps.length < from) list.textContent = '';
     const atEnd = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
     syncSteps(list, r.steps);
+    showOnly($('#steps-filter').dataset.who || '');
     if (atEnd) list.scrollTop = list.scrollHeight;
     // The turn is over and every step has its result: nothing more will come.
     if (!$('#activity') && !r.steps.some(s => s.done === false)) return;

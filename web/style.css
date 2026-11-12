@@ -2225,6 +2225,42 @@ body.light,
 .steps-drawer .modal-head {
   flex: none;
 }
+.steps-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 12px 2px;
+}
+.steps-filter button {
+  min-height: 30px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.steps-filter button[aria-pressed='true'] {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+/* A model setting's button: the model's mark and name, like the picker's. */
+.model-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+}
+.model-field > span:last-child {
+  margin-left: auto;
+  color: var(--muted);
+}
+#opt-worker-model {
+  margin-top: 8px;
+  font-size: 13px;
+}
 .step-log {
   flex: 1;
   margin: 0;

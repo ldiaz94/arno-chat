@@ -8,7 +8,8 @@
  * message is sent with them (turns.js).
  * Depends on core and options.mjs.
  */
-import { $, state, icon, esc } from './core.js';
+import { $, state, icon, esc, modelName } from './core.js';
+import { modelLabel, pickModel } from './models.js';
 import { DEFAULTS, checkOptions, optionTags } from './options.mjs';
 
 // The options button, its popover and the composer form.
@@ -153,6 +154,7 @@ export function render() {
             o.workers === 'off' ? 'No workers' : 'Workers: ' + o.workers,
           ],
           o.budget !== 'auto' && ['budget', '$' + o.budget + ' budget'],
+          o.workerModel && ['workerModel', 'Workers on ' + modelName(o.workerModel)],
         ]),
   ].filter(Boolean);
   const box = $('#option-chips');
@@ -177,6 +179,12 @@ export function render() {
   for (const name of ['mode', 'effort', 'style', 'approach', 'workers', 'budget'])
     for (const input of panel.querySelectorAll('input[name="' + name + '"]'))
       input.checked = input.value === o[name];
+  $('#opt-worker-model').innerHTML =
+    (o.workerModel
+      ? modelLabel(o.workerModel)
+      : '<span>Worker model: ' +
+        esc(state.profile?.workerModel ? modelName(state.profile.workerModel) : 'the session’s') +
+        '</span>') + '<span aria-hidden="true">⌄</span>';
   for (const el of panel.querySelectorAll('[data-chat-only]')) el.hidden = !chat;
   for (const el of panel.querySelectorAll('[data-code-only]')) el.hidden = chat;
   $('#opt-approach-note').textContent = {
@@ -210,6 +218,16 @@ function open(show) {
   }
 }
 button.onclick = () => open(panel.hidden);
+// This session's worker model, over the account's (Account → Worker model).
+$('#opt-worker-model').onclick = async () => {
+  const id = await pickModel({
+    title: 'Worker model for this session',
+    current: messageOptions().workerModel,
+    blank: ['', 'Account default'],
+    caption: 'Workers run on it when it is on the session model’s provider.',
+  });
+  if (id != null) choose('workerModel', id);
+};
 panel.onchange = e => {
   const t = e.target;
   if (t.id === 'opt-search') choose('search', t.checked);

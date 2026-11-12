@@ -15,6 +15,8 @@
  *   workers   off | 1 | 2 | 3 | 4                 workers side by side, at most
  *   budget    auto | dollars, 0.1 to 100          what a message may spend
  *             (the panel offers 1, 3 and 10; /budget sets any)
+ *   workerModel  '' | a model id                  the workers' model; '' is the
+ *             account's (server/code/workspace.mjs workerList)
  */
 export const CHOICES = {
   search: [true, false],
@@ -26,6 +28,7 @@ export const CHOICES = {
   approach: ['auto', 'pair', 'build', 'review'],
   workers: ['off', '1', '2', '3', '4'],
   budget: ['auto', '1', '3', '10'],
+  workerModel: [''],
 };
 // What each option is when nothing was chosen.
 export const DEFAULTS = {
@@ -38,9 +41,13 @@ export const DEFAULTS = {
   approach: 'auto',
   workers: '4',
   budget: 'auto',
+  workerModel: '',
 };
 /** The options only a coding session has. */
-export const CODE_ONLY = ['approach', 'workers', 'budget'];
+export const CODE_ONLY = ['approach', 'workers', 'budget', 'workerModel'];
+/** Whether value looks like a model id (whether it may be used is the
+ * server's to say: models.mjs modelAllowed). */
+export const modelIdOk = value => typeof value === 'string' && /^[\w.:/-]{1,120}$/.test(value);
 
 /** Whether a budget is a number of dollars from 0.1 to 100, as text. */
 export function budgetOk(value) {
@@ -61,7 +68,10 @@ export function checkOptions(value, kind) {
   const o = { ...DEFAULTS, ...value };
   if (
     Object.entries(CHOICES).some(
-      ([k, list]) => !list.includes(o[k]) && !(k === 'budget' && budgetOk(o[k])),
+      ([k, list]) =>
+        !list.includes(o[k]) &&
+        !(k === 'budget' && budgetOk(o[k])) &&
+        !(k === 'workerModel' && modelIdOk(o[k])),
     )
   )
     return null;
@@ -93,5 +103,6 @@ export function optionTags(o) {
         ? 'No workers'
         : 'Workers: ' + o.workers,
     !o.budget || o.budget === 'auto' ? '' : '$' + o.budget + ' budget',
+    o.workerModel ? 'Workers on ' + o.workerModel.split('/').pop() : '',
   ].filter(Boolean);
 }
