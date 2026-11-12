@@ -411,6 +411,29 @@ test('a sign-in refreshes its GitHub token near expiry, once for concurrent requ
     globalThis.fetch = realFetch;
   }
 });
+test('a new chat is named by its model, tidied, or not at all when the call fails', async () => {
+  const { nameChat } = await import('../server/chat/title.mjs');
+  let sent;
+  const reply = text => async (url, init) => {
+    sent = JSON.parse(init.body);
+    return sse([
+      { choices: [{ delta: { content: text } }] },
+      { choices: [{ finish_reason: 'stop' }] },
+    ]);
+  };
+  const ask = upstream =>
+    nameChat({
+      model: 'm',
+      provider: 'ollama',
+      key: 'k',
+      message: 'hi',
+      answer: 'hello',
+      upstream,
+    });
+  assert.equal(await ask(reply('"Rocket launch physics."\nextra')), 'Rocket launch physics');
+  assert.equal(sent.tools, undefined, 'no tools');
+  assert.equal(await ask(async () => new Response('down', { status: 500 })), null);
+});
 test('Markdown renders formatting while escaping HTML and refusing executable links', () => {
   const html = markdown(
     '## Heading\n\n**bold** and [link](https://example.com)\n\n<script>alert(1)</script>\n\n[x](javascript:alert(1))\n\n`code`',

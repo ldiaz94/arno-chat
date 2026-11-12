@@ -26,6 +26,7 @@
  * model to fix. The reviews' cost joins the turn's (probe/records.mjs). */
 import { json } from '../http.mjs';
 import { plainChat } from './chat.mjs';
+import { nameChat } from './title.mjs';
 import { modelInput } from '../probe/attachments.mjs';
 import { profile, credential, instructions, searchConnection } from '../account.mjs';
 import { providerModel } from '../providers.mjs';
@@ -371,7 +372,17 @@ export const chatTurn = {
         session.ownerId &&
         session.id
       ) {
-        const meta = { ...current, title: prompt.slice(0, 70) };
+        const title = await nameChat({
+          model: selected.id,
+          provider: selected.provider,
+          key: await credential(this.env, session.ownerId, p, selected.provider),
+          message: prompt,
+          answer: result.summary || '',
+        });
+        // The user may have renamed it meanwhile.
+        const latest = await this.ctx.storage.get('session');
+        if (latest.customTitle) return json(result);
+        const meta = { ...latest, title: title || prompt.slice(0, 70) };
         await this.ctx.storage.put('session', meta);
         await this.env.PROBE.getByName('index:' + session.ownerId).fetch(
           'https://internal/index/add',
