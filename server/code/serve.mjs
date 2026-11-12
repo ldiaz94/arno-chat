@@ -258,16 +258,26 @@ export function transcriptOf(turn) {
     .slice(-30000);
 }
 
-/** A short line for the live view: what the turn is doing now. */
+/** A tool call for the live view, or null for anything else: {n, text: a
+ * short line, detail: the call in full and the start of its result, done once
+ * the result is in}. A call's start and its result share n, so its step is
+ * updated, not added again. */
 export function activityOf(e) {
+  if (e.kind !== 'tool') return null;
   const who = e.worker ? 'Worker ' + e.worker + ': ' : '';
-  if (e.kind !== 'tool') return '';
-  let detail;
+  let args = {};
   try {
-    const a = JSON.parse(e.args || '{}');
-    detail = a.command || a.path || a.pattern || a.query || a.name || a.task || '';
-  } catch {
-    detail = '';
-  }
-  return (who + e.name + (detail ? ' · ' + String(detail) : '')).slice(0, 160);
+    args = JSON.parse(e.args || '{}');
+  } catch {}
+  const what =
+    args.command || args.path || args.pattern || args.query || args.name || args.task || '';
+  const cut = (s, n) => (s.length > n ? s.slice(0, n) + ' …' : s);
+  return {
+    n: e.n,
+    text: (who + e.name + (what ? ' · ' + String(what) : '')).slice(0, 160),
+    detail:
+      cut(typeof args.command === 'string' ? args.command : e.args || '', 1000) +
+      (e.result ? '\n\n' + cut(e.result, 1500) : ''),
+    done: !!e.result,
+  };
 }

@@ -159,12 +159,36 @@ function chatActivity(node, job, preview) {
 function stepsHtml(steps = [], current) {
   const done = steps.at(-1)?.text === current ? steps.slice(0, -1) : steps;
   if (!done.length) return '';
-  return (
-    '<ol class="step-list" aria-label="Recent steps">' +
-    done.map(s => '<li><span aria-hidden="true">✓</span> ' + esc(s.text) + '</li>').join('') +
-    '</ol>'
-  );
+  const mark = s =>
+    '<span aria-hidden="true">' + (s.done === false ? '…' : '✓') + '</span> ' + esc(s.text);
+  // A coding turn's call opens to show itself in full and its result; one
+  // opened stays open as the card is drawn again (openSteps).
+  const item = s =>
+    s.detail
+      ? '<li><details data-n="' +
+        s.n +
+        '"' +
+        (openSteps.has(s.n) ? ' open' : '') +
+        '><summary>' +
+        mark(s) +
+        '</summary><pre class="step-detail">' +
+        esc(s.detail) +
+        '</pre></details></li>'
+      : '<li>' + mark(s) + '</li>';
+  return '<ol class="step-list" aria-label="Recent steps">' + done.map(item).join('') + '</ol>';
 }
+/** The steps opened on the activity card, by their call's number. */
+const openSteps = new Set();
+document.addEventListener(
+  'toggle',
+  e => {
+    const n = e.target.closest?.('.step-list details')?.dataset.n;
+    if (n == null) return;
+    if (e.target.open) openSteps.add(Number(n));
+    else openSteps.delete(Number(n));
+  },
+  true,
+);
 /** How often the activity card's quote changes, in seconds. */
 const QUOTE_SECONDS = 15;
 /** Quotes on making, finding out and keeping it simple, as [words, who]. */

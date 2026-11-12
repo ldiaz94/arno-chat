@@ -2123,6 +2123,39 @@ body.light,
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.step-list summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  list-style: none;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.step-list summary::-webkit-details-marker {
+  display: none;
+}
+.step-list summary:hover {
+  background: var(--panel);
+}
+.step-list details[open] summary {
+  white-space: normal;
+}
+.activity-top .caption {
+  white-space: nowrap;
+}
+/* A call in full and the start of what it gave back. */
+.step-detail {
+  margin: 4px 0 8px;
+  padding: 8px 10px;
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 11px/1.45 var(--mono, ui-monospace, monospace);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
 .step-list li.fresh {
   animation: appear 0.2s ease-out;
 }

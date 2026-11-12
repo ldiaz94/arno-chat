@@ -241,6 +241,24 @@ test('live SSE replays bounded progress, rejects stale rounds and survives viewe
   await f.obj.progress({ round: 3, text: 'After cancel' });
   assert.equal(f.obj.live.text, 'Hello world');
 });
+test('a coding call is one step, filled in when its result comes', async () => {
+  const { activityOf } = await import('../server/code/serve.mjs');
+  const f = fixture({ job: { id: 'job', status: 'running' } });
+  const call = { n: 7, kind: 'tool', name: 'shell', args: '{"command":"make test"}', result: '' };
+  await f.obj.activity(activityOf(call));
+  await f.obj.activity(activityOf({ ...call, n: 8, name: 'read', args: '{"path":"a.lisp"}' }));
+  await f.obj.activity(activityOf({ ...call, result: 'ok: 44 golden tests' }));
+  assert.deepEqual(
+    f.obj.live.steps.map(s => [s.text, s.done]),
+    [
+      ['shell · make test', true],
+      ['read · a.lisp', false],
+    ],
+  );
+  assert.equal(f.obj.live.steps[0].detail, 'make test\n\nok: 44 golden tests');
+  assert.equal(f.obj.live.activity, 'read · a.lisp', 'a late result leaves the current line');
+  assert.equal(activityOf({ kind: 'asst', text: 'hi' }), null);
+});
 test('the live view keeps the last six steps, and says what chat tools do', async () => {
   const f = fixture({ job: { id: 'job', status: 'running' } });
   for (let i = 1; i <= 8; i++) await f.obj.activity('Step ' + i);

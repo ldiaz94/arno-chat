@@ -29,20 +29,31 @@ export const live = {
   },
   /** What a turn is doing now (a tool call, a worker's step, a new round), for
    * the live view: the current step, and the last STEPS of them as {text, at}
-   * for its timeline. Saved, as the preview is, at most once a second. */
-  async activity(text) {
+   * for its timeline, plus {n, detail, done} for a coding turn's tool call
+   * (serve.mjs activityOf), whose step is updated in place when its result
+   * comes. Saved, as the preview is, at most once a second. */
+  async activity(step) {
     const job = await this.ctx.storage.get('job');
-    if (!text || job?.status !== 'running') return;
+    if (typeof step === 'string') step = { text: step };
+    if (!step?.text || job?.status !== 'running') return;
+    const text = step.text;
     const old =
       this.live?.jobId === job.id
         ? this.live
         : { jobId: job.id, round: 0, text: '', reasoning: '' };
     // A step's time is the view's, so a preview updated after it is newer.
     const at = Math.max(Date.now(), (old.updatedAt || 0) + 1);
+    // A result for a call already listed (workers run side by side) updates
+    // its step and leaves the current line as it is.
+    const steps = old.steps || [],
+      known = step.n != null ? steps.findIndex(s => s.n === step.n) : -1;
     this.live = {
       ...old,
-      activity: text,
-      steps: [...(old.steps || []), { text, at }].slice(-STEPS),
+      activity: known < 0 ? text : old.activity,
+      steps:
+        known < 0
+          ? [...steps, { ...step, at }].slice(-STEPS)
+          : steps.map((s, i) => (i === known ? { ...s, ...step } : s)),
       updatedAt: at,
     };
     this.broadcast(this.live);
