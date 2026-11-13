@@ -8,6 +8,7 @@ import { markdown, cleanOutput, diffHtml, composerHtml } from '../web/render.mjs
 import { highlight, detect } from '../web/highlight.mjs';
 import { Outbox, conflicted, isLocal } from '../web/queue.mjs';
 import { moon, byRecent, ago, daily, weatherText } from '../web/today.mjs';
+import { fold, oneEdit, wordScore, prepare, buildIndex, search } from '../web/fuzzy.mjs';
 import { QUOTES, FACTS } from '../web/home-content.js';
 import { buildPrompt, sessionPrompt } from '../server/code/context.mjs';
 import { validateFiles } from '../server/code/publish.mjs';
@@ -4059,4 +4060,113 @@ test('memory instructions: off says nothing; asked and auto list titles with ids
   assert.equal(memoryInstructions({ memory: 'off', memories }), '');
   assert.match(memoryInstructions({ memories }), /only when the user asks[\s\S]*\[a1\] Drinks/);
   assert.match(memoryInstructions({ memory: 'auto' }), /on your own[\s\S]*nothing yet/);
+});
+test('fuzzy search: every word must match, in any order, accents and case ignored', () => {
+  const index = buildIndex(
+    [
+      {
+        id: 'a',
+        title: 'Paella',
+        kind: 'chat',
+        updatedAt: 1,
+        history: [{ at: 10, prompt: 'Cook rice', summary: 'Use saffron.' }],
+      },
+      {
+        id: 'b',
+        title: 'Café in Zürich',
+        kind: 'chat',
+        updatedAt: 2,
+        history: [{ at: 20, prompt: 'Coffee?', summary: 'Try the espresso.' }],
+      },
+      {
+        id: 'c',
+        title: 'Fix build',
+        repo: 'o/r',
+        kind: 'code',
+        updatedAt: 3,
+        history: [{ at: 30, prompt: 'webpack config broke', summary: 'Fixed it.' }],
+      },
+    ].map(prepare),
+  );
+  const ids = q => search(index, q).map(r => r.id);
+  assert.deepEqual(ids('ZURICH cafe'), ['b']);
+  assert.deepEqual(ids('espresso zürich'), ['b'], 'words from title and answer, any order');
+  assert.deepEqual(ids('saffron espresso'), [], 'all words must match in one conversation');
+  assert.deepEqual(ids('cnfg'), ['c'], 'letters in order, gaps allowed');
+  assert.deepEqual(ids('safrfon'), ['a'], 'one typo in a long word');
+  assert.deepEqual(ids('sfaron'), [], 'two typos are too many');
+  assert.deepEqual(ids('o/r'), ['c'], 'a coding session by its repository');
+  assert.equal(
+    fold('Ünïcödé İstanbul ß'),
+    'unicode istanbul ß',
+    'same length, so offsets carry over',
+  );
+});
+test('fuzzy search ranks the exact word, the title and contiguous runs higher', () => {
+  assert.ok(wordScore('config', 'config') > wordScore('config', 'configuration'));
+  assert.ok(wordScore('conf', 'configuration') > wordScore('conf', 'reconfigure'));
+  assert.ok(wordScore('cfg', 'config') > wordScore('cfg', 'scaffolding'), 'word start');
+  assert.ok(wordScore('abcd', 'abcdx') > wordScore('abcd', 'axbxcxd'), 'fewer runs');
+  assert.equal(wordScore('ab', 'xaxb'), 0, 'two letters only match inside a word');
+  assert.equal(wordScore('saffron', 'safron'), 0.5);
+  assert.ok(oneEdit('recieve', 'receive') && oneEdit('abc', 'abcd') && !oneEdit('abc', 'acbd'));
+  const index = buildIndex(
+    [
+      {
+        id: 'body',
+        title: 'Notes',
+        updatedAt: 9,
+        kind: 'chat',
+        history: [{ at: 1, prompt: 'about rust', summary: '' }],
+      },
+      { id: 'title', title: 'Rust', updatedAt: 1, kind: 'chat', history: [] },
+    ].map(prepare),
+  );
+  assert.deepEqual(
+    search(index, 'rust').map(r => r.id),
+    ['title', 'body'],
+  );
+});
+test('fuzzy search quotes the turn with the most query words, with ranges to highlight', () => {
+  const long = 'filler '.repeat(60);
+  const doc = prepare({
+    id: 'a',
+    title: 'Trip',
+    kind: 'chat',
+    history: [
+      { at: 1, prompt: 'Lisbon?', summary: 'Lisbon is nice.' },
+      {
+        at: 2,
+        prompt: 'Food',
+        summary: long + 'In Lisbon try pastéis de nata, the best pastry. ' + long,
+      },
+    ],
+  });
+  const [r] = search(buildIndex([doc]), 'lisbon pasteis');
+  assert.equal(r.turn, 2, 'the turn where both words are');
+  const { text, ranges } = r.snippet;
+  assert.ok(text.startsWith('…') && text.endsWith('…') && text.length <= 125);
+  assert.deepEqual(
+    ranges.map(([a, b]) => text.slice(a, b)),
+    ['Lisbon', 'pastéis'],
+  );
+  assert.equal(
+    search(buildIndex([doc]), 'trip')[0].snippet,
+    null,
+    'a title-only hit quotes nothing',
+  );
+  assert.deepEqual(search(buildIndex([doc]), 'trip')[0].titleRanges, [[0, 4]]);
+});
+test('a whole conversation is kept, but the model sees only the 20 turns before its message', async () => {
+  const turns = {};
+  for (let at = 1; at <= 30; at++)
+    turns['turn:' + String(at).padStart(16, '0') + ':x'] = { prompt: 'p' + at, summary: 's', at };
+  const f = fixture(turns);
+  assert.equal((await f.obj.history(true)).length, 30);
+  const ats = list => list.map(t => t.at);
+  assert.deepEqual(ats(await f.obj.contextTurns()), ats(Object.values(turns).slice(10)));
+  // Editing the 5th message: the model sees the four before it, not the newest.
+  assert.deepEqual(ats(await f.obj.contextTurns(5)), [1, 2, 3, 4]);
+  await f.obj.trimTurns();
+  assert.equal((await f.obj.history(true)).length, 30, 'no longer cut to 20');
 });

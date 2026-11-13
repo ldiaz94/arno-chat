@@ -19,7 +19,7 @@ Arno Chat turns a GitHub repository clone into a resumable remote coding workspa
 | server/push.mjs | Payload-less Web Push: VAPID signing, push-service allowlist, subscriptions and latest notice, its /api/ and index routes |
 | server/probe/probe.mjs | ArnoProbe Durable Object: fetch dispatch to the route tables, alarm (runs the turn); mixes in the groups below |
 | server/probe/live.mjs | Live view: broadcast, progress, activity, events |
-| server/probe/records.mjs | Saving turns, request logs, failures, history, phase, notify, touch |
+| server/probe/records.mjs | Saving turns (the newest 1,000 kept), request logs, failures, history and the turns the model sees, phase, notify, touch |
 | server/probe/session-routes.mjs | Internal /session/* routes of a coding or chat session object |
 | server/probe/store-routes.mjs | Internal routes of the per-user index/profile and auth/OAuth store objects |
 | server/probe/gateway-routes.mjs | Internal callbacks from the model and MCP gateways (permits, progress, usage, research state) |
@@ -57,6 +57,8 @@ Arno Chat turns a GitHub repository clone into a resumable remote coding workspa
 | web/sessions.js | Switch mode, open, create, search, export, rename and delete sessions; the Chat and Code home pages |
 | web/home.js | The home pages' greeting and Today card (quote, fact, moon, weather), the Open-Meteo forecast and geocoder calls |
 | web/home-content.js | The curated quotes and facts the Today card picks from |
+| web/search.js | The sidebar's search across every conversation: reads the kept copies of /api/sessions/:id, indexes them in the page, shows results as you type and opens one at the turn it quotes |
+| web/fuzzy.mjs | DOM-free fuzzy matching, tested in Node: accent and case folding, word scores (in order, runs, word start, one typo), the index, ranked results with snippets and their highlight ranges |
 | web/today.mjs | DOM-free home arithmetic, tested in Node: daily pick, moon phase and its SVG path, WMO weather codes, conversation order and relative times |
 | web/info.js | Conversation details panel (title or usage button): context, usage, sources, links, images, repository |
 | web/usage.js | Usage view: per-request report, spend summaries, by-model totals and the Ollama account card |
@@ -337,6 +339,7 @@ The app is an installable PWA that reads every conversation with no network, and
 - No Background Sync: the outbox sends only while the app is open. iOS has no Background Sync at all, so on iPhone and iPad the app must be opened to send what waits.
 - Clearing: the Exit link deletes `arno-data` and the outbox before going to /auth/logout, account deletion does the same, and so does a boot where /api/me answers with no user while online.
 - Install: the page has the apple-mobile-web-app-* tags (status bar black-translucent; the top bar, sidebar and full-screen artifact dialog pad by `env(safe-area-inset-top)`), `theme-color` follows the app's own theme (layout.js), and the manifest has `id`, `scope`, `display: standalone`, `orientation: any` and a maskable 512 px icon (web/brand/logo.svg on full bleed, scaled 0.72 into the safe zone with rsvg-convert).
+- Search: web/search.js searches every conversation, chats and coding sessions, with no server index and no network. On focus of the sidebar field it prepares each listed conversation from its kept /api/sessions/:id reply in `arno-data` (the open one from memory; one not kept yet by its title alone), reusing a prepared one while its `updatedAt` and title are unchanged, and builds the index (web/fuzzy.mjs): the title (and a coding session's repository), artifact titles, and each turn's message and answer (the first 8,000 characters of each), folded to lowercase without accents, split into words. Each query word is scored once against the distinct words (exact 1, start 0.9, inside 0.7, letters in order 0.2–0.6 by runs and word start, one Damerau typo 0.5 for words of five or more letters; one-letter words match word starts only), weighted by where the word is (title 2, artifact 1.5, message 1.2, answer 1); a conversation must match every query word, and ranks by the sum of each word's best, then by recency. The snippet is about 120 characters of the turn where the words score most together; tapping a result opens it (resume) and scrolls to that turn's message. Results show 120 ms after typing stops; `/` or Ctrl/Cmd+Shift+F focuses the field, Escape clears it, Enter opens the first result.
 - Safari: WebKit deletes a site's script-writable storage (Cache API included) after seven days of Safari use without interaction; a Home Screen app has its own day counter that its use resets, so the installed app keeps its copy while it is used.
 
 ## Interface
@@ -362,7 +365,7 @@ Client state: drafts and each mode's last open session ID live in sessionStorage
 ## Limits and retention
 
 - Cloudflare checkpoints are kept 30 days, refreshed by restoration.
-- Up to 20 turns are retained; very large diffs and logs are truncated for display.
+- Up to 1,000 turns are retained per conversation (`KEPT_TURNS`, server/probe/records.mjs), each its own storage value of about 115 kB at most, so in effect whole conversations are kept and /api/sessions/:id returns them all; very large diffs and logs are truncated for display. The model sees at most the 20 turns before a message (`CONTEXT_TURNS`, `contextTurns`; chat.mjs and context.mjs also cut them to 32,000 characters).
 - A coding turn allows up to 150 model requests (40 in Fast, 400 with Build; workers' included) and runs 10 minutes (4, 13), then is cancelled (`codeLimits`). Output is 16,384 tokens per inference request (regular chat too; 4,096 in fast mode; Gemini keeps its own default, since thinking counts against it). A regular chat turn has four minutes, twelve for deep research. Gateway bodies are capped at 1 MB.
 - Container Internet access is off. Model inference, built-in research, enabled remote MCP and git (git.internal, to the session's repository only) are host-mediated exceptions. Arbitrary dependency downloads are unavailable.
 - Publishing takes up to 50 regular UTF-8 changed files totaling 1 MB; binary files and symlinks are rejected.

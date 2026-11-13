@@ -134,7 +134,7 @@ export const chatTurn = {
         counts = saved?.counts || { searches: 0, searxng: 0, reads: 0 },
         webKey = await credential(this.env, session.ownerId, p, 'ollama'),
         search = await searchConnection(this.env, session.ownerId, p);
-      const previous = (await this.history()).filter(t => !editAt || t.at < editAt);
+      const previous = await this.contextTurns(editAt);
       const jobId = job?.id,
         attached = job?.attachments || [],
         input = saved

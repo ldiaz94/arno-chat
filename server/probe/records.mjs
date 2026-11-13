@@ -1,5 +1,5 @@
 /** A conversation's records, part of ArnoProbe (probe.mjs): its turns (saved
- * with their usage and cost, the newest 20 kept), failed and stopped turns, the
+ * with their usage and cost, the newest 1000 kept), failed and stopped turns, the
  * owner's request log, the job's phase, and the notice when a turn ends. Depends
  * on ../account.mjs (keys), ../prices.mjs (cost) and ../push.mjs (notices).
  * Leaves out running turns (../chat/turn.mjs, ../code/turn.mjs). */
@@ -9,14 +9,25 @@ import { notifyOwner, turnNotice } from '../push.mjs';
 import { providerModel } from '../providers.mjs';
 import { nameChat } from '../chat/title.mjs';
 
+// Turns kept per conversation: in effect the whole of it. Each is its own
+// storage value, clipped by saveTurn to about 115 kB, well under the 2 MB a
+// Durable Object value may hold.
+export const KEPT_TURNS = 1000;
+// Turns read for the model's context (chat/chat.mjs and code/context.mjs take
+// at most 20 of them, within 32,000 characters).
+export const CONTEXT_TURNS = 20;
+
 export const records = {
   /** Save a finished turn (plain or coding) with its usage and cost, and update the totals. editAt
    * drops the turns an edited message replaces; oversized fields are clipped. */
   async saveTurn(result, prompt, snapshot, sourceRegistry, editAt) {
     await this.dropReplaced(await this.ctx.storage.get('job'));
     if (editAt) {
-      const turns = await this.ctx.storage.list({ prefix: 'turn:' });
-      await this.ctx.storage.delete([...turns].filter(([, t]) => t.at >= editAt).map(([k]) => k));
+      const turns = await this.ctx.storage.list({ prefix: 'turn:' }),
+        replaced = [...turns].filter(([, t]) => t.at >= editAt).map(([k]) => k);
+      // An edit far back replaces many turns; delete takes 128 keys at a time.
+      for (let i = 0; i < replaced.length; i += 128)
+        await this.ctx.storage.delete(replaced.slice(i, i + 128));
     }
     // Keep individual KV values bounded even with multi-byte code/log output.
     const clip = (s, n) => new TextDecoder().decode(new TextEncoder().encode(s || '').slice(0, n));
@@ -301,19 +312,28 @@ export const records = {
     const keys = [...turns].filter(([, t]) => t.failed && t.at === job.replaces).map(([k]) => k);
     if (keys.length) await this.ctx.storage.delete(keys);
   },
-  /** Retain the 20 most recent turns. */
+  /** Retain the KEPT_TURNS most recent turns. */
   async trimTurns() {
     const all = await this.ctx.storage.list({ prefix: 'turn:' });
-    if (all.size > 20) await this.ctx.storage.delete([...all.keys()].slice(0, all.size - 20));
+    if (all.size > KEPT_TURNS)
+      await this.ctx.storage.delete([...all.keys()].slice(0, all.size - KEPT_TURNS));
   },
-  /** Read bounded recent turns; old sessions migrate lazily after a successful
-   * checkpoint, so a failed model run never discards their prior transcript. */
-  async history(withFailures = false) {
-    const rows = await this.ctx.storage.list({ prefix: 'turn:', reverse: true, limit: 20 });
+  /** The newest `limit` turns, oldest first; old sessions migrate lazily after
+   * a successful checkpoint, so a failed model run never discards their prior
+   * transcript. */
+  async history(withFailures = false, limit = KEPT_TURNS) {
+    const rows = await this.ctx.storage.list({ prefix: 'turn:', reverse: true, limit });
     const turns = rows.size
       ? [...rows.values()].reverse()
       : (await this.ctx.storage.get('history')) || [];
     return withFailures ? turns : turns.filter(t => !t.failed);
+  },
+  /** The finished turns a new turn's model sees as context: the newest
+   * CONTEXT_TURNS, or, when it edits the message sent at editAt, the
+   * CONTEXT_TURNS before that one. Only an edit reads the whole transcript. */
+  async contextTurns(editAt) {
+    if (!editAt) return this.history(false, CONTEXT_TURNS);
+    return (await this.history()).filter(t => t.at < editAt).slice(-CONTEXT_TURNS);
   },
   /** Persist phase updates for mobile polling; never revive a cancelled job. */
   async phase(stage, extra = {}) {

@@ -84,6 +84,7 @@ the most recently active first.
 | Settings → You → **Memory** | Who saves facts about you for later chats: only when you ask ("remember that …", the default), the model on its own too, or off; each memory listed by title, opening to its fact and Forget |
 | Sliders button | This conversation's options (below) |
 | **Edit** in the sidebar | Select conversations and delete them together |
+| **Search conversations** in the sidebar, `/` or Ctrl/⌘+Shift+F | Every chat and coding session by what was said: titles, your messages, answers, artifact titles. Fuzzy (letters in order, one typo in a long word, accents ignored), every word must match; a result opens at the turn it quotes. Works offline; Escape clears |
 | You → About | The version the device runs, the server's build, Check for updates |
 
 **Options**, kept per conversation (the sliders button):
@@ -205,6 +206,10 @@ opens and reads with no network. What you do offline waits in an outbox
 ([`web/outbox.js`](web/outbox.js), with its rules in
 [`web/queue.mjs`](web/queue.mjs)) and is sent in order once the network is
 back. A new version waits until you tap **Update** ([`web/update.js`](web/update.js)).
+Search reads those same copies ([`web/search.js`](web/search.js)): each
+conversation's words are indexed in the page, and every word you type is
+matched against them fuzzily ([`web/fuzzy.mjs`](web/fuzzy.mjs)), so it needs
+no index on the server and works offline.
 
 [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) goes through every module,
 route and stored record.
@@ -251,6 +256,8 @@ code in 31, and 4,300 lines of tests (`wc -l`, comments included).
   1.4 GB on a 4 GB disk.
 - **Images in coding sessions**, and MCP resources and prompts (tools only).
 - **Spending caps per day**: budgets are per message.
+- **Search by meaning.** Search matches the words you type, fuzzily, not
+  what they mean; there are no embeddings and no server index.
 - **Accounts for anyone.** It is a private deployment for its owner while
   it uses shared provider keys.
 

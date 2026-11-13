@@ -38,7 +38,7 @@ export const codeTurn = {
       await this.gitSetup(session);
       const startupMs = Date.now() - began;
       await this.phase('thinking', { workspace, startupMs });
-      const previous = (await this.history()).filter(t => !editAt || t.at < editAt);
+      const previous = await this.contextTurns(editAt);
       // Attached files go into the workspace, outside the repository, and the
       // prompt names them: the prompt is a command-line argument, too small for
       // inlining.

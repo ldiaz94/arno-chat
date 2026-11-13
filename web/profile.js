@@ -14,26 +14,135 @@ const PICTURE_SIDE = 256; // pictures are shrunk to this many pixels square befo
 const PICTURE_MAX = 256 * 1024; // the server's size limit, in bytes
 // Two capital letters for the profile picture when there is none.
 const initials = () => (state.user?.login || 'A').slice(0, 2).toUpperCase();
+/** One setting as a row: the label and a one-line hint on the left, the
+ * control on the right (stacked on a phone). `hint` and `control` are markup;
+ * `forId` ties the label to its control; `wide` stacks a big control (a
+ * text area) under the label even on a wide screen. */
+export function pref(label, hint, control, { forId = '', wide = false } = {}) {
+  const name = forId
+    ? `<label class="pref-label" for="${forId}">${label}</label>`
+    : `<span class="pref-label">${label}</span>`;
+  return (
+    `<div class="pref${wide ? ' wide' : ''}"><div class="pref-text">${name}` +
+    (hint ? `<span class="pref-hint">${hint}</span>` : '') +
+    `</div><div class="pref-control">${control}</div></div>`
+  );
+}
+/** A pill group of 2 or 3 radio choices: {label, name, choices: [value,
+ * words, extra attributes], current}. Real radio inputs, so keys work. */
+export function segmented({ label, name, choices, current }) {
+  return (
+    `<div class="seg" role="radiogroup" aria-label="${esc(label)}">` +
+    choices
+      .map(
+        ([value, words, attrs = '']) =>
+          `<label><input type="radio" name="${name}" value="${value}" ${attrs}` +
+          (String(value) === String(current) ? ' checked' : '') +
+          `><span>${esc(words)}</span></label>`,
+      )
+      .join('') +
+    '</div>'
+  );
+}
+/** An on/off switch: a checkbox that looks like one. */
+const toggle = (id, on) =>
+  `<input type="checkbox" role="switch" id="${id}"${on ? ' checked' : ''}>`;
+/** Rows under a heading; `note` is a short aside, `kind` an extra class. */
+export function group(title, id, rows, { note = '', kind = '' } = {}) {
+  return (
+    `<section class="pref-group ${kind}" id="${id}"><h3>${title}` +
+    (note ? ` <small>${note}</small>` : '') +
+    `</h3>${rows}</section>`
+  );
+}
+// What filterPrefs hides: a setting row, or a card with no rows in it; and those still shown.
+const ITEMS = '.pref, .setting-card:not(:has(.pref))';
+const SHOWN = '.pref:not(.pref-miss), .setting-card:not(:has(.pref)):not(.pref-miss)';
+/** Hides the settings whose words lack `query`, and the groups left empty;
+ * an empty query shows everything. It covers every tab, so a tab switch
+ * needs no re-run. */
+export function filterPrefs(query) {
+  const q = query.trim().toLowerCase();
+  for (const panel of document.querySelectorAll('[data-account-panel]')) {
+    for (const n of panel.querySelectorAll(ITEMS))
+      n.classList.toggle('pref-miss', q !== '' && !n.textContent.toLowerCase().includes(q));
+    for (const g of panel.querySelectorAll('.pref-group'))
+      g.classList.toggle('pref-miss', !g.querySelector(SHOWN));
+    if (!panel.hidden) $('#pref-none').hidden = q === '' || !!panel.querySelector(SHOWN);
+  }
+}
 /** The panel's markup. `account` is the profile from GET /api/account. */
 export function profilePanel(account) {
   return (
     '<section data-account-panel="you">' +
-    '<section class="setting-card"><strong>Picture</strong><div class="picture-row"><span class="avatar picture" id="picture"></span><div class="setting-row"><button id="picture-upload" class="ghost" type="button">Upload</button><input id="picture-file" type="file" hidden accept="image/png,image/jpeg,image/webp"><button id="picture-remove" class="ghost" type="button">Remove</button></div></div><p class="caption" id="picture-status">Shown next to your messages. Large photos are shrunk to 256 × 256 pixels.</p></section>' +
-    '<label>Your name<input id="name" class="field" maxlength="80" autocomplete="name" placeholder="What should Arno call you?" value="' +
-    esc(account.name) +
-    '"></label>' +
-    '<label>About you<textarea id="about" class="field" rows="5" maxlength="8000" placeholder="What should the assistant know about you? (name, role, preferences)">' +
-    esc(account.about) +
-    '</textarea></label><p class="caption">Up to 8,000 characters, sent to every model with each request. Saved with Save preferences.</p>' +
+    profileGroup(account) +
     composerCard(account) +
     displayCard(display(account)) +
     memoryCard(account) +
     homeCard(account.home || {}) +
-    PRIVACY +
-    '<section class="setting-card" id="about-card"><strong>About</strong><div class="setting-row"><span id="about-version">Arno Chat</span><button type="button" id="update-check" class="ghost">Check for updates</button></div><p class="caption" id="about-build"></p></section>' +
-    '<section class="setting-card"><label class="check"><input type="checkbox" id="developer"> Developer mode</label><p class="caption">Tools for debugging the app on this device.</p><div id="dev-tools" hidden><div class="setting-row"><span>Layout diagnostics: the screen measurements over the app</span><button type="button" id="diag-toggle" class="ghost"></button></div><div class="setting-row"><span>Debug report: measurements and app state, for a bug report</span><button type="button" id="debug-copy" class="ghost">Copy</button></div><div class="setting-row"><span>GitHub connection check: what the app can see on GitHub</span><button type="button" id="github-check" class="ghost">Check</button></div><pre id="github-check-out" class="debug-out" hidden></pre></div></section>' +
-    DANGER +
+    moreGroup() +
     '</section>'
+  );
+}
+// The profile: picture, name and what the assistant should know.
+function profileGroup(account) {
+  const buttons =
+    '<span class="avatar picture" id="picture"></span><button id="picture-upload" class="ghost" type="button">Upload</button><input id="picture-file" type="file" hidden accept="image/png,image/jpeg,image/webp"><button id="picture-remove" class="ghost" type="button">Remove</button>';
+  return group(
+    'Profile',
+    'profile-card',
+    pref(
+      'Picture',
+      '<span id="picture-status">Shown next to your messages; shrunk to 256 × 256.</span>',
+      buttons,
+    ) +
+      pref(
+        'Your name',
+        'What Arno calls you.',
+        `<input id="name" class="field" maxlength="80" autocomplete="name" placeholder="Your name" value="${esc(account.name)}">`,
+        { forId: 'name' },
+      ) +
+      pref(
+        'About you',
+        'Sent to every model with each request. Up to 8,000 characters.',
+        `<textarea id="about" class="field" rows="4" maxlength="8000" placeholder="Name, role, preferences…">${esc(account.about)}</textarea>`,
+        { forId: 'about', wide: true },
+      ),
+  );
+}
+// The About, Developer mode, Privacy and Delete account block: rarely used, so last and quiet.
+function moreGroup() {
+  const tools = (label, control) => pref(label, '', control);
+  return (
+    group(
+      'About and account',
+      'more-card',
+      pref(
+        'Version',
+        '<span id="about-build"></span>',
+        '<span id="about-version" class="pref-hint"></span><button type="button" id="update-check" class="ghost">Check for updates</button>',
+      ) +
+        pref(
+          'Developer mode',
+          'Tools for debugging the app on this device.',
+          toggle('developer', false),
+          { forId: 'developer' },
+        ) +
+        '<div id="dev-tools" hidden>' +
+        tools(
+          'Layout diagnostics',
+          '<button type="button" id="diag-toggle" class="ghost"></button>',
+        ) +
+        tools('Debug report', '<button type="button" id="debug-copy" class="ghost">Copy</button>') +
+        tools(
+          'GitHub connection check',
+          '<button type="button" id="github-check" class="ghost">Check</button>',
+        ) +
+        '<pre id="github-check-out" class="debug-out" hidden></pre></div>',
+      { kind: 'quiet' },
+    ) +
+    PRIVACY +
+    DANGER
   );
 }
 /** A model setting's button: the model chosen (its provider's mark and
@@ -52,22 +161,33 @@ function modelField(id, chosen, blank) {
     '<span aria-hidden="true">⌄</span></button>'
   );
 }
-/** What each model setting's picker is called, and the models it offers. */
+/** What each model setting's picker is called, the models it offers, and the
+ * note it shows (a model setting's detail lives here, not in the form). */
 const MODEL_FIELDS = {
   'default-model': { title: 'Default model' },
-  'review-model': { title: 'Review model', only: m => m.vision },
-  'worker-model': { title: 'Worker model' },
+  'review-model': {
+    title: 'Review model',
+    only: m => m.vision,
+    caption:
+      'Only models that see images are listed: the review looks at screenshots. A stronger model catches more; it costs one extra call per page.',
+  },
+  'worker-model': {
+    title: 'Worker model',
+    caption:
+      'The model a coding turn hands steps to (reading, searching, mechanical edits), as cheap as will do; the session’s model stays the lead and takes the hard steps. It must be on the session’s provider, else workers use the session’s model.',
+  },
 };
 // A model setting's button opens the picker; the model picked is shown and kept.
 document.addEventListener('click', async e => {
   const field = e.target.closest('.model-field');
   if (!field) return;
-  const { title, only } = MODEL_FIELDS[field.id];
+  const { title, only, caption } = MODEL_FIELDS[field.id];
   const id = await pickModel({
     title,
     current: field.dataset.value,
     blank: ['', field.dataset.blank],
     only,
+    caption,
   });
   if (id == null) return;
   field.dataset.value = id;
@@ -75,30 +195,52 @@ document.addEventListener('click', async e => {
     (id ? modelLabel(id) : '<span>' + esc(field.dataset.blank) + '</span>') +
     '<span aria-hidden="true">⌄</span>';
 });
-// The composer settings: send key, default model and review model (only
-// models that see images: the review looks at screenshots).
+// The composer settings: send key and the three model settings.
 function composerCard(account) {
-  return (
-    '<section class="setting-card" id="composer-card"><strong>Composer & defaults</strong>' +
-    '<label class="check-label"><input type="radio" name="enter-key" id="enter-sends"' +
-    (account.enterSends === true ? ' checked' : '') +
-    '> Enter sends · Shift + Enter adds a new line</label>' +
-    '<label class="check-label"><input type="radio" name="enter-key" id="enter-line"' +
-    (account.enterSends !== true ? ' checked' : '') +
-    '> Enter adds a new line · ⌘ / Ctrl + Enter sends</label>' +
-    '<label>Default model' +
-    modelField('default-model', account.defaultModel || '', 'App default') +
-    '</label><p class="caption">New chats and coding sessions start with this model. The send button always sends.</p>' +
-    '<label>Review model' +
-    modelField('review-model', account.reviewModel || '', 'Same as the chat') +
-    '</label><p class="caption">Checks pages the chat builds against your request, with screenshots. A stronger model catches more; costs one extra call per page.</p>' +
-    '<label>Worker model' +
-    modelField('worker-model', account.workerModel || '', 'Same as the session') +
-    "</label><p class=\"caption\">The model a coding turn hands steps to (reading, searching, mechanical edits), as cheap as will do; the session's model stays the lead and takes the hard steps. It must be on the session's provider, else workers use the session's model.</p></section>"
+  const model = (id, label, hint, blank, value) =>
+    pref(label, hint, modelField(id, value || '', blank), { forId: id });
+  return group(
+    'Composer and models',
+    'composer-card',
+    pref(
+      'Enter key',
+      'The other combination, ⌘ / Ctrl + Enter or Shift + Enter, does the opposite.',
+      segmented({
+        label: 'Enter key',
+        name: 'enter-key',
+        current: account.enterSends === true ? 'send' : 'line',
+        choices: [
+          ['send', 'Sends', 'id="enter-sends"'],
+          ['line', 'New line', 'id="enter-line"'],
+        ],
+      }),
+    ) +
+      model(
+        'default-model',
+        'Default model',
+        'New chats and sessions start with this one.',
+        'App default',
+        account.defaultModel,
+      ) +
+      model(
+        'review-model',
+        'Review model',
+        'Checks built pages with screenshots. Only models that see images.',
+        'Same as the chat',
+        account.reviewModel,
+      ) +
+      model(
+        'worker-model',
+        'Worker model',
+        'Does a coding turn’s routine steps; cheap will do.',
+        'Same as the session',
+        account.workerModel,
+      ),
   );
 }
-/** The Display settings: [key, label, its choices as [value, words], what it
- * says more]; the first choice is the default (server/account.mjs DISPLAY). */
+/** The Display settings: [key, label, its choices as [value, words], a hint];
+ * the first choice is the default (server/account.mjs DISPLAY). Two or
+ * three choices are a pill group, more a list. */
 const DISPLAY_ROWS = [
   [
     'meters',
@@ -110,23 +252,23 @@ const DISPLAY_ROWS = [
       ['cost', 'Cost only'],
       ['off', 'Neither'],
     ],
-    'Beside the model: how full its context is, and what the conversation has cost.',
+    'Beside the model: how full its context is, and the cost.',
   ],
   [
     'thinking',
     'Model thinking',
     [
-      ['folded', 'Folded under the answer'],
-      ['open', 'Open under the answer'],
+      ['folded', 'Folded'],
+      ['open', 'Open'],
       ['hidden', 'Hidden'],
     ],
-    '',
+    'How the reasoning shows under an answer.',
   ],
   [
     'stats',
     'Under each answer',
     [
-      [true, 'Time, tokens and cost'],
+      [true, 'Time, tokens, cost'],
       [false, 'Nothing'],
     ],
     '',
@@ -145,46 +287,53 @@ const DISPLAY_ROWS = [
     'While an answer streams',
     [
       [true, 'Scroll with it'],
-      [false, 'Stay put (↓ jumps to the end)'],
+      [false, 'Stay put'],
     ],
-    '',
+    'Stay put leaves a ↓ button to jump to the end.',
   ],
 ];
-// The display settings: a select each.
-function displayCard(d) {
+// One display setting's control: a pill group, or a list for five choices.
+function displayControl(key, label, choices, current) {
+  if (choices.length <= 3)
+    return segmented({
+      label,
+      name: 'display-' + key,
+      current,
+      choices: choices.map(([v, words]) => [v, words, `data-display="${key}"`]),
+    });
   return (
-    '<section class="setting-card" id="display-card"><strong>Display</strong><p class="caption">How conversations look, on every device you sign in on.</p>' +
-    DISPLAY_ROWS.map(
-      ([key, label, choices, more]) =>
-        '<label>' +
-        label +
-        '<select class="field" data-display="' +
-        key +
-        '">' +
-        choices
-          .map(
-            ([v, words]) =>
-              '<option value="' +
-              v +
-              '"' +
-              (d[key] === v ? ' selected' : '') +
-              '>' +
-              esc(words) +
-              '</option>',
-          )
-          .join('') +
-        '</select></label>' +
-        (more ? '<p class="caption">' + esc(more) + '</p>' : ''),
-    ).join('') +
-    '</section>'
+    `<select class="field" id="display-${key}" data-display="${key}">` +
+    choices
+      .map(
+        ([v, words]) =>
+          `<option value="${v}"${current === v ? ' selected' : ''}>${esc(words)}</option>`,
+      )
+      .join('') +
+    '</select>'
   );
 }
-/** The Display card's choices, as saved: true and false back to booleans. */
+// The display settings, a row each.
+function displayCard(d) {
+  return group(
+    'Display',
+    'display-card',
+    DISPLAY_ROWS.map(([key, label, choices, hint]) =>
+      pref(label, esc(hint), displayControl(key, label, choices, d[key]), {
+        forId: choices.length > 3 ? 'display-' + key : '',
+      }),
+    ).join(''),
+    { note: 'on every device you sign in on' },
+  );
+}
+/** The Display settings' choices, as saved: true and false back to booleans. */
 function displayPrefs() {
+  const chosen = [...document.querySelectorAll('[data-display]')].filter(
+    n => n.type !== 'radio' || n.checked,
+  );
   return Object.fromEntries(
-    [...document.querySelectorAll('[data-display]')].map(s => [
-      s.dataset.display,
-      s.value === 'true' ? true : s.value === 'false' ? false : s.value,
+    chosen.map(n => [
+      n.dataset.display,
+      n.value === 'true' ? true : n.value === 'false' ? false : n.value,
     ]),
   );
 }
@@ -192,23 +341,24 @@ let spot = null; // the weather's place as rounded coordinates, from "Use my loc
 // The home page settings: which widgets show and where the weather is.
 function homeCard(home) {
   spot = home.lat != null ? { lat: home.lat, lon: home.lon } : null;
-  const box = (id, label, on) =>
-    '<label class="check-label"><input type="checkbox" id="home-' +
-    id +
-    '"' +
-    (on ? ' checked' : '') +
-    '> ' +
-    label +
-    '</label>';
-  return (
-    '<section class="setting-card" id="home-card"><strong>Home page</strong><p class="caption">What the Today card on the home pages shows.</p>' +
-    box('quote', 'Quote of the day', home.quote !== false) +
-    box('fact', 'Interesting fact', home.fact !== false) +
-    box('moon', 'Moon phase', home.moon !== false) +
-    box('weather', 'Weather (from Open-Meteo)', home.weather === true) +
-    '<div id="weather-where"><label>Place<input id="home-place" class="field" maxlength="100" placeholder="A city, e.g. Lisbon" value="' +
-    esc(home.place || '') +
-    '"></label><div class="setting-row"><button id="home-locate" class="ghost" type="button" data-online="Reconnect to find your location">Use my location</button><span class="caption" id="home-where" role="status"></span></div></div></section>'
+  const box = (id, label, hint, on) =>
+    pref(label, hint, toggle('home-' + id, on), { forId: 'home-' + id });
+  return group(
+    'Home page',
+    'home-card',
+    box('quote', 'Quote of the day', '', home.quote !== false) +
+      box('fact', 'Interesting fact', '', home.fact !== false) +
+      box('moon', 'Moon phase', '', home.moon !== false) +
+      box('weather', 'Weather', 'From Open-Meteo.', home.weather === true) +
+      '<div id="weather-where">' +
+      pref(
+        'Place',
+        '<span id="home-where" role="status"></span>',
+        `<input id="home-place" class="field" maxlength="100" placeholder="A city, e.g. Lisbon" value="${esc(home.place || '')}"><button id="home-locate" class="ghost" type="button" data-online="Reconnect to find your location">Use my location</button>`,
+        { forId: 'home-place' },
+      ) +
+      '</div>',
+    { note: 'the Today card' },
   );
 }
 // Shows or hides the weather's place line and describes the chosen place.
@@ -260,18 +410,23 @@ export async function profilePrefs() {
 // A link to the GitHub applications page, where access is revoked.
 const ghub =
   '<a href="https://github.com/settings/applications" target="_blank" rel="noopener noreferrer">github.com/settings/applications</a>';
-// The privacy notice, as markup.
+// The privacy notice, as markup: folded, as it is long and read once.
 const PRIVACY =
-  '<section class="setting-card privacy" id="privacy"><h3>Privacy &amp; data</h3>' +
+  '<details class="pref-more setting-card privacy" id="privacy"><summary>Privacy &amp; data</summary>' +
   '<p><strong>Your data.</strong> We don’t train on your chats, and we don’t sell or share your data. It’s used only to run the app for you.</p>' +
   '<p><strong>What we keep, only while your account exists:</strong> your conversations (messages, answers, attachments, artifacts, coding workspaces), your settings and profile, your API keys (encrypted), notification subscriptions, and a log of your last 1,000 requests (time, model, tokens, cost and conversation title — not message content).</p>' +
   '<p><strong>What leaves the app:</strong> messages go to the model provider you pick; searches and page reads go to Ollama (or your own SearXNG). Each provider’s terms cover what it receives — for example, Google’s free Gemini tier may use prompts to improve its products.</p>' +
   '<p><strong>Deleting your account</strong> removes all of it at once. Two copies outside our direct control disappear on their own schedule: Cloudflare deletes coding-workspace snapshots within 30 days and error logs within 7 days; data already sent to providers follows their retention. You can also revoke GitHub access at ' +
   ghub +
-  '.</p><p><strong>On this device.</strong> To work offline, this device keeps a copy of your conversations; signing out or deleting your account clears it.</p><p><strong>Weather.</strong> If you turn on weather, your browser asks Open-Meteo for your area’s forecast. Only the place you type, or your location rounded to about 10 km, is saved.</p></section>';
-// The account deletion card, with its confirmation, as markup.
+  '.</p><p><strong>On this device.</strong> To work offline, this device keeps a copy of your conversations; signing out or deleting your account clears it.</p><p><strong>Weather.</strong> If you turn on weather, your browser asks Open-Meteo for your area’s forecast. Only the place you type, or your location rounded to about 10 km, is saved.</p></details>';
+// The account deletion row, with its confirmation, as markup.
 const DANGER =
-  '<section class="setting-card danger-zone"><h3>Danger zone</h3><button id="delete-start" class="danger" type="button">Delete account</button>' +
+  '<section class="pref-group quiet danger-zone">' +
+  pref(
+    'Delete account',
+    'Removes everything, for good.',
+    '<button id="delete-start" class="danger" type="button">Delete account</button>',
+  ) +
   '<div id="delete-confirm" hidden><p>This permanently deletes your conversations, files, artifacts, settings, keys and history. Type your GitHub username to confirm.</p>' +
   '<input id="delete-login" class="field" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="GitHub username">' +
   '<div class="setting-row"><button id="delete-go" class="danger" type="button" disabled>Delete everything</button><button id="delete-cancel" class="ghost" type="button">Cancel</button></div></div>' +
@@ -435,40 +590,42 @@ const MEMORY_CHOICES = [
   ['auto', 'When I ask, and on its own'],
   ['off', 'Off'],
 ];
-// The Memory card: who saves memories, and each saved one by title, opening
+// The Memory group: who saves memories, and each saved one by title, opening
 // to its fact and a Forget button.
 function memoryCard(account) {
   const list = account.memories || [];
-  return (
-    '<section class="setting-card" id="memory-card"><strong>Memory</strong><p class="caption">Facts chats remember about you. Every chat sees their titles and reads the facts it needs. Ask “remember that …” to add one.</p><label>Save memories<select class="field" id="memory-mode">' +
+  const mode =
+    '<select class="field" id="memory-mode">' +
     MEMORY_CHOICES.map(
       ([v, words]) =>
-        '<option value="' +
-        v +
-        '"' +
-        (account.memory === v ? ' selected' : '') +
-        '>' +
-        words +
-        '</option>',
+        `<option value="${v}"${account.memory === v ? ' selected' : ''}>${words}</option>`,
     ).join('') +
-    '</select></label>' +
-    (list.length
-      ? '<ul class="memory-list">' +
-        list
-          .map(
-            m =>
-              '<li><details data-memory="' +
-              esc(m.id) +
-              '"><summary>' +
-              esc(m.title) +
-              '</summary><p class="memory-fact"></p><button type="button" class="ghost" data-forget="' +
-              esc(m.id) +
-              '">Forget</button></details></li>',
-          )
-          .join('') +
-        '</ul>'
-      : '<p class="caption">Nothing remembered yet.</p>') +
-    '</section>'
+    '</select>';
+  return group(
+    'Memory',
+    'memory-card',
+    pref(
+      'Save memories',
+      'Facts chats remember about you. Say “remember that …” to add one.',
+      mode,
+      { forId: 'memory-mode' },
+    ) +
+      (list.length
+        ? '<ul class="memory-list">' +
+          list
+            .map(
+              m =>
+                '<li><details data-memory="' +
+                esc(m.id) +
+                '"><summary>' +
+                esc(m.title) +
+                '</summary><p class="memory-fact"></p><button type="button" class="ghost" data-forget="' +
+                esc(m.id) +
+                '">Forget</button></details></li>',
+            )
+            .join('') +
+          '</ul>'
+        : '<p class="caption">Nothing remembered yet.</p>'),
   );
 }
 // A memory opened shows its fact, read once; a Forget button forgets its

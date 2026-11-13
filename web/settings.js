@@ -8,7 +8,7 @@ import { $, state, esc, api, toast, unreachable } from './core.js';
 import { fit } from './layout.js';
 import { loadModels } from './models.js';
 import { providerMark } from './marks.js';
-import { profilePanel, wireProfile, profilePrefs } from './profile.js';
+import { profilePanel, wireProfile, profilePrefs, filterPrefs } from './profile.js';
 import { pushState, enablePush, disablePush } from './push.js';
 import { controls } from './offline.js';
 import { queueProfile } from './outbox.js';
@@ -45,6 +45,7 @@ function settingsTabs(tab) {
   document
     .querySelectorAll('[data-account-tab]')
     .forEach(b => b.classList.toggle('selected', b.dataset.accountTab === tab));
+  filterPrefs($('#pref-filter')?.value || ''); // the filter's "no match" note follows the tab
 }
 // One skill as a removable card: its name, its instructions as they read
 // (the Markdown rendered, cut short), which open in the full-screen
@@ -158,7 +159,7 @@ function sandboxCards() {
   const sb = account.sandbox || {},
     cf = sb.cloudflare;
   return (
-    '<section class="setting-card"><strong>Coding sessions’ network</strong><p class="caption">Sessions always reach npm and PyPI, read only, so installs work. Everything else they reach goes through the app: models, MCP servers, and git for the session’s own repository.</p><label class="check-label"><input type="checkbox" id="sandbox-internet"' +
+    '<section class="setting-card"><strong>Coding sessions’ network</strong><p class="caption">Sessions always reach npm and PyPI, read only, so installs work. Everything else they reach goes through the app: models, MCP servers, and git for the session’s own repository.</p><label class="check-label"><input type="checkbox" role="switch" id="sandbox-internet"' +
     (sb.internet ? ' checked' : '') +
     '> Full internet access</label><p class="caption">Lets sessions reach any site: other installers, documentation, APIs. A misled agent could then send repository contents anywhere, so turn it on only when you need it. Applies when a workspace next starts (after 30 idle minutes, or in a new session).</p><p class="caption" id="sandbox-status" role="status"></p></section>' +
     '<section class="setting-card"><div class="setting-row"><strong>Cloudflare</strong><span class="tag' +
@@ -463,7 +464,7 @@ async function openAccount() {
       )
       .join('');
     $('#account-body').innerHTML =
-      '<div class="account-tabs"><button data-account-tab="you">You</button><button data-account-tab="providers">Providers</button><button data-account-tab="instructions">Instructions</button><button data-account-tab="mcp">MCP tools</button><button data-account-tab="connections">Connections</button></div>' +
+      '<div class="account-bar"><div class="account-tabs"><button data-account-tab="you">You</button><button data-account-tab="providers">Providers</button><button data-account-tab="instructions">Instructions</button><button data-account-tab="mcp">MCP tools</button><button data-account-tab="connections">Connections</button></div><input type="search" id="pref-filter" class="pref-filter" placeholder="Find a setting" aria-label="Find a setting" autocomplete="off"></div><p id="pref-none" class="caption" hidden>No setting matches.</p>' +
       profilePanel(account) +
       '<section data-account-panel="providers" hidden><p class="caption">Keys are encrypted and kept outside coding workspaces. A provider’s models appear after you save its key. API billing is separate from ChatGPT/Claude app subscriptions.</p>' +
       providers +
@@ -477,7 +478,7 @@ async function openAccount() {
       esc(state.user.login) +
       '</span></div><p class="caption">Signing in does not require repository access. Coding sessions request repo scope separately.</p><a class="primary button-link" href="/auth/github?repos=1">Connect or refresh repository access ↗</a><p><a href="https://github.com/settings/applications" target="_blank" rel="noopener noreferrer">Review GitHub app and organization authorization ↗</a></p><p class="caption">Coding sessions reach the repositories the Arno GitHub App is installed on; the Code home says how to add more.</p></section>' +
       sandboxCards() +
-      '<section class="setting-card"><div class="setting-row"><strong>Notifications</strong><span class="tag" id="push-state"></span></div><label class="check-label"><input id="push-toggle" type="checkbox"> Notify me when a reply is ready</label><p class="caption" id="push-hint"></p></section><section class="setting-card"><strong>Storage & privacy</strong><p class="caption">Chats and account preferences use persistent Cloudflare Durable Objects SQLite storage. API keys and MCP tokens use per-account AES-GCM encryption. This is a private deployment using the owner’s configured providers.</p></section></section>' +
+      '<section class="setting-card"><div class="setting-row"><strong>Notifications</strong><span class="tag" id="push-state"></span></div><label class="check-label"><input id="push-toggle" type="checkbox" role="switch"> Notify me when a reply is ready</label><p class="caption" id="push-hint"></p></section><section class="setting-card"><strong>Storage & privacy</strong><p class="caption">Chats and account preferences use persistent Cloudflare Durable Objects SQLite storage. API keys and MCP tokens use per-account AES-GCM encryption. This is a private deployment using the owner’s configured providers.</p></section></section>' +
       '<div class="account-save"><span class="caption" id="account-save-status">Provider keys save separately. Save instructions, skills, MCP, and custom models below.</span><button id="save-account" class="primary" type="button">Save preferences</button></div>';
     for (const s of account.skills) $('#skill-cards').append(skillCard(s));
     for (const m of account.mcp) $('#mcp-cards').append(mcpCard(m));
@@ -507,6 +508,7 @@ async function openAccount() {
     $('#search-test').onclick = testSearch;
     showSearch(account.search);
     wireProfile();
+    $('#pref-filter').oninput = e => filterPrefs(e.target.value);
     showPush();
     settingsTabs('you');
     onlineOnly();

@@ -41,6 +41,19 @@
         >
           ＋ New session
         </button>
+        <div class="find" role="search">
+          <span id="find-icon" class="find-icon"></span>
+          <input
+            id="find"
+            type="search"
+            placeholder="Search conversations"
+            aria-label="Search all conversations"
+            aria-keyshortcuts="/ Control+Shift+F Meta+Shift+F"
+            autocomplete="off"
+            enterkeyhint="search"
+          />
+        </div>
+        <nav id="find-results" class="find-results" aria-label="Search results" hidden></nav>
         <div class="list-head">
           <div id="list-heading" class="eyebrow">Chats</div>
           <button

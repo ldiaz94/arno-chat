@@ -5346,3 +5346,343 @@ button[data-pull][aria-busy='false']:disabled,
     display: none;
   }
 }
+
+/* Preference rows (profile.js pref, segmented, group): the label and a one-line
+   hint on the left, the control on the right; stacked on a phone. */
+.account-bar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+  margin-bottom: 14px;
+}
+.account-bar .account-tabs {
+  position: static;
+  margin-bottom: 6px;
+}
+.account-dialog .pref-filter {
+  display: block;
+  width: 100%;
+  margin: 0 0 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+}
+.pref-miss {
+  display: none !important;
+}
+.pref-group {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  margin: 14px 0;
+  padding: 0 16px 4px;
+}
+.account-dialog .pref-group > h3 {
+  margin: 0;
+  padding: 14px 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.pref-group > h3 small {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.pref {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 20px;
+  padding: 11px 0;
+  border-top: 1px solid var(--line);
+}
+.pref.wide {
+  flex-direction: column;
+  align-items: stretch;
+}
+.pref.wide .pref-text {
+  flex: none;
+}
+.pref-text {
+  flex: 1 1 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.account-dialog .pref-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.pref-hint {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+.pref-control {
+  flex: 0 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.pref.wide .pref-control {
+  justify-content: stretch;
+}
+.account-dialog .pref .field {
+  width: 270px;
+  max-width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+.account-dialog .pref.wide .field {
+  width: 100%;
+  font-size: 14px;
+}
+.account-dialog .pref select.field {
+  width: auto;
+}
+.account-dialog .pref .avatar.picture {
+  width: 44px;
+  height: 44px;
+  font-size: 16px;
+}
+.seg {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.account-dialog .seg label {
+  position: relative;
+  flex: 1 1 auto;
+}
+.seg input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.seg span {
+  display: block;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  text-align: center;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.seg input:checked + span {
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-weight: 600;
+}
+.seg input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* Switches: every on/off checkbox in the account dialog. */
+.account-dialog input[type='checkbox'][role='switch'] {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 24px;
+  margin: 0;
+  border-radius: 12px;
+  background: var(--line-strong);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.account-dialog input[role='switch']::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bg);
+  transition: transform 0.15s;
+}
+.account-dialog input[role='switch']:checked {
+  background: var(--accent);
+}
+.account-dialog input[role='switch']:checked::after {
+  transform: translateX(16px);
+  background: var(--on-accent);
+}
+.account-dialog input[role='switch']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.account-dialog input[role='switch']:disabled {
+  opacity: 0.45;
+}
+/* Rarely used settings: no card, quieter heading and rows. */
+.pref-group.quiet {
+  background: none;
+}
+.pref-group.quiet .pref-label {
+  font-weight: 500;
+}
+.pref-group.danger-zone {
+  border-color: color-mix(in srgb, var(--red) 45%, transparent);
+}
+.pref-group .pref-text + .pref-control > .pref-hint {
+  margin-right: 4px;
+}
+.pref-more > summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+.pref-group #delete-confirm,
+.pref-group #delete-status,
+.pref-group .debug-out {
+  padding-bottom: 10px;
+}
+.pref-group > .memory-list,
+.pref-group > p.caption {
+  margin: 0 0 10px;
+}
+@media (max-width: 800px) {
+  .pref-group {
+    padding: 0 12px 2px;
+  }
+  .pref {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .pref-text {
+    flex: none;
+  }
+  .pref:has(> .pref-control > [role='switch']) {
+    flex-direction: row;
+    align-items: center;
+  }
+  .pref-control {
+    justify-content: flex-start;
+  }
+  .account-dialog .pref .field,
+  .account-dialog .pref .model-field,
+  .account-dialog .pref select.field,
+  .seg {
+    width: 100%;
+  }
+  .seg span {
+    padding: 8px 6px;
+  }
+  .account-dialog .pref-hint {
+    font-size: 12px;
+    margin: 0;
+  }
+}
+/* Search across conversations (search.js): the field atop the sidebar's list,
+   and the results that take the list's place while it holds a query. */
+.find {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  padding: 0 10px;
+}
+.find:focus-within {
+  border-color: var(--line-strong);
+}
+.find-icon svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2;
+  display: block;
+}
+.find input {
+  border: 0;
+  outline: none !important;
+  background: none;
+  width: 100%;
+  min-width: 0;
+  padding: 9px 0;
+  font-size: 14px;
+}
+.sidebar.finding .list-head,
+.sidebar.finding #session-list,
+.sidebar.finding #bulk-bar {
+  display: none;
+}
+.find-results {
+  flex: 1;
+  overflow: auto;
+  margin-top: -8px;
+}
+.find-hit {
+  display: block;
+  text-align: left;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin: 3px 0;
+}
+.find-hit:hover,
+.find-hit:focus-visible {
+  background: var(--raised);
+}
+.find-hit strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.find-hit small {
+  font-size: 11px;
+  color: var(--muted);
+}
+.find-snippet {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.find-hit mark {
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-radius: 3px;
+}
+.find-results .empty {
+  padding: 12px;
+}
+/* The turn a search result opened, marked for a moment. */
+.turn.found {
+  box-shadow: inset 2px 0 var(--accent);
+  transition: box-shadow 0.6s;
+}
