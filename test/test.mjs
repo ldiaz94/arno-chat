@@ -453,6 +453,11 @@ test('a new chat is named by its model, tidied, or not at all when the call fail
   assert.equal(await ask(reply('"Rocket launch physics."\nextra')), 'Rocket launch physics');
   assert.equal(sent.tools, undefined, 'no tools');
   assert.equal(await ask(reply('The user wants me to name this conversation')), null);
+  assert.equal(
+    await ask(reply('The user wants a name. It is about V8.\n<name>V8 engine infographic</name>')),
+    'V8 engine infographic',
+  );
+  assert.match(sent.messages.at(-1).content, /What is a 2 to 6 word name/);
   assert.equal(await ask(async () => new Response('down', { status: 500 })), null);
 });
 test('Markdown renders formatting while escaping HTML and refusing executable links', () => {
