@@ -886,6 +886,15 @@ const { chromium } = require('playwright'),
     );
     assert.equal(preferences.enterSends, false);
     assert.equal(preferences.defaultModel, 'kimi-k3.1-pro');
+    // Display settings save with the rest and apply at once.
+    await page.locator('[data-display="width"]').selectOption('wide');
+    await page.locator('[data-display="stats"]').selectOption('false');
+    await page.locator('#display-card').screenshot({ path: '/tmp/arno-display-card.png' });
+    await page.getByRole('button', { name: 'Save preferences' }).click();
+    await page.waitForFunction(() => document.body.classList.contains('wide-thread'));
+    assert.equal(preferences.display.width, 'wide');
+    assert.equal(preferences.display.stats, false);
+    assert.ok(await page.evaluate(() => document.body.classList.contains('no-stats')));
     await page.getByRole('button', { name: 'Close account settings' }).click();
     await page.locator('[data-mode="chat"]').click();
     await page.locator('#home-prompt').waitFor();

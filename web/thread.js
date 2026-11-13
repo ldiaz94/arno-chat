@@ -14,6 +14,7 @@ import {
   money,
   copy,
   main,
+  display,
 } from './core.js';
 import { editMessage, retry, retryMessage, answer } from './turns.js';
 import { attachmentsHtml } from './attach.js';
@@ -65,7 +66,9 @@ export function message(role, text, result = {}) {
     const cleaned = cleanOutput(text);
     if (result.reasoning)
       node.innerHTML +=
-        '<details class="model-thinking"><summary>Thinking <span>Provided by the model</span></summary><div class="thinking-text">' +
+        '<details class="model-thinking"' +
+        (display().thinking === 'open' ? ' open' : '') +
+        '><summary>Thinking <span>Provided by the model</span></summary><div class="thinking-text">' +
         esc(result.reasoning) +
         '</div></details>';
     node.innerHTML +=
@@ -113,11 +116,13 @@ export function message(role, text, result = {}) {
       ' ' +
       (result.exitCode ? 'Finished with errors' : 'Completed') +
       '</span>' +
-      (t ? '<span>' + duration(t.totalMs) + '</span>' : '') +
+      (t ? '<span class="stat">' + duration(t.totalMs) + '</span>' : '') +
       (u?.measuredCalls
-        ? '<span>' + num((u.inputTokens || 0) + (u.outputTokens || 0)) + ' tokens</span>'
+        ? '<span class="stat">' +
+          num((u.inputTokens || 0) + (u.outputTokens || 0)) +
+          ' tokens</span>'
         : '') +
-      (u?.cost != null ? '<span>' + money(u.cost) + '</span>' : '') +
+      (u?.cost != null ? '<span class="stat">' + money(u.cost) + '</span>' : '') +
       optionTags(result.options)
         .map(t => '<span class="tag option-tag">' + esc(t) + '</span>')
         .join('') +
@@ -294,9 +299,11 @@ export function spent(usage) {
     '</p>'
   );
 }
-// Scrolls to the bottom if the reader is following the stream, or always with `force`.
+// Scrolls to the bottom if the reader is following the stream (unless Display
+// → Follow is off: then ↓ shows instead), or always with `force`.
 export function scrollDown(force = false) {
   if (force) following = true;
+  else if (!display().follow) following = false;
   $('#jump-bottom').hidden = following || !$('#thread');
   if (following) main.scrollTo({ top: main.scrollHeight, behavior: 'instant' });
 }

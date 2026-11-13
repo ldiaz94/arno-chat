@@ -33,6 +33,24 @@ export const enterSends = () => state.profile.enterSends === true;
  * Enter alone when the profile says so; Shift+Enter and IME input never. */
 export const sendKey = e =>
   e.key === 'Enter' && !e.shiftKey && !e.isComposing && (e.metaKey || e.ctrlKey || enterSends());
+/** How the app looks (Settings → You → Display; server/account.mjs DISPLAY)
+ * for a profile, the account's by default,
+ * with defaults for what it does not say. */
+export const display = (profile = state.profile) => ({
+  meters: 'alternate',
+  thinking: 'folded',
+  stats: true,
+  width: 'readable',
+  follow: true,
+  ...profile.display,
+});
+/** The display settings that style.css applies, as classes on the body. */
+export function applyDisplay() {
+  const d = display();
+  document.body.classList.toggle('no-stats', !d.stats);
+  document.body.classList.toggle('no-thinking', d.thinking === 'hidden');
+  document.body.classList.toggle('wide-thread', d.width === 'wide');
+}
 /** The hint under a message box. */
 export const sendHint = () =>
   enterSends() ? 'Enter to send · Shift + Enter for a new line' : '⌘ / Ctrl + Enter to send';

@@ -38,6 +38,30 @@ export async function credential(env, userId, p, provider) {
   const own = await unseal(env, userId, 'provider:' + provider, p.keys?.[provider]);
   return own || (provider === 'ollama' ? env.OLLAMA_API_KEY || '' : '');
 }
+/** How the app looks, as saved: each setting's choices, the first the
+ * default. meters: the composer's context and cost (taking turns on a
+ * phone, side by side, one, or none); thinking: the model's, under an
+ * answer; stats: the time, tokens and cost under an answer; width: the
+ * transcript's; follow: scroll with an answer as it streams. */
+const DISPLAY = {
+  meters: ['alternate', 'both', 'context', 'cost', 'off'],
+  thinking: ['folded', 'open', 'hidden'],
+  stats: [true, false],
+  width: ['readable', 'wide'],
+  follow: [true, false],
+};
+/** Checks the display settings; throws on anything malformed. */
+export function displaySettings(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw Error('Invalid display settings');
+  return Object.fromEntries(
+    Object.entries(DISPLAY).map(([key, choices]) => {
+      const v = value[key] ?? choices[0];
+      if (!choices.includes(v)) throw Error('Invalid display setting: ' + key);
+      return [key, v];
+    }),
+  );
+}
 /** The home page's widgets as saved: which are on, and where the weather is
  * for (a typed place, or coordinates rounded to about 10 km). */
 const HOME = { quote: true, fact: true, moon: true, weather: false, place: '' };
@@ -69,6 +93,7 @@ export function publicProfile(env, p) {
     name: p.name || '',
     about: p.about || '',
     home: p.home || HOME,
+    display: displaySettings(p.display || {}),
     enterSends: p.enterSends ?? false, // false (default): Enter adds a line, Ctrl/⌘+Enter sends; true: Enter sends
     defaultModel: p.defaultModel || '', // '' : the app's own default
     reviewModel: p.reviewModel || '', // '' : each chat's own model reviews its pages
@@ -198,6 +223,7 @@ export async function accountRoute(request, env, userId) {
       if (typeof about !== 'string' || about.length > 8000)
         throw Error('About you must be at most 8,000 characters');
       const home = homeSettings(body.home ?? p.home ?? HOME),
+        display = displaySettings(body.display ?? p.display ?? {}),
         enterSends = body.enterSends ?? p.enterSends ?? false,
         defaultModel = body.defaultModel ?? p.defaultModel ?? '',
         reviewModel = body.reviewModel ?? p.reviewModel ?? '',
@@ -276,6 +302,7 @@ export async function accountRoute(request, env, userId) {
         name,
         about,
         home,
+        display,
         enterSends,
         defaultModel,
         reviewModel,

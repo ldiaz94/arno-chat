@@ -4,7 +4,7 @@
  * this device. Depends on core and
  * thread (source preview) and attach. Artifacts are listed from the server and open in the artifact dialog.
  */
-import { $, state, esc, num, duration, money, api } from './core.js';
+import { $, state, esc, num, duration, money, api, display } from './core.js';
 import { artifactRow } from './artifacts.js';
 import { openSources } from './thread.js';
 import { attachmentsHtml } from './attach.js';
@@ -97,18 +97,20 @@ function texts(history) {
 /** The composer's meters: how much of the model's window the lead's last
  * request filled (live, while a turn runs, else the latest turn's), as a
  * ring and a share, past 70% suggesting /compact; and what the conversation
- * has cost so far. On a phone the two take turns in one place (style.css).
+ * has cost so far, each shown as Display → Composer meters says: on a
+ * phone the two take turns in one place by default (style.css).
  * Each hides with nothing measured; a click opens the conversation's details. */
 export function contextMeter(live) {
   const button = $('#context-meter'),
     s = state.session,
     window = s?.contextWindow,
     used = live || s?.history?.findLast(t => t.usage?.lastInputTokens > 0)?.usage.lastInputTokens,
+    show = display().meters,
     spent = s?.stats?.cost || 0,
     parts = [],
     labels = [];
   let pct = 0;
-  if (window > 0 && used > 0) {
+  if (window > 0 && used > 0 && show !== 'cost' && show !== 'off') {
     pct = Math.min(100, Math.round((used / window) * 100));
     button.style.setProperty('--fill', pct + '%');
     parts.push(
@@ -124,14 +126,14 @@ export function contextMeter(live) {
         (pct > 70 ? ' · send /compact to shrink it' : ''),
     );
   }
-  if (spent > 0) {
+  if (spent > 0 && show !== 'context' && show !== 'off') {
     const shown = spent < 0.01 ? '<$0.01' : money(spent);
     parts.push('<span class="meter-cost">' + esc(shown) + '</span>');
     labels.push(shown + ' spent in this conversation');
   }
   button.hidden = !parts.length;
   button.classList.toggle('warn', pct > 70);
-  button.classList.toggle('both', parts.length === 2);
+  button.classList.toggle('alternating', parts.length === 2 && show === 'alternate');
   button.innerHTML = parts.join('');
   button.title = labels.join('\n');
   button.setAttribute('aria-label', labels.join('; '));

@@ -18,12 +18,13 @@ import {
   prompt,
   loadAvatar,
   sendKey,
+  applyDisplay,
 } from './core.js';
 import { drawer, title, sidebar, toggleWrap } from './layout.js';
 import { loadModels, openModels, renderModels, chooseModel } from './models.js';
 import { openSources, scrollDown } from './thread.js';
 import { startDiagnostics } from './diag.js';
-import { openInfo } from './info.js';
+import { openInfo, contextMeter } from './info.js';
 import { openUsage } from './usage.js';
 import { artifactClick, openGallery } from './artifacts.js';
 import {
@@ -195,6 +196,7 @@ async function boot() {
         .then(d => (state.profile = d))
         .catch(() => {}),
     ]);
+    applyDisplay();
     await startOutbox(); // chats made offline join the list
     sidebar();
     // A notification links to /?session=<id>: open it, then tidy the address.
@@ -252,3 +254,8 @@ document.addEventListener('click', e => {
 register();
 startDiagnostics();
 boot();
+// Display settings saved in Settings apply at once.
+addEventListener('arno:prefs', () => {
+  applyDisplay();
+  contextMeter();
+});

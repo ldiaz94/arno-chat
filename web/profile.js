@@ -2,7 +2,7 @@
  * profile picture, the composer and default model, the home page's widgets, the
  * privacy notice and account deletion. Depends on core, layout, models, home and offline.
  */
-import { $, state, esc, api, avatar, toast, copy } from './core.js';
+import { $, state, esc, api, avatar, toast, copy, display } from './core.js';
 import { modelLabel, pickModel } from './models.js';
 import { sidebar } from './layout.js';
 import { geocode } from './home.js';
@@ -25,6 +25,7 @@ export function profilePanel(account) {
     esc(account.about) +
     '</textarea></label><p class="caption">Up to 8,000 characters, sent to every model with each request. Saved with Save preferences.</p>' +
     composerCard(account) +
+    displayCard(display(account)) +
     homeCard(account.home || {}) +
     PRIVACY +
     '<section class="setting-card" id="about-card"><strong>About</strong><div class="setting-row"><span id="about-version">Arno Chat</span><button type="button" id="update-check" class="ghost">Check for updates</button></div><p class="caption" id="about-build"></p></section>' +
@@ -94,6 +95,97 @@ function composerCard(account) {
     "</label><p class=\"caption\">The model a coding turn hands steps to (reading, searching, mechanical edits), as cheap as will do; the session's model stays the lead and takes the hard steps. It must be on the session's provider, else workers use the session's model.</p></section>"
   );
 }
+/** The Display settings: [key, label, its choices as [value, words], what it
+ * says more]; the first choice is the default (server/account.mjs DISPLAY). */
+const DISPLAY_ROWS = [
+  [
+    'meters',
+    'Composer meters',
+    [
+      ['alternate', 'Context and cost, taking turns on a phone'],
+      ['both', 'Context and cost, side by side'],
+      ['context', 'Context only'],
+      ['cost', 'Cost only'],
+      ['off', 'Neither'],
+    ],
+    'Beside the model: how full its context is, and what the conversation has cost.',
+  ],
+  [
+    'thinking',
+    'Model thinking',
+    [
+      ['folded', 'Folded under the answer'],
+      ['open', 'Open under the answer'],
+      ['hidden', 'Hidden'],
+    ],
+    '',
+  ],
+  [
+    'stats',
+    'Under each answer',
+    [
+      [true, 'Time, tokens and cost'],
+      [false, 'Nothing'],
+    ],
+    '',
+  ],
+  [
+    'width',
+    'Conversation width',
+    [
+      ['readable', 'Readable column'],
+      ['wide', 'Full window'],
+    ],
+    '',
+  ],
+  [
+    'follow',
+    'While an answer streams',
+    [
+      [true, 'Scroll with it'],
+      [false, 'Stay put (↓ jumps to the end)'],
+    ],
+    '',
+  ],
+];
+// The display settings: a select each.
+function displayCard(d) {
+  return (
+    '<section class="setting-card" id="display-card"><strong>Display</strong><p class="caption">How conversations look, on every device you sign in on.</p>' +
+    DISPLAY_ROWS.map(
+      ([key, label, choices, more]) =>
+        '<label>' +
+        label +
+        '<select class="field" data-display="' +
+        key +
+        '">' +
+        choices
+          .map(
+            ([v, words]) =>
+              '<option value="' +
+              v +
+              '"' +
+              (d[key] === v ? ' selected' : '') +
+              '>' +
+              esc(words) +
+              '</option>',
+          )
+          .join('') +
+        '</select></label>' +
+        (more ? '<p class="caption">' + esc(more) + '</p>' : ''),
+    ).join('') +
+    '</section>'
+  );
+}
+/** The Display card's choices, as saved: true and false back to booleans. */
+function displayPrefs() {
+  return Object.fromEntries(
+    [...document.querySelectorAll('[data-display]')].map(s => [
+      s.dataset.display,
+      s.value === 'true' ? true : s.value === 'false' ? false : s.value,
+    ]),
+  );
+}
 let spot = null; // the weather's place as rounded coordinates, from "Use my location"
 // The home page settings: which widgets show and where the weather is.
 function homeCard(home) {
@@ -151,6 +243,7 @@ export async function profilePrefs() {
     defaultModel: $('#default-model').dataset.value,
     reviewModel: $('#review-model').dataset.value,
     workerModel: $('#worker-model').dataset.value,
+    display: displayPrefs(),
     home: {
       quote: $('#home-quote').checked,
       fact: $('#home-fact').checked,

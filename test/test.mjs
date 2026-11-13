@@ -24,7 +24,13 @@ import { hostCommand } from '../server/code/code-routes.mjs';
 import { encode, decoderOf } from '../server/code/serve.mjs';
 import { plainChat } from '../server/chat/chat.mjs';
 import { validPath } from '../server/code/files.mjs';
-import { publicProfile, instructions, validMcpUrl, accountRoute } from '../server/account.mjs';
+import {
+  publicProfile,
+  instructions,
+  validMcpUrl,
+  accountRoute,
+  displaySettings,
+} from '../server/account.mjs';
 import { requestFields } from '../server/providers.mjs';
 import { seal, unseal } from '../server/secrets.mjs';
 import { testMcp } from '../server/gateways/mcp.mjs';
@@ -875,6 +881,18 @@ test('account API saves a key without returning it', async () => {
   const text = await r.text();
   assert.equal(text.includes('sk-test-placeholder'), false);
   assert.equal(JSON.parse(text).providers.openai.saved, true);
+});
+test('display settings fill in defaults and refuse unknown choices', () => {
+  assert.deepEqual(displaySettings({ meters: 'both', follow: false }), {
+    meters: 'both',
+    thinking: 'folded',
+    stats: true,
+    width: 'readable',
+    follow: false,
+  });
+  assert.throws(() => displaySettings({ meters: 'sometimes' }), /meters/);
+  assert.throws(() => displaySettings({ stats: 'true' }), /stats/);
+  assert.throws(() => displaySettings([]));
 });
 test('account validates and returns the about-you text', async () => {
   const f = fixture(),

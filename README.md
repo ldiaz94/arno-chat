@@ -79,7 +79,8 @@ the most recently active first.
 | **Artifacts** in the sidebar | Every conversation's artifacts, searchable, by kind |
 | `</>` | The session's files, its changes, and its commit history |
 | Model button | The model for this conversation, from every provider you have a key for |
-| Ring and $ beside the model | How full the model's context is and what the conversation has cost; on a phone they take turns. A tap opens the details |
+| Ring and $ beside the model | How full the model's context is and what the conversation has cost; on a phone they take turns (Settings → You → Display changes this). A tap opens the details |
+| Settings → You → **Display** | Composer meters (alternating, side by side, one, none), model thinking (folded, open, hidden), time, tokens and cost under answers, conversation width, and whether the view follows a streaming answer; kept with the account |
 | Sliders button | This conversation's options (below) |
 | **Edit** in the sidebar | Select conversations and delete them together |
 | You → About | The version the device runs, the server's build, Check for updates |

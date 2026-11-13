@@ -967,8 +967,8 @@ th:hover .col-resize::after,
 }
 /* On a phone the two meters take turns in one place (info.js toggles alt). */
 @media (max-width: 640px) {
-  .context-meter.both:not(.alt) .meter-cost,
-  .context-meter.both.alt .meter-context {
+  .context-meter.alternating:not(.alt) .meter-cost,
+  .context-meter.alternating.alt .meter-context {
     display: none;
   }
 }
@@ -5170,4 +5170,13 @@ button[data-pull][aria-busy='false']:disabled,
 }
 .artifact-dialog:modal .artifact-wide {
   display: none;
+}
+/* Display settings (core.js applyDisplay): no time, tokens and cost under
+   answers; no model thinking; a transcript as wide as the window. */
+.no-stats .turn-footer .stat,
+.no-thinking .model-thinking {
+  display: none;
+}
+.wide-thread .thread {
+  max-width: none;
 }
