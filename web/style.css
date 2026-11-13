@@ -969,7 +969,6 @@ th:hover .col-resize::after,
   border: 0;
   outline: none;
   background: none;
-  font-size: 16px;
   line-height: 1.5;
   padding: 4px 5px;
 }
@@ -5254,8 +5253,11 @@ button[data-pull][aria-busy='false']:disabled,
 .user-content.md .prose li {
   white-space: normal;
 }
+/* The textarea and its backdrop take their font from here, so each glyph
+   sits under its twin (16px also keeps phones from zooming in on focus). */
 .prompt-box {
   position: relative;
+  font-size: 16px;
 }
 .prompt-back {
   position: absolute;
