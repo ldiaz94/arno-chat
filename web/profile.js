@@ -291,6 +291,15 @@ const DISPLAY_ROWS = [
     ],
     'Stay put leaves a ↓ button to jump to the end.',
   ],
+  [
+    'closeOnSave',
+    'After Save preferences',
+    [
+      [true, 'Close settings'],
+      [false, 'Stay open'],
+    ],
+    '',
+  ],
 ];
 // One display setting's control: a pill group, or a list for five choices.
 function displayControl(key, label, choices, current) {

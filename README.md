@@ -80,7 +80,7 @@ the most recently active first.
 | `</>` | The session's files, its changes, and its commit history |
 | Model button | The model for this conversation, from every provider you have a key for |
 | Ring and $ beside the model | How full the model's context is and what the conversation has cost; on a phone they take turns (Settings → You → Display changes this). A tap opens the details |
-| Settings → You → **Display** | Composer meters (alternating, side by side, one, none), model thinking (folded, open, hidden), time, tokens and cost under answers, conversation width, and whether the view follows a streaming answer; kept with the account |
+| Settings → You → **Display** | Composer meters (alternating, side by side, one, none), model thinking (folded, open, hidden), time, tokens and cost under answers, conversation width, whether the view follows a streaming answer, and whether Save preferences closes Settings; kept with the account |
 | Settings → You → **Memory** | Who saves facts about you for later chats: only when you ask ("remember that …", the default), the model on its own too, or off; each memory listed by title, opening to its fact and Forget |
 | Sliders button | This conversation's options (below) |
 | **Edit** in the sidebar | Select conversations and delete them together |

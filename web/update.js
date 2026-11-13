@@ -1,7 +1,8 @@
 /** "Update available" bar: when a new service worker (sw.js) has installed and
  * waits, shows a bar with an Update button. Update tells the waiting worker to
- * take over, and the page reloads once it does. Nothing reloads by itself, so
- * a conversation in progress is never interrupted. It also asks the server for
+ * take over, and the page reloads once it does; the bar shows above any open
+ * dialog too (place). Nothing reloads by itself, so a conversation in progress
+ * is never interrupted. It also asks the server for
  * a new worker when the page becomes visible and every 30 minutes, because an
  * installed app on a phone is rarely reloaded.
  *
@@ -88,5 +89,18 @@ function show(worker) {
     bar = null;
   });
   bar.append(text, update, dismiss);
-  document.body.append(bar);
+  place();
+  new MutationObserver(place).observe(document.body, {
+    subtree: true,
+    attributeFilter: ['open'],
+  });
+}
+/** Puts the bar in the topmost open modal dialog, or the page when none is
+ * open: a modal sits in the top layer and makes the rest of the page inert,
+ * so a bar outside it would be hidden behind it and could not be pressed. */
+function place() {
+  if (!bar) return;
+  const modals = [...document.querySelectorAll('dialog[open]')].filter(d => d.matches(':modal'));
+  const home = modals.at(-1) || document.body;
+  if (bar.parentNode !== home) home.append(bar);
 }

@@ -44,13 +44,15 @@ export async function credential(env, userId, p, provider) {
  * default. meters: the composer's context and cost (taking turns on a
  * phone, side by side, one, or none); thinking: the model's, under an
  * answer; stats: the time, tokens and cost under an answer; width: the
- * transcript's; follow: scroll with an answer as it streams. */
+ * transcript's; follow: scroll with an answer as it streams; closeOnSave:
+ * close Settings once Save preferences has saved. */
 const DISPLAY = {
   meters: ['alternate', 'both', 'context', 'cost', 'off'],
   thinking: ['folded', 'open', 'hidden'],
   stats: [true, false],
   width: ['readable', 'wide'],
   follow: [true, false],
+  closeOnSave: [true, false],
 };
 /** Checks the display settings; throws on anything malformed. */
 export function displaySettings(value) {

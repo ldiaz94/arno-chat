@@ -891,6 +891,7 @@ test('display settings fill in defaults and refuse unknown choices', () => {
     stats: true,
     width: 'readable',
     follow: false,
+    closeOnSave: true,
   });
   assert.throws(() => displaySettings({ meters: 'sometimes' }), /meters/);
   assert.throws(() => displaySettings({ stats: 'true' }), /stats/);

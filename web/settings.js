@@ -4,7 +4,7 @@
  * the picture and account deletion wait for the network. Depends on core, layout, models,
  * marks, profile, push, offline and outbox.
  */
-import { $, state, esc, api, toast, unreachable } from './core.js';
+import { $, state, esc, api, toast, unreachable, display } from './core.js';
 import { fit } from './layout.js';
 import { loadModels } from './models.js';
 import { providerMark } from './marks.js';
@@ -638,6 +638,7 @@ async function saveAccount() {
       state.profile = { ...state.profile, ...prefs }; // applies on this device now
       dispatchEvent(new Event('arno:prefs'));
       status.textContent = 'Saved on this device · sends when online.';
+      closeIfAsked();
       return;
     }
     document.querySelectorAll('#account-body input[type=password]').forEach(n => (n.value = ''));
@@ -646,12 +647,15 @@ async function saveAccount() {
     status.textContent = 'Saved. Instructions, skills, and connections apply to subsequent turns.';
     await loadModels();
     toast('Account preferences saved');
+    closeIfAsked();
   } catch (e) {
     status.textContent = e.message;
   } finally {
     button.disabled = false;
   }
 }
+/** Closes Settings after a save, unless the profile says to stay open. */
+const closeIfAsked = () => display().closeOnSave && $('#account-dialog').close();
 $('#account-settings').onclick = openAccount;
 /** Back from an MCP server's OAuth sign-in (?mcp=id or ?mcp_error=why): says
  * how it went and opens the MCP settings. */

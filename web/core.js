@@ -42,6 +42,7 @@ export const display = (profile = state.profile) => ({
   stats: true,
   width: 'readable',
   follow: true,
+  closeOnSave: true,
   ...profile.display,
 });
 /** The display settings that style.css applies, as classes on the body. */
