@@ -1,8 +1,8 @@
 /** A regular chat's turn, part of ArnoProbe (probe/probe.mjs): the tool loop
- * of chat.mjs with web research (research.mjs), artifacts (probe/artifacts.mjs)
- * and the owner's MCP tools for chats (chat-mcp.mjs), and the wait for the
- * owner's Allow before an MCP action. The turn's budgets come from plan.mjs.
- * There is no container. Leaves out coding turns (code/turn.mjs).
+ * of chat.mjs with web research (research.mjs), artifacts (probe/artifacts.mjs),
+ * the owner's MCP tools for chats (chat-mcp.mjs), memory (memory.mjs), and
+ * the wait for the owner's Allow before an MCP action. The turn's budgets
+ * come from plan.mjs. There is no container. Leaves out coding turns (code/turn.mjs).
  *
  * A turn has no time limit. A Durable Object alarm may run for 15 minutes,
  * so a long turn runs as a chain of them:
@@ -34,6 +34,7 @@ import { WEB_INSTRUCTIONS, WEB_TOOLS, research, citedSources } from './research.
 import { turnPlan } from './plan.mjs';
 import { effortSupported, seesScreenshots } from '../models.mjs';
 import { IMAGE_TOOLS, findImage } from './images.mjs';
+import { MEMORY_TOOLS, memoryMode, memoryInstructions, memoryTool } from './memory.mjs';
 import { ASK_TOOL, ASKED, decisionOf } from '../decisions.mjs';
 import { renderArtifact, WIDE } from '../probe/render.mjs';
 import { reviewPage, fixRequest } from './review.mjs';
@@ -183,12 +184,14 @@ export const chatTurn = {
           ...ARTIFACT_TOOLS,
           ...IMAGE_TOOLS,
           ASK_TOOL,
+          ...(memoryMode(p) === 'off' ? [] : MEMORY_TOOLS),
           ...mcp.specs,
         ],
         told =
           saved?.instructions ||
           [
             instructions(p),
+            memoryInstructions(p),
             plan.search ? WEB_INSTRUCTIONS : '',
             ARTIFACT_INSTRUCTIONS,
             artifactList(listed),
@@ -247,6 +250,8 @@ export const chatTurn = {
             return ASKED;
           }
           await this.activity(toolStep(name, args, [...artifacts, ...listed]));
+          if (MEMORY_TOOLS.some(t => t.name === name))
+            return memoryTool(this.env, session.ownerId, name, args);
           if (name === 'find_image') return findImage(args.query);
           if (name === 'check_artifact') {
             if (guard.checks >= MAX_CHECKS)
@@ -410,6 +415,9 @@ export function toolStep(name, args = {}, known = []) {
       web_search: () => 'Searching “' + args.query + '”',
       web_read: () => 'Reading ' + host(),
       find_image: () => 'Finding images of “' + args.query + '”',
+      remember: () => 'Remembering “' + args.title + '”',
+      recall: () => 'Recalling ' + (args.ids?.length || 0) + ' memories',
+      forget: () => 'Forgetting a memory',
       create_artifact: () => 'Writing ' + title,
       update_artifact: () => 'Editing ' + title,
       read_artifact: () => 'Reading ' + title,

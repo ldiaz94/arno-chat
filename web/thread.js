@@ -41,7 +41,8 @@ export function message(role, text, result = {}) {
     stamp +
     '</small></div>';
   if (role === 'You') {
-    node.innerHTML += '<div class="user-content">' + esc(text) + '</div>';
+    node.innerHTML +=
+      '<div class="user-content md"><div class="prose">' + markdown(text) + '</div></div>';
     node._attachments = result.attachments || [];
     if (node._attachments.length)
       node.innerHTML +=

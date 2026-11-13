@@ -44,6 +44,7 @@ import { submit, resizePrompt } from './turns.js';
 import './attach.js'; // wires the paperclip, paste and drop
 import './options.js'; // wires the options button, its popover and chips
 import './complete.js'; // slash-command suggestions in the composer
+import './compose-md.js'; // Markdown colouring behind the composer's text
 import { openActions } from './actions.js'; // the ⋯ sheet
 import { mcpReturn } from './settings.js'; // also wires the account settings dialog
 import { register, warm, clearData, controls } from './offline.js';

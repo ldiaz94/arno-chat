@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { catalog } from '../server/models.mjs';
-import { markdown, cleanOutput, diffHtml } from '../web/render.mjs';
+import { markdown, cleanOutput, diffHtml, composerHtml } from '../web/render.mjs';
 import { highlight, detect } from '../web/highlight.mjs';
 import { Outbox, conflicted, isLocal } from '../web/queue.mjs';
 import { moon, byRecent, ago, daily, weatherText } from '../web/today.mjs';
@@ -39,6 +39,7 @@ import { registryProxy, cloudflareProxy, sandboxEnv } from '../server/code/sandb
 import { chatMcpTools, callChatMcp } from '../server/chat/chat-mcp.mjs';
 import { COMMANDS, suggest } from '../web/commands.mjs';
 import { research, citedSources } from '../server/chat/research.mjs';
+import { changeMemories, memoryInstructions } from '../server/chat/memory.mjs';
 import { ArnoProbe, default as worker } from '../server/worker.js';
 test('browser scripts parse', () => {
   const dir = new URL('../web/', import.meta.url).pathname;
@@ -4014,4 +4015,48 @@ test('a coding session is named after its turn, but never over a name the user g
   } finally {
     globalThis.fetch = realFetch;
   }
+});
+test('composerHtml escapes the text and keeps its characters in place', () => {
+  const html = composerHtml('<script>alert(1)</script> & `x < y`');
+  assert.ok(!html.includes('<script>'));
+  assert.ok(html.includes('<span class="cm-icode">`x &lt; y`</span>'));
+  assert.equal(composerHtml('a\n').endsWith('\n '), true);
+});
+test('composerHtml highlights a fenced block, closed or still open', () => {
+  for (const src of ['```js\nconst a = 1;\n```', '```js\nconst a = 1;']) {
+    const html = composerHtml(src);
+    assert.ok(html.includes('<span class="cm-code">\n'));
+    assert.ok(html.includes('hl-k'));
+    assert.equal(html.replace(/<[^>]+>/g, ''), src + ' ');
+  }
+});
+
+test('memories: unique ids within a millisecond, facts stored apart, the oldest dropped with their facts', () => {
+  const add = (m, i, now) =>
+    changeMemories(m, { add: { title: 'T' + i, fact: ' fact  ' + i } }, now);
+  let c = add([], 1, 1000);
+  assert.deepEqual(c.put, { 'memory:rs': 'fact 1' });
+  c = add(c.memories, 2, 1000);
+  assert.deepEqual(
+    c.memories.map(m => [m.id, m.title]),
+    [
+      ['rs', 'T1'],
+      ['rt', 'T2'],
+    ],
+  );
+  assert.throws(() => changeMemories([], { add: { title: 'T', fact: ' ' } }), /fact is empty/);
+  assert.throws(() => changeMemories(c.memories, { remove: 'zz' }), /No memory/);
+  assert.deepEqual(changeMemories(c.memories, { remove: 'rs' }).drop, ['memory:rs']);
+  let m = [];
+  for (let i = 0; i < 1000; i++) m = add(m, i, i).memories;
+  c = add(m, 1000, 5000);
+  assert.equal(c.memories.length, 1000);
+  assert.deepEqual(c.drop, ['memory:0']);
+});
+
+test('memory instructions: off says nothing; asked and auto list titles with ids, not facts', () => {
+  const memories = [{ id: 'a1', title: 'Drinks' }];
+  assert.equal(memoryInstructions({ memory: 'off', memories }), '');
+  assert.match(memoryInstructions({ memories }), /only when the user asks[\s\S]*\[a1\] Drinks/);
+  assert.match(memoryInstructions({ memory: 'auto' }), /on your own[\s\S]*nothing yet/);
 });

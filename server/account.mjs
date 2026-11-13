@@ -1,8 +1,9 @@
 /** An account's profile and its settings: name and about-you, instructions
  * and skills, the home page, provider keys, SearXNG, MCP connections, custom
- * models and the composer's defaults. The profile lives in its own Durable
- * Object ('profile:<user>'); secrets in it are sealed (secrets.mjs), and the
- * browser only ever gets whether each is saved (publicProfile).
+ * models, the composer's defaults and chat memory (chat/memory.mjs). The
+ * profile lives in its own Durable Object ('profile:<user>'); secrets in it
+ * are sealed (secrets.mjs), and the browser only ever gets whether each is
+ * saved (publicProfile).
  *
  *   browser ─► api.mjs ─► accountRoute ─► checks ─► profile:<user> object
  *
@@ -14,6 +15,7 @@ import { publicSandbox } from './code/sandbox.mjs';
 import { modelAllowed } from './models.mjs';
 import { PROVIDERS, providerModels, MODEL_ID, TRAINS_ON_DATA } from './providers.mjs';
 import { seal, unseal } from './secrets.mjs';
+import { MEMORY_MODES, memoryMode, recallMemories, forgetMemory } from './chat/memory.mjs';
 /** The user's saved profile, or an empty one when nobody is signed in. */
 export async function profile(env, userId) {
   if (!userId) return { systemPrompt: '', skills: [], mcp: [], keys: {}, models: [] };
@@ -94,6 +96,8 @@ export function publicProfile(env, p) {
     about: p.about || '',
     home: p.home || HOME,
     display: displaySettings(p.display || {}),
+    memory: memoryMode(p), // who saves memories: 'asked', 'auto' or 'off' (chat/memory.mjs)
+    memories: p.memories || [],
     enterSends: p.enterSends ?? false, // false (default): Enter adds a line, Ctrl/⌘+Enter sends; true: Enter sends
     defaultModel: p.defaultModel || '', // '' : the app's own default
     reviewModel: p.reviewModel || '', // '' : each chat's own model reviews its pages
@@ -162,9 +166,9 @@ export function validMcpUrl(value) {
   const u = new URL(value);
   return u.protocol === 'https:' && !u.search && !u.hash;
 }
-/** Handles /api/account[/key|/search|/search-test|/test] for one user: GET
- * returns the public profile; POST saves settings, stores or removes a key,
- * or tests a key or SearXNG. Returns a Response (400 with the message when
+/** Handles /api/account[/key|/memory|/search|/search-test|/test] for one user:
+ * GET returns the public profile; POST saves settings, stores or removes a
+ * key, reads or forgets a memory, or tests a key or SearXNG. Returns a Response (400 with the message when
  * anything is invalid, 413 when the body is over 64 KB). */
 export async function accountRoute(request, env, userId) {
   const u = new URL(request.url),
@@ -201,6 +205,10 @@ export async function accountRoute(request, env, userId) {
         method: 'POST',
         body: JSON.stringify({ provider: body.provider, value: encrypted }),
       });
+    } else if (u.pathname.endsWith('/memory')) {
+      if (body.recall)
+        return Response.json((await recallMemories(env, userId, [String(body.recall)]))[0] || {});
+      await forgetMemory(env, userId, String(body.remove || ''));
     } else if (u.pathname.endsWith('/search')) {
       await save({ search: body.remove ? null : await searchRecord(env, userId, body, p.search) });
     } else if (u.pathname.endsWith('/search-test')) {
@@ -224,11 +232,13 @@ export async function accountRoute(request, env, userId) {
         throw Error('About you must be at most 8,000 characters');
       const home = homeSettings(body.home ?? p.home ?? HOME),
         display = displaySettings(body.display ?? p.display ?? {}),
+        memory = body.memory ?? memoryMode(p),
         enterSends = body.enterSends ?? p.enterSends ?? false,
         defaultModel = body.defaultModel ?? p.defaultModel ?? '',
         reviewModel = body.reviewModel ?? p.reviewModel ?? '',
         workerModel = body.workerModel ?? p.workerModel ?? '';
       if (typeof enterSends !== 'boolean') throw Error('Invalid Enter key setting');
+      if (!MEMORY_MODES.includes(memory)) throw Error('Invalid memory setting');
       if (
         typeof defaultModel !== 'string' ||
         (defaultModel && defaultModel !== p.defaultModel && !(await modelAllowed(defaultModel)))
@@ -303,6 +313,7 @@ export async function accountRoute(request, env, userId) {
         about,
         home,
         display,
+        memory,
         enterSends,
         defaultModel,
         reviewModel,

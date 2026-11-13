@@ -1,6 +1,7 @@
 /** Markdown and diff rendering for the thread: a small Markdown dialect to safe HTML
  * (markdown), diffs to coloured HTML (diffHtml), model output cleaning (cleanOutput) and
- * wide-table scrolling (tableResize). DOM-free except tableResize, so test/test.mjs runs the
+ * wide-table scrolling (tableResize) and the composer's colouring of Markdown source
+ * (composerHtml). DOM-free except tableResize, so test/test.mjs runs the
  * rest in Node. Depends on highlight.mjs. Leaves out raw HTML, footnotes, nested block
  * quotes and anything that would need a full Markdown parser.
  */
@@ -310,4 +311,66 @@ export function diffCounts(diff) {
     remove: lines.filter(l => l.startsWith('-') && !l.startsWith('---')).length,
     files: lines.filter(l => l.startsWith('diff --git')).length,
   };
+}
+
+// The inline marks the composer colours: code spans, bold and emphasis (marks kept in the text).
+const InlineMarks =
+  /`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|(?<![\w*])\*[^*\n]+\*(?!\*)|(?<!\w)_[^_\n]+_(?!\w)/g;
+/** One line of Markdown source as escaped HTML, its marks wrapped in cm-* spans. */
+function composerLine(line) {
+  const esc = highlight('', line);
+  const marked = esc.replace(InlineMarks, m => {
+    if (m[0] === '`') return '<span class="cm-icode">' + m + '</span>';
+    const n = m[0] === m[1] ? 2 : 1;
+    return (
+      '<span class="cm-mark">' +
+      m.slice(0, n) +
+      '</span>' +
+      m.slice(n, -n) +
+      '<span class="cm-mark">' +
+      m.slice(-n) +
+      '</span>'
+    );
+  });
+  const head = marked.match(/^(#{1,6} )(.*)$/);
+  if (head)
+    return (
+      '<span class="cm-mark">' + head[1] + '</span><span class="cm-head">' + head[2] + '</span>'
+    );
+  const quote = marked.match(/^(&gt; ?)(.*)$/);
+  if (quote)
+    return (
+      '<span class="cm-mark">' + quote[1] + '</span><span class="cm-quote">' + quote[2] + '</span>'
+    );
+  return marked.replace(/^(\s*(?:[-*+]|\d+\.) )/, '<span class="cm-mark">$1</span>');
+}
+/** Markdown source as escaped HTML with the same characters in the same places, for the
+ * composer's backdrop: fenced code is tinted and syntax-coloured, other lines get their marks
+ * coloured. A fence still open at the end runs to the end, as you type. A trailing space keeps
+ * a final empty line as tall as the textarea's. */
+export function composerHtml(text) {
+  const lines = String(text).split('\n');
+  let out = '';
+  for (let i = 0; i < lines.length; i++) {
+    const fence = lines[i].match(/^\s*\x60{3}(.*)$/);
+    if (!fence) {
+      out += composerLine(lines[i]) + (i < lines.length - 1 ? '\n' : '');
+      continue;
+    }
+    let j = i + 1;
+    while (j < lines.length && !/^\s*\x60{3}/.test(lines[j])) j++;
+    const code = lines.slice(i + 1, j).join('\n');
+    const close = j < lines.length;
+    out +=
+      '<span class="cm-fence">' +
+      highlight('', lines[i]) +
+      '</span><span class="cm-code">' +
+      (j > i + 1 ? '\n' : '') +
+      highlight(detect({ fence: fence[1], code }), code) +
+      '</span>' +
+      (close ? '\n<span class="cm-fence">' + highlight('', lines[j]) + '</span>' : '') +
+      (j < lines.length - 1 ? '\n' : '');
+    i = j;
+  }
+  return out + ' ';
 }

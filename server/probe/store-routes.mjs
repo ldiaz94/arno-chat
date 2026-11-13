@@ -1,9 +1,10 @@
 /** Durable Object routes for the per-user and sign-in roles: the session index
  * and profile ('index:<user>'), the auth record and the pending OAuth state
  * ('auth:<id>'). Called with this = the ArnoProbe instance. Depends on
- * ../http.mjs. Leaves out the session routes (session-routes.mjs). */
+ * ../http.mjs and chat/memory.mjs. Leaves out the session routes (session-routes.mjs). */
 import { json } from '../http.mjs';
 import { refreshGithub } from '../auth.mjs';
+import { changeMemories } from '../chat/memory.mjs';
 
 /** Merge a JSON patch into the profile, or set one provider key (/profile/key), in one
  * transaction. */
@@ -97,6 +98,34 @@ export const storeRoutes = {
       await txn.put('profile', p);
     });
     return new Response(null, { status: 204 });
+  },
+  /** Read memories ({recall: ids}, answering {facts: [{id, title, fact}]}),
+   * or add or remove one (chat/memory.mjs changeMemories) in one transaction,
+   * answering {id} of the one added; {error} when that fails. */
+  async 'POST /profile/memory'(request) {
+    const change = await request.json();
+    try {
+      if (change.recall) {
+        const p = (await this.ctx.storage.get('profile')) || {},
+          known = (p.memories || []).filter(m => change.recall.includes(m.id)),
+          facts = await this.ctx.storage.get(known.map(m => 'memory:' + m.id));
+        return json({
+          facts: known.map(m => ({ id: m.id, title: m.title, fact: facts.get('memory:' + m.id) })),
+        });
+      }
+      let id;
+      await this.ctx.storage.transaction(async txn => {
+        const p = (await txn.get('profile')) || {},
+          { memories, put, drop } = changeMemories(p.memories, change);
+        p.memories = memories;
+        await txn.put({ profile: p, ...put });
+        if (drop.length) await txn.delete(drop);
+        id = Object.keys(put)[0]?.slice('memory:'.length);
+      });
+      return json({ id });
+    } catch (e) {
+      return json({ error: e.message });
+    }
   },
   /** Set one provider's API key in the profile. */
   'POST /profile/key': patchProfile,

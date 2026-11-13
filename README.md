@@ -81,6 +81,7 @@ the most recently active first.
 | Model button | The model for this conversation, from every provider you have a key for |
 | Ring and $ beside the model | How full the model's context is and what the conversation has cost; on a phone they take turns (Settings → You → Display changes this). A tap opens the details |
 | Settings → You → **Display** | Composer meters (alternating, side by side, one, none), model thinking (folded, open, hidden), time, tokens and cost under answers, conversation width, and whether the view follows a streaming answer; kept with the account |
+| Settings → You → **Memory** | Who saves facts about you for later chats: only when you ask ("remember that …", the default), the model on its own too, or off; each memory listed by title, opening to its fact and Forget |
 | Sliders button | This conversation's options (below) |
 | **Edit** in the sidebar | Select conversations and delete them together |
 | You → About | The version the device runs, the server's build, Check for updates |
@@ -137,7 +138,8 @@ static assets by Cloudflare. [`web/app.js`](web/app.js) wires them;
 one part of the screen (the thread, the sidebar, the code dialog, the
 options). Logic that needs no page lives in `.mjs` files, so the unit tests
 run it in Node. HTML is built as escaped strings ([`web/render.mjs`](web/render.mjs)
-renders Markdown safely, [`web/highlight.mjs`](web/highlight.mjs) colours code
+renders Markdown safely, in answers and your own messages, and colours
+it in the message box as you type; [`web/highlight.mjs`](web/highlight.mjs) colours code
 after [ladle](https://github.com/ldiaz94/ladle)'s design).
 
 **2. One Worker, routes as tables.** [`server/worker.js`](server/worker.js)
@@ -172,6 +174,10 @@ the model to fix. The review costs one extra call per page. `check_artifact` can
 before the screenshot, to see another state without changing the page. An answer that says a page changed when nothing
 was written is sent back. `find_image` ([`images.mjs`](server/chat/images.mjs))
 finds freely licensed pictures on Wikimedia Commons for pages to show.
+`remember`, `recall` and `forget` ([`memory.mjs`](server/chat/memory.mjs))
+keep facts about you like a small library: every chat sees their titles
+and reads the facts it needs; Settings → You → Memory says whether the
+model may save them on its own.
 
 **5. A coding session is a container driven by arno.** [`server/code/turn.mjs`](server/code/turn.mjs)
 starts the session's container, or restores it from its snapshot

@@ -1065,7 +1065,9 @@ const { chromium } = require('playwright'),
     await page.locator('#system-prompt').fill('Be concise');
     await page.getByRole('button', { name: 'Add skill', exact: false }).click();
     await page.locator('.skill-name').fill('Test discipline');
-    await page.locator('.skill-content').fill('Run checks before finishing');
+    await page.locator('.skill-preview').click();
+    await page.locator('.text-editor textarea').fill('Run checks before finishing');
+    await page.locator('.text-editor').getByRole('button', { name: 'Done' }).click();
     await page.getByRole('button', { name: 'Save preferences' }).click();
     await page.waitForFunction(() =>
       document.querySelector('#account-save-status').textContent.startsWith('Saved.'),
@@ -1123,6 +1125,34 @@ const { chromium } = require('playwright'),
       'Mobile account settings should use the full viewport',
     );
     await page.screenshot({ path: '/tmp/arno-account-mobile.png', fullPage: true });
+    // A skill is written in the full-screen editor and reads as Markdown on its card.
+    await page.locator('[data-account-tab="instructions"]').click();
+    await page.getByRole('button', { name: 'Add skill', exact: false }).click();
+    await page.locator('.skill-name').last().fill('house-style');
+    await page.locator('.skill-preview').last().click();
+    const editor = page.locator('.text-editor');
+    await editor
+      .locator('textarea')
+      .fill('# House style\n\n- **Plain words**\n- Charts, not prose');
+    await editor.getByRole('button', { name: 'Preview' }).click();
+    assert.equal(await editor.locator('.text-editor-preview li').count(), 2);
+    assert.ok(!(await editor.locator('textarea').isVisible()), 'A phone shows one pane at a time');
+    await page.screenshot({ path: '/tmp/arno-skill-editor-mobile.png' });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    assert.ok(await editor.locator('textarea').isVisible(), 'A wide screen shows both panes');
+    await page.screenshot({ path: '/tmp/arno-skill-editor-desktop.png' });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await editor.getByRole('button', { name: 'Done' }).click();
+    assert.equal(
+      await page.locator('.skill-card').last().locator('.skill-preview strong').innerText(),
+      'Plain words',
+    );
+    await page.getByRole('button', { name: 'Save preferences' }).click();
+    await page.waitForFunction(() =>
+      document.querySelector('#account-save-status').textContent.startsWith('Saved.'),
+    );
+    assert.match(preferences.skills.at(-1).content, /^# House style/);
+    await page.screenshot({ path: '/tmp/arno-skills-mobile.png', fullPage: true });
     await page.locator('[data-account-tab="connections"]').click();
     await page.locator('#sandbox-internet').waitFor();
     await page.locator('#cf-token').scrollIntoViewIfNeeded();

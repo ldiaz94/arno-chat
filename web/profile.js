@@ -1,6 +1,7 @@
-/** The account dialog's "You" tab: what the assistant should know about the user, the
- * profile picture, the composer and default model, the home page's widgets, the
- * privacy notice and account deletion. Depends on core, layout, models, home and offline.
+/** The account dialog's "You" tab: what the assistant should know about the
+ * user, the profile picture, the composer and default model, display, memory,
+ * the home page's widgets, the privacy notice and account deletion. Depends on
+ * core, layout, models, home and offline.
  */
 import { $, state, esc, api, avatar, toast, copy, display } from './core.js';
 import { modelLabel, pickModel } from './models.js';
@@ -26,6 +27,7 @@ export function profilePanel(account) {
     '</textarea></label><p class="caption">Up to 8,000 characters, sent to every model with each request. Saved with Save preferences.</p>' +
     composerCard(account) +
     displayCard(display(account)) +
+    memoryCard(account) +
     homeCard(account.home || {}) +
     PRIVACY +
     '<section class="setting-card" id="about-card"><strong>About</strong><div class="setting-row"><span id="about-version">Arno Chat</span><button type="button" id="update-check" class="ghost">Check for updates</button></div><p class="caption" id="about-build"></p></section>' +
@@ -244,6 +246,7 @@ export async function profilePrefs() {
     reviewModel: $('#review-model').dataset.value,
     workerModel: $('#worker-model').dataset.value,
     display: displayPrefs(),
+    memory: $('#memory-mode').value,
     home: {
       quote: $('#home-quote').checked,
       fact: $('#home-fact').checked,
@@ -405,6 +408,7 @@ export function wireProfile() {
     showWhere();
   };
   $('#home-locate').onclick = locate;
+  wireMemories();
   $('#picture-upload').onclick = () => $('#picture-file').click();
   $('#picture-file').onchange = e => {
     if (e.target.files[0]) upload(e.target.files[0]);
@@ -424,4 +428,76 @@ export function wireProfile() {
     ($('#delete-go').disabled =
       e.target.value.trim().toLowerCase() !== state.user.login.toLowerCase());
   $('#delete-go').onclick = deleteAccount;
+}
+/** The Memory setting's choices (server/chat/memory.mjs MEMORY_MODES). */
+const MEMORY_CHOICES = [
+  ['asked', 'Only when I ask'],
+  ['auto', 'When I ask, and on its own'],
+  ['off', 'Off'],
+];
+// The Memory card: who saves memories, and each saved one by title, opening
+// to its fact and a Forget button.
+function memoryCard(account) {
+  const list = account.memories || [];
+  return (
+    '<section class="setting-card" id="memory-card"><strong>Memory</strong><p class="caption">Facts chats remember about you. Every chat sees their titles and reads the facts it needs. Ask “remember that …” to add one.</p><label>Save memories<select class="field" id="memory-mode">' +
+    MEMORY_CHOICES.map(
+      ([v, words]) =>
+        '<option value="' +
+        v +
+        '"' +
+        (account.memory === v ? ' selected' : '') +
+        '>' +
+        words +
+        '</option>',
+    ).join('') +
+    '</select></label>' +
+    (list.length
+      ? '<ul class="memory-list">' +
+        list
+          .map(
+            m =>
+              '<li><details data-memory="' +
+              esc(m.id) +
+              '"><summary>' +
+              esc(m.title) +
+              '</summary><p class="memory-fact"></p><button type="button" class="ghost" data-forget="' +
+              esc(m.id) +
+              '">Forget</button></details></li>',
+          )
+          .join('') +
+        '</ul>'
+      : '<p class="caption">Nothing remembered yet.</p>') +
+    '</section>'
+  );
+}
+// A memory opened shows its fact, read once; a Forget button forgets its
+// memory at once, without Save preferences.
+function wireMemories() {
+  for (const d of document.querySelectorAll('[data-memory]'))
+    d.ontoggle = async () => {
+      const fact = d.querySelector('.memory-fact');
+      if (!d.open || fact.textContent) return;
+      try {
+        const m = await api('/api/account/memory', {
+          method: 'POST',
+          body: JSON.stringify({ recall: d.dataset.memory }),
+        });
+        fact.textContent = m.fact || 'Not found.';
+      } catch (e) {
+        toast(e.message);
+      }
+    };
+  for (const b of document.querySelectorAll('[data-forget]'))
+    b.onclick = async () => {
+      try {
+        await api('/api/account/memory', {
+          method: 'POST',
+          body: JSON.stringify({ remove: b.dataset.forget }),
+        });
+        b.closest('li').remove();
+      } catch (e) {
+        toast(e.message);
+      }
+    };
 }

@@ -12,6 +12,8 @@ import { profilePanel, wireProfile, profilePrefs } from './profile.js';
 import { pushState, enablePush, disablePush } from './push.js';
 import { controls } from './offline.js';
 import { queueProfile } from './outbox.js';
+import { openEditor } from './editor.js';
+import { markdown } from './render.mjs';
 // The account as last loaded from GET /api/account.
 let account = null;
 // What in the dialog needs the network, with the tooltip it shows while offline
@@ -44,19 +46,37 @@ function settingsTabs(tab) {
     .querySelectorAll('[data-account-tab]')
     .forEach(b => b.classList.toggle('selected', b.dataset.accountTab === tab));
 }
-// One skill's fields (name, description, instructions) as a removable card.
+// One skill as a removable card: its name, its instructions as they read
+// (the Markdown rendered, cut short), which open in the full-screen
+// editor, and whether it applies.
 function skillCard(skill = {}) {
   const node = document.createElement('section');
   node.className = 'setting-card skill-card';
   node.innerHTML =
     '<div class="setting-row"><input class="field skill-name" maxlength="80" placeholder="Skill name" value="' +
     esc(skill.name || '') +
-    '"><button type="button" class="ghost remove-setting" aria-label="Remove skill">×</button></div><textarea class="field skill-content" maxlength="40000" rows="4" placeholder="Instructions, conventions, or a reusable workflow">' +
+    '"><button type="button" class="ghost open-skill">Open</button><button type="button" class="ghost remove-setting" aria-label="Remove skill">×</button></div><textarea class="field skill-content" maxlength="40000" hidden placeholder="Instructions, conventions, or a reusable workflow, in Markdown">' +
     esc(skill.content || '') +
-    '</textarea><label class="check-label"><input class="skill-enabled" type="checkbox" ' +
+    '</textarea><div class="skill-preview prose" role="button" tabindex="0" aria-label="Open the skill"></div><label class="check-label"><input class="skill-enabled" type="checkbox" ' +
     (skill.enabled !== false ? 'checked' : '') +
     '> Apply to model requests</label>';
+  const content = node.querySelector('.skill-content');
+  const preview = node.querySelector('.skill-preview');
+  const refresh = () => {
+    preview.innerHTML = content.value
+      ? markdown(content.value)
+      : '<p class="caption">No instructions yet. Tap to write them.</p>';
+    requestAnimationFrame(() =>
+      preview.classList.toggle('cut', preview.scrollHeight > preview.clientHeight),
+    );
+  };
+  const open = () => openEditor(content, node.querySelector('.skill-name').value || 'New skill');
+  content.oninput = refresh;
+  preview.onclick = open;
+  preview.onkeydown = e => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), open());
+  node.querySelector('.open-skill').onclick = open;
   node.querySelector('.remove-setting').onclick = () => node.remove();
+  refresh();
   return node;
 }
 // One MCP connection's fields as a removable card.
@@ -451,7 +471,7 @@ async function openAccount() {
       '<h3>Custom model IDs</h3><p class="caption">Use this when a provider’s model discovery does not list a model available to your key.</p><div id="custom-models"></div><button id="add-custom-model" type="button" class="ghost">＋ Add model</button></section>' +
       '<section data-account-panel="instructions" hidden><label>Account system prompt<textarea id="system-prompt" class="field" rows="7" maxlength="40000" placeholder="How should Arno work with you?">' +
       esc(account.systemPrompt) +
-      '</textarea></label><p class="caption">Applied to new requests in both regular chats and coding sessions. Repository content does not override these account instructions.</p><h3>Reusable skills</h3><div id="skill-cards"></div><button id="add-skill" type="button" class="ghost">＋ Add skill</button></section>' +
+      '</textarea></label><button id="open-prompt" type="button" class="ghost">Open full screen</button><p class="caption">Applied to new requests in both regular chats and coding sessions. Repository content does not override these account instructions.</p><h3>Reusable skills</h3><div id="skill-cards"></div><button id="add-skill" type="button" class="ghost">＋ Add skill</button></section>' +
       '<section data-account-panel="mcp" hidden><p class="caption">Connect trusted public HTTPS Streamable HTTP MCP servers. Turn a connection on for coding sessions, for chats, or both. In a chat, a tool its server does not mark read-only asks you before it runs. MCP servers can perform remote actions; connect only servers you trust.</p><div id="mcp-cards"></div><button id="add-mcp" type="button" class="ghost">＋ Add MCP connection</button></section>' +
       '<section data-account-panel="connections" hidden><section class="setting-card"><div class="setting-row"><strong>GitHub</strong><span class="tag">Signed in as ' +
       esc(state.user.login) +
@@ -463,6 +483,7 @@ async function openAccount() {
     for (const m of account.mcp) $('#mcp-cards').append(mcpCard(m));
     for (const m of account.models || []) $('#custom-models').append(customModelCard(m));
     $('#add-skill').onclick = () => $('#skill-cards').append(skillCard());
+    $('#open-prompt').onclick = () => openEditor($('#system-prompt'), 'Account system prompt');
     $('#add-mcp').onclick = () => $('#mcp-cards').append(mcpCard());
     wireSandbox();
     $('#add-custom-model').onclick = () => $('#custom-models').append(customModelCard());

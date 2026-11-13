@@ -586,7 +586,7 @@ export function editMessage(node, text) {
   area.focus();
   const [cancel, save] = box.querySelectorAll('button');
   cancel.onclick = () => {
-    box.textContent = text;
+    box.innerHTML = '<div class="prose">' + markdown(text) + '</div>';
   };
   area.onkeydown = e => {
     if (!sendKey(e)) return;
