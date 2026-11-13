@@ -149,7 +149,7 @@ export async function accountRoute(request, env, userId) {
     object.fetch('https://internal/profile/patch', { method: 'POST', body: JSON.stringify(patch) });
   if (request.method === 'GET') return Response.json(publicProfile(env, p));
   const raw = await request.text();
-  if (new TextEncoder().encode(raw).byteLength > 64000)
+  if (new TextEncoder().encode(raw).byteLength > 1500000)
     return Response.json({ error: 'Account settings are too large' }, { status: 413 });
   let body;
   try {
@@ -190,13 +190,13 @@ export async function accountRoute(request, env, userId) {
       const models = await providerModels(body.provider, key);
       return Response.json({ ok: true, models: models.length });
     } else {
-      if (typeof body.systemPrompt !== 'string' || body.systemPrompt.length > 12000)
-        throw Error('System prompt must be at most 12,000 characters');
+      if (typeof body.systemPrompt !== 'string' || body.systemPrompt.length > 40000)
+        throw Error('System prompt must be at most 40,000 characters');
       const name = String(body.name ?? p.name ?? '').trim();
       if (name.length > 80) throw Error('Names are limited to 80 characters');
       const about = body.about ?? p.about ?? '';
-      if (typeof about !== 'string' || about.length > 2000)
-        throw Error('About you must be at most 2,000 characters');
+      if (typeof about !== 'string' || about.length > 8000)
+        throw Error('About you must be at most 8,000 characters');
       const home = homeSettings(body.home ?? p.home ?? HOME),
         enterSends = body.enterSends ?? p.enterSends ?? false,
         defaultModel = body.defaultModel ?? p.defaultModel ?? '',
@@ -218,16 +218,16 @@ export async function accountRoute(request, env, userId) {
         (workerModel && workerModel !== p.workerModel && !(await modelAllowed(workerModel)))
       )
         throw Error('Unsupported worker model');
-      if (!Array.isArray(body.skills) || body.skills.length > 10)
-        throw Error('At most 10 skills are supported');
+      if (!Array.isArray(body.skills) || body.skills.length > 20)
+        throw Error('At most 20 skills are supported');
       const skills = body.skills.map(s => {
         if (
           typeof s.name !== 'string' ||
           s.name.length > 80 ||
           typeof s.content !== 'string' ||
-          s.content.length > 4000
+          s.content.length > 40000
         )
-          throw Error('Each skill needs a name and up to 4,000 instruction characters');
+          throw Error('Each skill needs a name and up to 40,000 instruction characters');
         return { name: s.name, content: s.content, enabled: !!s.enabled };
       });
       if (!Array.isArray(body.mcp) || body.mcp.length > 6)

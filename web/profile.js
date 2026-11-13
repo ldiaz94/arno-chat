@@ -21,9 +21,9 @@ export function profilePanel(account) {
     '<label>Your name<input id="name" class="field" maxlength="80" autocomplete="name" placeholder="What should Arno call you?" value="' +
     esc(account.name) +
     '"></label>' +
-    '<label>About you<textarea id="about" class="field" rows="5" maxlength="2000" placeholder="What should the assistant know about you? (name, role, preferences)">' +
+    '<label>About you<textarea id="about" class="field" rows="5" maxlength="8000" placeholder="What should the assistant know about you? (name, role, preferences)">' +
     esc(account.about) +
-    '</textarea></label><p class="caption">Up to 2,000 characters, sent to every model with each request. Saved with Save preferences.</p>' +
+    '</textarea></label><p class="caption">Up to 8,000 characters, sent to every model with each request. Saved with Save preferences.</p>' +
     composerCard(account) +
     homeCard(account.home || {}) +
     PRIVACY +

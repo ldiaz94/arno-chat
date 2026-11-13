@@ -885,7 +885,7 @@ test('account validates and returns the about-you text', async () => {
       env,
       1,
     );
-  assert.equal((await save('x'.repeat(2001))).status, 400);
+  assert.equal((await save('x'.repeat(8001))).status, 400);
   assert.equal((await save(5)).status, 400);
   const r = await save('Ana, a nurse');
   assert.equal(r.status, 200);

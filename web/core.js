@@ -78,8 +78,6 @@ const paths = {
   external: 'M14 4h6v6M20 4l-9 9M18 14v6H4V6h6',
   chat: 'M4 5h16v11H9l-5 4z',
   print: 'M6 9V3h12v6M6 18H3v-8h18v8h-3M6 14h12v7H6z',
-  mic: 'M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3zM5 11a7 7 0 0 0 14 0M12 18v3',
-  speaker: 'M4 9h4l5-4v14l-5-4H4zM16 9a4 4 0 0 1 0 6M19 6a8 8 0 0 1 0 12',
 };
 // An icon as an inline SVG; an unknown name gives the code icon.
 export function icon(name) {

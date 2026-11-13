@@ -972,15 +972,6 @@ th:hover .col-resize::after,
     display: none;
   }
 }
-/* Dictating or reading aloud: the button lit while it runs. */
-.mic-button.on,
-.listen-message.on,
-#artifact-listen.on {
-  color: var(--accent);
-}
-.mic-button.on svg {
-  animation: pulse 1.2s ease-in-out infinite;
-}
 .model-button {
   max-width: 70%;
   overflow: hidden;

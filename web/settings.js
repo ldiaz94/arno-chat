@@ -51,7 +51,7 @@ function skillCard(skill = {}) {
   node.innerHTML =
     '<div class="setting-row"><input class="field skill-name" maxlength="80" placeholder="Skill name" value="' +
     esc(skill.name || '') +
-    '"><button type="button" class="ghost remove-setting" aria-label="Remove skill">×</button></div><textarea class="field skill-content" maxlength="4000" rows="4" placeholder="Instructions, conventions, or a reusable workflow">' +
+    '"><button type="button" class="ghost remove-setting" aria-label="Remove skill">×</button></div><textarea class="field skill-content" maxlength="40000" rows="4" placeholder="Instructions, conventions, or a reusable workflow">' +
     esc(skill.content || '') +
     '</textarea><label class="check-label"><input class="skill-enabled" type="checkbox" ' +
     (skill.enabled !== false ? 'checked' : '') +
@@ -449,7 +449,7 @@ async function openAccount() {
       providers +
       searchCard() +
       '<h3>Custom model IDs</h3><p class="caption">Use this when a provider’s model discovery does not list a model available to your key.</p><div id="custom-models"></div><button id="add-custom-model" type="button" class="ghost">＋ Add model</button></section>' +
-      '<section data-account-panel="instructions" hidden><label>Account system prompt<textarea id="system-prompt" class="field" rows="7" maxlength="12000" placeholder="How should Arno work with you?">' +
+      '<section data-account-panel="instructions" hidden><label>Account system prompt<textarea id="system-prompt" class="field" rows="7" maxlength="40000" placeholder="How should Arno work with you?">' +
       esc(account.systemPrompt) +
       '</textarea></label><p class="caption">Applied to new requests in both regular chats and coding sessions. Repository content does not override these account instructions.</p><h3>Reusable skills</h3><div id="skill-cards"></div><button id="add-skill" type="button" class="ghost">＋ Add skill</button></section>' +
       '<section data-account-panel="mcp" hidden><p class="caption">Connect trusted public HTTPS Streamable HTTP MCP servers. Turn a connection on for coding sessions, for chats, or both. In a chat, a tool its server does not mark read-only asks you before it runs. MCP servers can perform remote actions; connect only servers you trust.</p><div id="mcp-cards"></div><button id="add-mcp" type="button" class="ghost">＋ Add MCP connection</button></section>' +

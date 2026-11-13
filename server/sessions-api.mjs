@@ -80,7 +80,7 @@ const HANDLERS = {
   /** A message: the owner (and their GitHub sign-in, for git) first, then the
    * turn, which the object saves and runs from its alarm. */
   async 'POST messages'(request, object, { auth, id }) {
-    const body = await boundedJson(request);
+    const body = await boundedJson(request, 600000); // a message of up to 100,000 characters
     await object.fetch('https://internal/session/owner', {
       method: 'POST',
       body: JSON.stringify({ ownerId: auth.user.id, id, github: githubOf(auth) }),

@@ -156,7 +156,7 @@
             <textarea
               id="prompt"
               rows="1"
-              maxlength="8000"
+              maxlength="100000"
               placeholder="Ask Arno to build, fix, or explain…"
               aria-label="Message"
             ></textarea>
@@ -166,14 +166,6 @@
                 class="ghost attach-button"
                 type="button"
                 aria-label="Attach files"
-              ></button>
-              <button
-                id="mic"
-                class="ghost attach-button mic-button"
-                type="button"
-                aria-label="Dictate"
-                title="Dictate"
-                hidden
               ></button>
               <input
                 id="attach-input"
@@ -392,7 +384,6 @@
           <button id="artifact-download" class="ghost" type="button">Download</button>
           <button id="artifact-csv" class="ghost" type="button" hidden>CSV</button>
           <button id="artifact-tab" class="ghost" type="button" hidden>Open in a tab</button>
-          <button id="artifact-listen" class="ghost" type="button" hidden>Listen</button>
           <button id="artifact-print" class="ghost" type="button" hidden>Print</button>
           <button id="artifact-goto" class="ghost" type="button" hidden>Go to conversation</button>
         </div>

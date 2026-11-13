@@ -20,7 +20,6 @@ import { lineDiff } from './linediff.mjs';
 import { $, state, esc, icon, api, copy, showError, toast, prompt } from './core.js';
 import { ago } from './today.mjs';
 import { resume } from './sessions.js';
-import { canSpeak, speak, stopSpeaking } from './voice.js';
 
 /** Each kind: its icon, its name, the extension it downloads with, its
  * MIME type and the language its source is coloured as. */
@@ -217,7 +216,6 @@ function paint() {
   $('#artifact-csv').hidden = a.kind !== 'markdown' || !tableCsv(a.content);
   $('#artifact-tab').hidden = !FRAMED.has(a.kind) && !PICTURED.has(a.kind);
   $('#artifact-print').hidden = a.kind !== 'markdown';
-  $('#artifact-listen').hidden = !canSpeak || !['markdown', 'html'].includes(a.kind);
   $('#artifact-goto').hidden = cur.sid === state.session?.id;
   $('#artifact-download').title = 'Download ' + fileName(a);
   dialog.dataset.kind = a.kind;
@@ -295,7 +293,6 @@ for (const [id, glyph] of [
   ['csv', 'chart'],
   ['tab', 'external'],
   ['print', 'print'],
-  ['listen', 'speaker'],
   ['goto', 'chat'],
 ]) {
   const b = $('#artifact-' + id);
@@ -325,17 +322,6 @@ $('#artifact-csv').onclick = () =>
   download(slug(cur.art.title) + '.csv', tableCsv(cur.art.content), 'text/csv;charset=utf-8');
 $('#artifact-tab').onclick = () => window.open(viewUrl(cur.sid, cur.art), '_blank', 'noopener');
 $('#artifact-print').onclick = () => window.print();
-// An HTML page is read by its text, its scripts and styles left out.
-$('#artifact-listen').onclick = () => {
-  const a = cur.art;
-  let text = a.content;
-  if (a.kind === 'html') {
-    const doc = new DOMParser().parseFromString(text, 'text/html');
-    for (const n of doc.querySelectorAll('script, style, noscript')) n.remove();
-    text = doc.body.innerText || doc.body.textContent;
-  }
-  speak(text, $('#artifact-listen'));
-};
 $('#artifact-wide').onclick = () => {
   const wide = document.body.classList.toggle('artifact-wide');
   $('#artifact-wide').setAttribute('aria-pressed', String(wide));
@@ -349,7 +335,6 @@ $('#artifact-goto').onclick = () => {
 let moving = false; // closed only to be shown again, docked or not
 dialog.addEventListener('close', () => {
   if (moving) return void (moving = false);
-  stopSpeaking();
   document.body.classList.remove('artifact-open', 'artifact-wide');
   $('#artifact-wide').setAttribute('aria-pressed', 'false');
   $('#artifact-content').innerHTML = ''; // stops a page that runs

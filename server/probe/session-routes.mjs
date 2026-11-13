@@ -241,7 +241,7 @@ export const sessionRoutes = {
     if (
       typeof body.prompt !== 'string' ||
       !body.prompt.trim() ||
-      body.prompt.length > 8000 ||
+      body.prompt.length > 100000 ||
       !/^[-a-f0-9]{36}$/.test(body.id || '') ||
       (body.editAt != null && !Number.isSafeInteger(body.editAt)) ||
       (body.replaces != null && !Number.isSafeInteger(body.replaces))
@@ -327,7 +327,7 @@ export const sessionRoutes = {
     const session = await this.ctx.storage.get('session');
     if (!session) return json({ error: 'Session not found' }, 404);
     const { prompt, editAt } = await request.json();
-    if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 8000)
+    if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 100000)
       return json({ error: 'Invalid prompt' }, 400);
     if (this.inFlight) return json({ error: 'Arno is already working' }, 409);
     if (session.kind === 'chat') return this.plainTurn(session, prompt.trim(), editAt);

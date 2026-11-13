@@ -230,7 +230,7 @@ export async function changeExtras(remove) {
   }
 }
 /** The most of a chat carried into a coding session's first message, which
- * may hold 8,000 characters: its latest turns, with room to add to it. */
+ * may hold 100,000 characters: its latest turns, with room to add to it. */
 const HANDOFF = 7000;
 /** Carries the open chat into a coding session: the Code home asks for a
  * repository (state.handoff), and the new session opens with the chat in its
@@ -352,7 +352,7 @@ function chatHome() {
   main.innerHTML =
     '<div class="home home-chat">' +
     greeting('Arno / Chat', 'Ask anything. Arno can search the web and cite its sources.') +
-    '<form id="home-ask" class="home-ask"><textarea id="home-prompt" rows="2" maxlength="8000" placeholder="What’s on your mind?" aria-label="Start a chat"></textarea><div class="home-ask-bar">' +
+    '<form id="home-ask" class="home-ask"><textarea id="home-prompt" rows="2" maxlength="100000" placeholder="What’s on your mind?" aria-label="Start a chat"></textarea><div class="home-ask-bar">' +
     modelChip() +
     '<span class="caption home-hint">' +
     sendHint() +
