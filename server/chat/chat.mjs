@@ -256,6 +256,7 @@ export async function plainChat({
   let fields = fieldsAt(effort),
     rethought = false, // whether a round was asked again with less thinking
     recut = false, // whether a round cut short by the provider was asked again
+    dropped = 0, // calls whose connection to the provider was lost, asked again
     said = '', // the latest text the model wrote beside its tool calls
     hushed = false; // whether an empty reply was asked again
   if (resume) {
@@ -263,7 +264,7 @@ export async function plainChat({
     requestLog.push(...resume.requestLog);
     toolLog.push(...resume.toolLog);
     for (const t of resume.spentTools) spentTools.add(t);
-    ({ rethought, recut, said, hushed = false } = resume);
+    ({ rethought, recut, dropped = 0, said, hushed = false } = resume);
     if (rethought) fields = fieldsAt('off');
   }
   // What a later call needs to carry on from round: everything above that changes.
@@ -276,6 +277,7 @@ export async function plainChat({
     spentTools: [...spentTools],
     rethought,
     recut,
+    dropped,
     said,
     hushed,
   });
@@ -332,34 +334,67 @@ export async function plainChat({
               }))
           : undefined;
       const asked = Date.now();
-      const response = await upstream(endpoint, {
-        method: 'POST',
-        redirect: 'manual',
-        signal,
-        headers:
-          provider === 'anthropic'
-            ? {
-                'x-api-key': key,
-                'anthropic-version': '2023-06-01',
-                'Content-Type': 'application/json',
-              }
-            : { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          messages,
-          stream: true,
-          tools,
-          ...(claude && tools && last && { tool_choice: { type: 'none' } }),
-          ...fields,
-          ...(provider === 'anthropic'
-            ? {
-                system: instructions || 'You are a helpful assistant.',
-                // Each round re-reads the turn so far from the cache.
-                cache_control: { type: 'ephemeral' },
-              }
-            : {}),
-        }),
-      });
+      // The connection to the provider was lost (fetch or the stream threw):
+      // the call has no side effects, so the round is asked again, a few
+      // times in a turn, after a pause. Anything else, or a stop, fails.
+      const lost = async e => {
+        if (signal?.aborted || !LOST_CONNECTION.test(String(e?.message))) throw e;
+        console.log(
+          JSON.stringify({
+            event: 'connection_lost',
+            provider,
+            model,
+            round: round + 1,
+            ms: Date.now() - asked,
+            error: String(e.message).slice(0, 200),
+            again: dropped < LOST_PAUSES.length,
+          }),
+        );
+        if (dropped >= LOST_PAUSES.length)
+          throw Error(
+            'The connection to ' +
+              provider +
+              ' was lost ' +
+              (dropped + 1) +
+              ' times in this turn. Try again, or another model.',
+          );
+        await new Promise(r => setTimeout(r, LOST_PAUSES[dropped++]));
+      };
+      let response;
+      try {
+        response = await upstream(endpoint, {
+          method: 'POST',
+          redirect: 'manual',
+          signal,
+          headers:
+            provider === 'anthropic'
+              ? {
+                  'x-api-key': key,
+                  'anthropic-version': '2023-06-01',
+                  'Content-Type': 'application/json',
+                }
+              : { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model,
+            messages,
+            stream: true,
+            tools,
+            ...(claude && tools && last && { tool_choice: { type: 'none' } }),
+            ...fields,
+            ...(provider === 'anthropic'
+              ? {
+                  system: instructions || 'You are a helpful assistant.',
+                  // Each round re-reads the turn so far from the cache.
+                  cache_control: { type: 'ephemeral' },
+                }
+              : {}),
+          }),
+        });
+      } catch (e) {
+        await lost(e);
+        round--;
+        continue;
+      }
       total.calls++;
       if (!response.ok) {
         // The provider's reason ({error: {message}} in every dialect we
@@ -390,7 +425,14 @@ export async function plainChat({
       }
       const body =
         provider === 'mistral' ? response.body.pipeThrough(mistralDeltas()) : response.body;
-      const reply = await readReply(body, preview => onProgress({ ...preview, round: round + 1 }));
+      let reply;
+      try {
+        reply = await readReply(body, preview => onProgress({ ...preview, round: round + 1 }));
+      } catch (e) {
+        await lost(e);
+        round--;
+        continue;
+      }
       if (reply.usage) {
         const t = tokens(reply.usage);
         total.measuredCalls++;
@@ -609,6 +651,12 @@ function tell(messages, provider, text, images = []) {
  * left to act on it: an edit, a check, the answer. With fewer, the answer
  * stands rather than ending in "I ran out of tool calls". */
 const FIX_ROUNDS = 4;
+/** What a lost connection to a provider throws: workerd's "Network
+ * connection lost.", a reset, a failed fetch. */
+const LOST_CONNECTION = /network|connection|reset|socket|fetch failed|terminated/i;
+/** The pauses, in ms, before each call asked again after a lost connection;
+ * one more loss fails the turn. */
+const LOST_PAUSES = [2000, 5000, 10000];
 /** Replies longer than this, in characters, count as long when cut off. */
 const LONG_REPLY = 8000;
 /** Said when a reply cut off by the provider is asked again. */

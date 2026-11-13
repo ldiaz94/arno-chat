@@ -3412,6 +3412,46 @@ test('a reply the provider cut off is asked again, and fails loudly if cut again
   assert.equal((await run([cut(), sse([delta({ content: 'Full moon.' })])])).summary, 'Full moon.');
   await assert.rejects(run([cut(), cut()]), /cut its reply off before it finished, twice/);
 });
+test('a lost connection to the provider is asked again, then fails the turn', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const lost = () => {
+    throw new TypeError('Network connection lost.');
+  };
+  // A stream that sends a little, then loses its connection.
+  const dies = () =>
+    new Response(
+      new ReadableStream({
+        start: c =>
+          c.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"Me"}}]}\n\n')),
+        pull: c => c.error(new TypeError('Network connection lost.')),
+      }),
+    );
+  const run = async replies => {
+    const done = plainChat({
+      model: 'kimi-k3.1-pro',
+      provider: 'ollama',
+      key: 'k',
+      history: [],
+      prompt: 'moon',
+      runTool: async () => ({}),
+      upstream: async () => (replies.length ? replies.shift()() : lost()),
+    }).then(
+      r => ({ r }),
+      e => ({ e }),
+    );
+    let out;
+    done.then(o => (out = o));
+    while (!out) {
+      await new Promise(setImmediate);
+      t.mock.timers.tick(10000);
+    }
+    if (out.e) throw out.e;
+    return out.r;
+  };
+  const answer = () => sse([delta({ content: 'Full moon.' })]);
+  assert.equal((await run([lost, dies, answer])).summary, 'Full moon.');
+  await assert.rejects(run([]), /connection to ollama was lost 4 times/);
+});
 test('a turn yields between rounds and goes on from its saved state', async () => {
   const saved = [],
     bodies = [];
