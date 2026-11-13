@@ -47,7 +47,6 @@ npx wrangler login
 npx wrangler secret put GITHUB_CLIENT_ID          # the GitHub app signing in
 npx wrangler secret put GITHUB_CLIENT_SECRET
 npx wrangler secret put ACCOUNT_ENCRYPTION_KEY    # 32 random bytes, base64
-npx wrangler secret put OLLAMA_API_KEY            # optional: a shared Ollama Cloud key
 npm test                                          # lint, format and unit tests
 npm run deploy                                    # deploys, recording the commit
 ```
@@ -258,8 +257,9 @@ code in 31, and 4,300 lines of tests (`wc -l`, comments included).
 - **Spending caps per day**: budgets are per message.
 - **Search by meaning.** Search matches the words you type, fuzzily, not
   what they mean; there are no embeddings and no server index.
-- **Accounts for anyone.** It is a private deployment for its owner while
-  it uses shared provider keys.
+- **Accounts for anyone.** A deployment admits only the GitHub logins it
+  lists (`ALLOWED_GITHUB_LOGINS`), each with their own provider keys; there
+  is no sign-up, billing or budget across users.
 
 ## Documentation
 
@@ -268,6 +268,7 @@ code in 31, and 4,300 lines of tests (`wc -l`, comments included).
 | [doc/ARCHITECTURE.md](doc/ARCHITECTURE.md) | Modules, state, lifecycles, routes, providers, research, interface, limits |
 | [doc/OPERATIONS.md](doc/OPERATIONS.md) | Testing, deploying, secrets, the runner image, troubleshooting, the record of real runs |
 | [doc/SECURITY.md](doc/SECURITY.md) | Where credentials live, the container's boundaries, untrusted content, publishing |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Issues welcome, pull requests off; running and testing your own fork |
 
 ## Licence
 

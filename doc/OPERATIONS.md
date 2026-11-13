@@ -6,7 +6,7 @@
 - `npm run test:design` drives the local web/ files in the system Chromium through Playwright (a dev dependency) with mocked API responses. Set CHROMIUM_PATH if Chromium is not /usr/bin/chromium. Screenshots go to /tmp/arno-*.png.
 - `npm run test:serve` drives the real `arno --serve` (turn protocol, /load, staged edits, cancel) against `~/r/arno/build/stub`. It runs from `~/.cache`, not /tmp, because arno's jail has a /tmp of its own that would hide the stage.
 - `npm run test:offline` serves web/ and mocked /api/ replies from a local server, lets the service worker warm its cache, cuts the network, reloads and checks a conversation, its image and artifact, the usage page, the offline banner and the disabled composer, then goes back online.
-- `npm run test:live` runs the same suite against the files served by the deployed endpoint (`ARNO_TEST_LIVE=1`).
+- `npm run test:live` runs the same suite against the files served by the deployed endpoint (`ARNO_TEST_LIVE=https://<worker>.<subdomain>.workers.dev npm run test:live`).
 
 The design test covers search through page three, the session drawer, Markdown/code/tables, model selection, usage, reviewed publishing, a dropped submission response, theme switching, citations and source previews, the docked code pane, account settings, row-level rename/delete, and horizontal overflow at widths from 360 to 3440 px, including keyboard-height viewports.
 
@@ -28,7 +28,6 @@ runner/Dockerfile is Arch Linux because arno is built on the Arch host and is dy
 
 Encrypted Worker secrets:
 
-- OLLAMA_API_KEY
 - GITHUB_CLIENT_ID
 - GITHUB_CLIENT_SECRET
 - ACCOUNT_ENCRYPTION_KEY: 32 random bytes as base64; keep it, existing encrypted records need it
@@ -36,7 +35,7 @@ Encrypted Worker secrets:
 
 ALLOWED_GITHUB_LOGINS is a non-secret, comma-separated allowlist, currently `ldiaz94`. Do not remove it for a public launch without entitlements and budgets. Never retrieve, print or commit a secret value.
 
-Production: https://arno-compat-probe.lucelad.workers.dev, OAuth callback at /auth/callback on the same host.
+The GitHub app's callback URL is /auth/callback on the deployment's host (e.g. https://<worker>.<subdomain>.workers.dev/auth/callback). Model providers need no secret: each user saves their own keys in Settings.
 
 ## Hosting
 

@@ -1,12 +1,11 @@
-/** Run against the local web/ files (or, with ARNO_TEST_LIVE=1, the deployed
+/** Run against the local web/ files (or, with ARNO_TEST_LIVE set to its URL, the deployed
  * ones) with API fixtures. This tests the browser
  * contract, including responses that fail after a task has been accepted. */
 const { chromium } = require('playwright'),
   assert = require('node:assert/strict'),
   fs = require('node:fs');
 (async () => {
-  const live =
-    process.env.ARNO_TEST_LIVE === '1' ? 'https://arno-compat-probe.lucelad.workers.dev' : null;
+  const live = process.env.ARNO_TEST_LIVE || null; // the deployment's URL, to test it live
   const types = {
     '.html': 'text/html',
     '.js': 'text/javascript',

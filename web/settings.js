@@ -437,13 +437,9 @@ async function openAccount() {
           providerMark(id, 20) +
           esc(p.label) +
           '</strong><span class="tag' +
-          (p.saved || p.available ? '' : ' off') +
+          (p.saved ? '' : ' off') +
           '">' +
-          (p.saved
-            ? 'Personal key saved'
-            : p.available
-              ? 'Shared deployment key'
-              : 'Not configured') +
+          (p.saved ? 'Key saved' : 'Not configured') +
           '</span></summary><label>API key<input type="password" autocomplete="new-password" class="field provider-key" data-provider-input="' +
           id +
           '" placeholder="' +

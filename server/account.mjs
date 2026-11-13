@@ -34,11 +34,11 @@ export function instructions(p) {
     .filter(Boolean)
     .join('\n\n');
 }
-/** The user's API key for a provider, unsealed; Ollama falls back to the
- * deployment's own key, other providers to none ('' when absent). */
+/** The user's API key for a provider, unsealed ('' when absent). Each user
+ * brings their own: the deployment shares none. */
 export async function credential(env, userId, p, provider) {
   const own = await unseal(env, userId, 'provider:' + provider, p.keys?.[provider]);
-  return own || (provider === 'ollama' ? env.OLLAMA_API_KEY || '' : '');
+  return own || '';
 }
 /** How the app looks, as saved: each setting's choices, the first the
  * default. meters: the composer's context and cost (taking turns on a
@@ -113,7 +113,6 @@ export function publicProfile(env, p) {
         {
           label: v.label,
           saved: !!p.keys?.[id],
-          available: !!p.keys?.[id] || (id === 'ollama' && !!env.OLLAMA_API_KEY),
         },
       ]),
     ),

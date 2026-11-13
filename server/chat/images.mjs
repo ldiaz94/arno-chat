@@ -29,7 +29,7 @@ export const IMAGE_TOOLS = [
 const API =
   'https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=10&prop=imageinfo&iiprop=url|size|mime|extmetadata&iiurlwidth=1280&gsrsearch=';
 /** Who is asking, as Wikimedia's policy wants it said. */
-const USER_AGENT = 'ArnoChat/1.0 (+https://arno-compat-probe.lucelad.workers.dev)';
+const USER_AGENT = 'ArnoChat/1.0 (+https://github.com/ldiaz94/arno-chat)';
 /** File types a page can show as an image. */
 const IMAGE_MIME = /^image\/(jpeg|png|gif|webp|svg\+xml)$/;
 /** Most images returned, and characters of a description. */

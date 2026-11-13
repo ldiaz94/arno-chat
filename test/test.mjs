@@ -73,6 +73,17 @@ test('the service worker precaches every static file the app needs', () => {
     'web/ changed: bump VERSION in web/sw.js and set its Shell digest to ' + now,
   );
 });
+/** A Worker env whose user userId has an Ollama key saved (the deployment
+ * shares none), its profile served by a stub PROBE; extra is merged in. */
+async function keyedEnv(userId, extra = {}) {
+  const env = { ACCOUNT_ENCRYPTION_KEY: btoa(String.fromCharCode(...new Uint8Array(32).fill(7))) },
+    ollama = await seal(env, userId, 'provider:ollama', 'k');
+  return {
+    ...env,
+    PROBE: { getByName: () => ({ fetch: async () => Response.json({ keys: { ollama } }) }) },
+    ...extra,
+  };
+}
 function fixture(values = {}) {
   const map = new Map(Object.entries(values)),
     starts = [];
@@ -2771,7 +2782,7 @@ test('search off drops web tools and instructions; deep research budgets reach r
   };
   try {
     const f = fixture({
-      session: { kind: 'chat', model: 'thinker:cloud', title: 'General chat' },
+      session: { kind: 'chat', ownerId: 'u1', model: 'thinker:cloud', title: 'General chat' },
       job: {
         id: 'j',
         status: 'running',
@@ -2779,7 +2790,7 @@ test('search off drops web tools and instructions; deep research budgets reach r
         options: { ...DEFAULTS, search: false, style: 'caveman', effort: 'low' },
       },
     });
-    f.obj.env = { OLLAMA_API_KEY: 'k' };
+    f.obj.env = await keyedEnv('u1');
     await f.obj.plainTurn(await f.ctx.storage.get('session'), 'hi');
     const names = (bodies[0].tools || []).map(t => t.function.name);
     assert.ok(!names.includes('web_search') && names.includes('create_artifact'));
@@ -4048,10 +4059,7 @@ test('a coding session is named after its turn, but never over a name the user g
           'data: {"choices":[{"delta":{"content":"Lisp interpreter in raz"}}]}\n\ndata: [DONE]\n\n',
         )
       : Response.json({});
-  f.obj.env = {
-    OLLAMA_API_KEY: 'k',
-    PROBE: { getByName: () => ({ fetch: async () => Response.json({}) }) },
-  };
+  f.obj.env = await keyedEnv('u1');
   try {
     await f.obj.nameIfNew('Build plir', 'Pushed the reader.');
     assert.equal((await f.ctx.storage.get('session')).title, 'Lisp interpreter in raz');

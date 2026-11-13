@@ -185,6 +185,9 @@ export async function plainChat({
   checkpoint = async () => {},
   yieldAt = Infinity,
 }) {
+  // Each user brings their own keys: without one, say where it goes.
+  if (!key)
+    throw Error('No ' + PROVIDERS[provider].label + ' key: add yours in Settings → Providers.');
   const replay = PROVIDERS[provider].replay,
     messages = resume ? resume.messages : opening();
   // The conversation the turn opens with: earlier turns (up to 32,000
