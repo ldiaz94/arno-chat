@@ -35,6 +35,7 @@ import { turnPlan } from './plan.mjs';
 import { effortSupported, seesScreenshots } from '../models.mjs';
 import { IMAGE_TOOLS, findImage } from './images.mjs';
 import { MEMORY_TOOLS, memoryMode, memoryInstructions, memoryTool } from './memory.mjs';
+import { RENAME_TOOL, nameInstructions, newName } from './title.mjs';
 import { ASK_TOOL, ASKED, decisionOf } from '../decisions.mjs';
 import { renderArtifact, WIDE } from '../probe/render.mjs';
 import { reviewPage, fixRequest } from './review.mjs';
@@ -184,6 +185,7 @@ export const chatTurn = {
           ...ARTIFACT_TOOLS,
           ...IMAGE_TOOLS,
           ASK_TOOL,
+          RENAME_TOOL,
           ...(memoryMode(p) === 'off' ? [] : MEMORY_TOOLS),
           ...mcp.specs,
         ],
@@ -191,6 +193,7 @@ export const chatTurn = {
           saved?.instructions ||
           [
             instructions(p),
+            nameInstructions(session),
             memoryInstructions(p),
             plan.search ? WEB_INSTRUCTIONS : '',
             ARTIFACT_INSTRUCTIONS,
@@ -250,6 +253,11 @@ export const chatTurn = {
             return ASKED;
           }
           await this.activity(toolStep(name, args, [...artifacts, ...listed]));
+          if (name === 'rename_chat') {
+            const title = newName(args);
+            await this.retitle(title);
+            return { renamed: title };
+          }
           if (MEMORY_TOOLS.some(t => t.name === name))
             return memoryTool(this.env, session.ownerId, name, args);
           if (name === 'find_image') return findImage(args.query);
@@ -418,6 +426,7 @@ export function toolStep(name, args = {}, known = []) {
       remember: () => 'Remembering “' + args.title + '”',
       recall: () => 'Recalling ' + (args.ids?.length || 0) + ' memories',
       forget: () => 'Forgetting a memory',
+      rename_chat: () => 'Renaming the chat “' + args.name + '”',
       create_artifact: () => 'Writing ' + title,
       update_artifact: () => 'Editing ' + title,
       read_artifact: () => 'Reading ' + title,

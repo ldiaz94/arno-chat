@@ -283,6 +283,14 @@ test('the live view keeps the last six steps, and says what chat tools do', asyn
     'Editing “Tip calculator”',
   );
 });
+test('rename_chat: names tidied, told only once the chat has a name', async () => {
+  const { newName, nameInstructions } = await import('../server/chat/title.mjs');
+  assert.equal(newName({ name: ' "Trip to Lisbon." ' }), 'Trip to Lisbon');
+  assert.throws(() => newName({ name: '“”' }));
+  assert.equal(nameInstructions({ title: 'General chat' }), '');
+  assert.match(nameInstructions({ title: 'Trip' }), /rename_chat/);
+  assert.match(nameInstructions({ title: 'Trip', customTitle: true }), /only if they ask/);
+});
 test('cold session starts from saved checkpoint, with internet disabled', async () => {
   const f = fixture({ snapshot: { id: 'saved' } });
   await f.obj.start('mistral-large-4:cloud');

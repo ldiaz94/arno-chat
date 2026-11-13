@@ -7,7 +7,7 @@ import { profile, credential } from '../account.mjs';
 import { prices, priceOf, cost, costParts, webRates, WEB_RATES } from '../prices.mjs';
 import { notifyOwner, turnNotice } from '../push.mjs';
 import { providerModel } from '../providers.mjs';
-import { nameChat } from '../chat/title.mjs';
+import { nameChat, UNNAMED } from '../chat/title.mjs';
 
 // Turns kept per conversation: in effect the whole of it. Each is its own
 // storage value, clipped by saveTurn to about 115 kB, well under the 2 MB a
@@ -76,8 +76,7 @@ export const records = {
   async nameIfNew(prompt, answer) {
     const s = await this.ctx.storage.get('session'),
       chat = s?.kind === 'chat';
-    if (!s?.ownerId || !s.id || s.customTitle || (chat ? s.title !== 'General chat' : s.title))
-      return;
+    if (!s?.ownerId || !s.id || s.customTitle || (chat ? s.title !== UNNAMED : s.title)) return;
     const p = await profile(this.env, s.ownerId),
       selected = providerModel(s.model);
     const named = await nameChat({
@@ -90,9 +89,14 @@ export const records = {
     const latest = await this.ctx.storage.get('session'),
       title = named || (chat ? prompt.slice(0, 70) : '');
     if (latest.customTitle || !title) return;
-    const meta = { ...latest, title };
+    await this.retitle(title);
+  },
+  /** Names the conversation title, in its object and in its owner's list,
+   * keeping whether the user named it. */
+  async retitle(title) {
+    const meta = { ...(await this.ctx.storage.get('session')), title };
     await this.ctx.storage.put('session', meta);
-    await this.env.PROBE.getByName('index:' + s.ownerId).fetch('https://internal/index/add', {
+    await this.env.PROBE.getByName('index:' + meta.ownerId).fetch('https://internal/index/add', {
       method: 'POST',
       body: JSON.stringify(meta),
     });
