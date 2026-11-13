@@ -290,6 +290,7 @@ svg {
   gap: 3px;
 }
 .topbar-title strong {
+  position: relative; /* holds the old name while a rename plays */
   justify-self: start;
   max-width: 100%;
   font-size: 15px;
@@ -305,6 +306,61 @@ svg {
 }
 .topbar-title strong[role='button']:hover {
   color: var(--accent);
+}
+/* A rename (layout.js playRename): the old name rises and blurs away, the
+   new one's letters settle in one by one from below, lit in the accent, and
+   a glint runs along the bottom. */
+.title-old {
+  position: absolute;
+  inset: 0;
+  animation: title-out 320ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+.title-new span {
+  display: inline-block;
+  white-space: pre;
+  opacity: 0;
+  animation: title-in 520ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  animation-delay: calc(120ms + var(--delay));
+}
+.renaming::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  transform: translateX(-100%);
+  animation: title-glint 900ms 200ms ease-out forwards;
+}
+@keyframes title-out {
+  to {
+    opacity: 0;
+    transform: translateY(-70%);
+    filter: blur(4px);
+  }
+}
+@keyframes title-in {
+  from {
+    opacity: 0;
+    transform: translateY(60%);
+    filter: blur(6px);
+    color: var(--accent);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-6%);
+    filter: blur(0);
+    color: var(--accent);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes title-glint {
+  to {
+    transform: translateX(100%);
+  }
 }
 .title-owner {
   color: var(--muted);

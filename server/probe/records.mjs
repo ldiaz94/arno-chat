@@ -92,7 +92,8 @@ export const records = {
     await this.retitle(title);
   },
   /** Names the conversation title, in its object and in its owner's list,
-   * keeping whether the user named it. */
+   * keeping whether the user named it, and tells open live views ('title'
+   * event) so the header changes at once. */
   async retitle(title) {
     const meta = { ...(await this.ctx.storage.get('session')), title };
     await this.ctx.storage.put('session', meta);
@@ -100,6 +101,7 @@ export const records = {
       method: 'POST',
       body: JSON.stringify(meta),
     });
+    this.broadcast({ title }, 'title');
   },
   /** The session's running totals. */
   async stats() {

@@ -81,6 +81,51 @@ export function busy(value) {
   $('#stop').hidden = !value;
   controls(); // model change waits while busy; offline, attaching too
 }
+/** How long one letter of a new name takes to settle, the gap between
+ * letters and the most the last one waits, in ms (style.css .title-new). */
+const LETTER_MS = 520,
+  LETTER_GAP = 24,
+  LAST_LETTER = 420;
+/** Plays a rename in the header title t from before to name: the old name rises and blurs away
+ * while the new one's letters settle in one after another, lit in the accent,
+ * and a glint runs under them; then t holds plain text again. */
+function playRename(t, before, name) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const letters = [...name]
+    .map(
+      (c, i) =>
+        '<span style="--delay:' +
+        Math.min(i * LETTER_GAP, LAST_LETTER) +
+        'ms">' +
+        esc(c) +
+        '</span>',
+    )
+    .join('');
+  t.innerHTML =
+    '<span class="title-old" aria-hidden="true">' +
+    esc(before) +
+    '</span><span class="title-new">' +
+    letters +
+    '</span>';
+  t.classList.add('renaming');
+  t.renameTimer = setTimeout(
+    () => {
+      t.classList.remove('renaming');
+      t.textContent = name;
+    },
+    LAST_LETTER + LETTER_MS + 200,
+  );
+}
+/** Shows conversation id's new name in the list and, when it is open, the
+ * header. */
+export function retitled(id, name) {
+  state.sessions = state.sessions.map(s => (s.id === id ? { ...s, title: name } : s));
+  if (state.session?.id === id) {
+    state.session.title = name;
+    title(name, $('#subtitle').textContent); // a coding session's line is rebuilt
+  }
+  sidebar();
+}
 /** The header: the page's or conversation's name and a line under it. A coding
  * session's name is its repository, owner muted, and its line the branch, the
  * commit it started from and whether its workspace is warm; subtitle is used
@@ -91,9 +136,17 @@ export function title(name, subtitle) {
     s = state.session,
     coding = !!s && s.kind !== 'chat';
   const [owner, repo] = coding && name === s.repo ? name.split('/') : [];
+  // The same conversation under a new name: the change is played.
+  const before = t.dataset.name,
+    renamed = open && !repo && t.dataset.session === s.id && before !== name;
+  t.dataset.session = s?.id || '';
+  t.dataset.name = name;
+  clearTimeout(t.renameTimer);
+  t.classList.remove('renaming');
   t.innerHTML = repo
     ? '<span class="title-owner">' + esc(owner) + ' / </span>' + esc(repo)
     : esc(name);
+  if (renamed) playRename(t, before, name);
   // On a conversation the title opens its details panel (wired in app.js).
   if (open) t.setAttribute('aria-label', 'Conversation details: ' + name);
   else t.removeAttribute('aria-label');

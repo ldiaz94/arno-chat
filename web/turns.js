@@ -6,7 +6,7 @@
 import { markdown } from './render.mjs';
 import { $, state, esc, duration, api, toast, showError, prompt, sendKey } from './core.js';
 import { openNamed } from './artifacts.js';
-import { busy, title, bump } from './layout.js';
+import { busy, title, bump, retitled } from './layout.js';
 import { message, failure, scrollDown, place, spent } from './thread.js';
 import { contextMeter } from './info.js';
 import { resume, persist } from './sessions.js';
@@ -412,6 +412,12 @@ function watchLive(id, gen) {
     }
     try {
       livePreview(JSON.parse(e.data));
+    } catch {}
+  });
+  // The model or the namer renamed the conversation (server records.mjs retitle).
+  stream.addEventListener('title', e => {
+    try {
+      if (gen === state.generation) retitled(id, JSON.parse(e.data).title);
     } catch {}
   });
   // EventSource reconnects itself. Polling below remains the fallback and source

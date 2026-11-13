@@ -18,7 +18,7 @@
  */
 import { Outbox, isLocal, conflicted } from './queue.mjs';
 import { $, state, esc, api, toast, showError } from './core.js';
-import { sidebar, title, bump } from './layout.js';
+import { sidebar, bump, retitled } from './layout.js';
 import { message, failure, scrollDown } from './thread.js';
 import { watchJob } from './turns.js';
 import { uploadFile, bytes } from './attach.js';
@@ -480,25 +480,15 @@ async function sendEdit(e) {
     if (!choice) throw Error('Waiting for your choice'); // asked again next time
     if (choice === 'theirs') {
       await outbox.remove(e.key);
-      if (rename) showTitle(e.sessionId, current.title);
+      if (rename) retitled(e.sessionId, current.title);
       return;
     }
   }
   const latest = outbox.get(e.key) || e,
     d = await api(path, { method: rename ? 'PATCH' : 'POST', body: JSON.stringify(latest.body) });
   await outbox.remove(e.key);
-  if (rename) showTitle(e.sessionId, d.title);
+  if (rename) retitled(e.sessionId, d.title);
   else loadModels(); // custom models may have changed
-}
-
-// Renames a conversation in the sidebar list and the open title.
-function showTitle(id, name) {
-  state.sessions = state.sessions.map(s => (s.id === id ? { ...s, title: name } : s));
-  if (state.session?.id === id) {
-    state.session.title = name;
-    title(name, $('#subtitle').textContent); // a coding session's line is rebuilt
-  }
-  sidebar();
 }
 
 let asking = Promise.resolve(); // one question at a time

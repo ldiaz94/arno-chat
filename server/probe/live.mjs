@@ -15,9 +15,9 @@ export const live = {
   /** Full bounded snapshots make SSE reconnects idempotent. This is a view of
    * the durable job, never its execution lifetime. Slow readers are disconnected
    * rather than allowing their buffers to grow without bound. */
-  broadcast(preview) {
+  broadcast(preview, event = 'preview') {
     const frame = new TextEncoder().encode(
-      'event: preview\ndata: ' + JSON.stringify(preview) + '\n\n',
+      'event: ' + event + '\ndata: ' + JSON.stringify(preview) + '\n\n',
     );
     for (const c of this.viewers || []) {
       try {
