@@ -256,13 +256,14 @@ export async function plainChat({
   let fields = fieldsAt(effort),
     rethought = false, // whether a round was asked again with less thinking
     recut = false, // whether a round cut short by the provider was asked again
-    said = ''; // the latest text the model wrote beside its tool calls
+    said = '', // the latest text the model wrote beside its tool calls
+    hushed = false; // whether an empty reply was asked again
   if (resume) {
     Object.assign(total, resume.total);
     requestLog.push(...resume.requestLog);
     toolLog.push(...resume.toolLog);
     for (const t of resume.spentTools) spentTools.add(t);
-    ({ rethought, recut, said } = resume);
+    ({ rethought, recut, said, hushed = false } = resume);
     if (rethought) fields = fieldsAt('off');
   }
   // What a later call needs to carry on from round: everything above that changes.
@@ -276,6 +277,7 @@ export async function plainChat({
     rethought,
     recut,
     said,
+    hushed,
   });
   // The answer, with the turn's usage: on a cut-short turn, what was said last.
   const answer = (summary, reasoning) => ({
@@ -474,8 +476,18 @@ export async function plainChat({
             calls: reply.calls.length,
             reasoning: reply.reasoning?.length || 0,
             output: reply.usage ? tokens(reply.usage).output : null,
+            again: !hushed && round < rounds - 1,
           }),
         );
+        // Models sometimes end a turn of tool work without a word: ask once
+        // for the answer, then keep the work done rather than fail the turn.
+        if (!reply.calls.length && !hushed && round < rounds - 1) {
+          hushed = true;
+          tell(messages, provider, EMPTY_ADVICE);
+          continue;
+        }
+        if (!reply.calls.length && toolLog.some(t => t.ok))
+          return answer(WORK_KEPT, reply.reasoning);
         throw Error(
           round === rounds - 1
             ? 'Research ran out of model calls before an answer. Try Super search, or narrow the question.'
@@ -602,6 +614,12 @@ const LONG_REPLY = 8000;
 /** Said when a reply cut off by the provider is asked again. */
 const CUT_ADVICE =
   'Your last reply was cut off by the provider before it finished (a single reply may run only about 3 minutes). Do it in smaller steps: change an artifact with edits, or build a large page as a working skeleton and add sections with update_artifact append.';
+/** Said when a reply came back empty, to ask for the answer. */
+const EMPTY_ADVICE =
+  'Your last reply was empty. Reply now to the user: what you did and found, in a few lines.';
+/** The answer of a turn whose model did its work but twice said nothing. */
+const WORK_KEPT =
+  '*The model finished its work without a reply. What it did (its artifacts and changes) is kept.*';
 /** Added to a turn's answer when its model calls ran out before it finished. */
 const CUT_SHORT =
   '\n\n*Stopped at this turn’s research limit, so this may be incomplete. Super search allows more.*';

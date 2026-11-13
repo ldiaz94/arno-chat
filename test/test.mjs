@@ -452,6 +452,7 @@ test('a new chat is named by its model, tidied, or not at all when the call fail
     });
   assert.equal(await ask(reply('"Rocket launch physics."\nextra')), 'Rocket launch physics');
   assert.equal(sent.tools, undefined, 'no tools');
+  assert.equal(await ask(reply('The user wants me to name this conversation')), null);
   assert.equal(await ask(async () => new Response('down', { status: 500 })), null);
 });
 test('Markdown renders formatting while escaping HTML and refusing executable links', () => {
@@ -3244,7 +3245,7 @@ test('a reply that spends all its output thinking is asked again without thinkin
 test('a chat turn that fails carries what it spent, to be charged', async () => {
   const usage = { prompt_tokens: 10, completion_tokens: 16384, total_tokens: 16394 };
   const empty = () => sse([{ choices: [{ index: 0, delta: {}, finish_reason: 'length' }], usage }]);
-  const replies = [empty(), empty()];
+  const replies = [empty(), empty(), empty()]; // thinking off, then asked for the answer
   const e = await plainChat({
     model: 'deepseek-v4.1-flash:1017',
     provider: 'ollama',
@@ -3255,9 +3256,49 @@ test('a chat turn that fails carries what it spent, to be charged', async () => 
     upstream: async () => replies.shift(),
   }).catch(e => e);
   assert.match(e.message, /no text/);
-  assert.equal(e.spent.usage.calls, 2);
-  assert.equal(e.spent.usage.outputTokens, 32768);
-  assert.equal(e.spent.requestLog.length, 2);
+  assert.equal(e.spent.usage.calls, 3);
+  assert.equal(e.spent.usage.outputTokens, 49152);
+  assert.equal(e.spent.requestLog.length, 3);
+});
+test('a turn whose model works, then says nothing, is asked for its answer, else kept', async () => {
+  const work = () =>
+    sse([
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                {
+                  id: 'a',
+                  type: 'function',
+                  function: { name: 'web_search', arguments: '{"query":"q"}' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      { choices: [{ finish_reason: 'tool_calls' }] },
+    ]);
+  const silent = () => sse([{ choices: [{ finish_reason: 'stop' }] }]),
+    said = text => sse([{ choices: [{ delta: { content: text }, finish_reason: 'stop' }] }]);
+  const run = replies => {
+    const bodies = [];
+    return plainChat({
+      model: 'm',
+      provider: 'ollama',
+      key: 'k',
+      history: [],
+      prompt: 'p',
+      runTool: async () => ({ sources: [] }),
+      upstream: async (url, init) => (bodies.push(JSON.parse(init.body)), replies.shift()),
+    }).then(r => ({ ...r, bodies }));
+  };
+  const asked = await run([work(), silent(), said('Done: found it.')]);
+  assert.equal(asked.summary, 'Done: found it.');
+  assert.match(JSON.stringify(asked.bodies[2].messages.at(-1)), /last reply was empty/);
+  const kept = await run([work(), silent(), silent()]);
+  assert.match(kept.summary, /finished its work without a reply/);
 });
 test('an artifact edit finds its text with the whitespace misremembered, once only', async () => {
   const { applyEdits } = await import('../server/probe/artifacts.mjs');
