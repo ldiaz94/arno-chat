@@ -286,8 +286,14 @@ function repoBanner() {
           'Choose repositories on GitHub',
         ]
       : [
-          'Private repositories aren’t connected',
-          'The Arno GitHub app isn’t installed on your account, so only public repositories show. Install it with All repositories; an organisation’s repositories need the app installed there too.',
+          r.orgs
+            ? 'Your own private repositories aren’t connected'
+            : 'Private repositories aren’t connected',
+          r.orgs
+            ? 'The Arno GitHub app is installed on ' +
+              r.orgs.join(', ') +
+              ' but not on your own account, so your own private repositories don’t show. Install it there too to reach them.'
+            : 'The Arno GitHub app isn’t installed on your account, so only public repositories show. Install it with All repositories; an organisation’s repositories need the app installed there too.',
           r.configure,
           'Install on GitHub',
         ]

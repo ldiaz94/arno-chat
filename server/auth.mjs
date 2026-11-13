@@ -7,6 +7,19 @@
 import { COOKIE, SECURITY, json, cookie, sessionCookie } from './http.mjs';
 import { mcpCallback } from './gateways/mcp-oauth.mjs';
 
+/** Said to a GitHub login the deployment does not admit. */
+export const NOT_ADMITTED =
+  'This deployment admits only the GitHub logins in its ALLOWED_GITHUB_LOGINS.';
+/** Whether GitHub login may use this deployment: it is in the
+ * comma-separated ALLOWED_GITHUB_LOGINS. An empty list admits no one, so a
+ * deployment that was never told whom to admit stays closed. */
+export function admitted(env, login) {
+  return (env.ALLOWED_GITHUB_LOGINS || '')
+    .split(',')
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(String(login || '').toLowerCase());
+}
 /** The Durable Object that holds one auth record (or pending OAuth state) by id. */
 export function authObject(env, id) {
   return env.PROBE.getByName(`auth:${id}`);
@@ -65,8 +78,10 @@ export async function github(path, token, init = {}) {
 
 /** What repositories the connection reaches. A GitHub App user token (ghu_)
  * has no scopes: it reaches what the app is installed on, so ask GitHub for
- * the installations ('all' or 'selected' repositories). An OAuth token reaches
- * private repositories when it has the repo scope. */
+ * the installations ('all' or 'selected' repositories) on the user's own
+ * account; orgs names the organisations it is installed on, whose
+ * repositories it reaches too. An OAuth token reaches private repositories
+ * when it has the repo scope. */
 export async function repoAccess(auth) {
   if (!/^ghu_/.test(auth.token))
     return { app: false, access: auth.githubConnected ? 'all' : 'public' };
@@ -74,11 +89,13 @@ export async function repoAccess(auth) {
     const r = await github('/user/installations', auth.token);
     if (!r.ok) return { app: true, access: 'unknown' };
     const { installations = [] } = await r.json(),
-      mine = installations.find(i => i.account?.login === auth.user.login);
+      mine = installations.find(i => i.account?.login === auth.user.login),
+      orgs = installations.filter(i => i !== mine).map(i => i.account?.login);
     return {
       app: true,
       access: !mine ? 'public' : mine.repository_selection === 'all' ? 'all' : 'selected',
       configure: mine?.html_url || 'https://github.com/settings/installations',
+      ...(orgs.length && { orgs }),
     };
   } catch {
     return { app: true, access: 'unknown' };
@@ -140,12 +157,7 @@ export async function handleOAuth(request, env, url) {
     const userResponse = await github('/user', tokenData.access_token);
     if (!userResponse.ok) return json({ error: 'Could not read GitHub profile' }, 502);
     const user = await userResponse.json();
-    const allowed = (env.ALLOWED_GITHUB_LOGINS || '')
-      .split(',')
-      .map(s => s.trim().toLowerCase())
-      .filter(Boolean);
-    if (allowed.length && !allowed.includes(user.login?.toLowerCase()))
-      return json({ error: 'This private deployment is restricted to its owner.' }, 403);
+    if (!admitted(env, user.login)) return json({ error: NOT_ADMITTED }, 403);
     const id = crypto.randomUUID();
     const scopes = (tokenData.scope || userResponse.headers.get('X-OAuth-Scopes') || '')
       .split(/[, ]+/)

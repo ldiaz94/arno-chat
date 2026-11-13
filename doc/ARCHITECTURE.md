@@ -86,8 +86,8 @@ Arno Chat turns a GitHub repository clone into a resumable remote coding workspa
 | web/compose-md.js | The composer's Markdown colouring: a backdrop behind the transparent-text textarea, same font and wrapping, kept in step on input, scroll, resize and value set from code |
 | web/highlight.mjs | Syntax highlighting: `highlight(lang, code)`, `detect({ path, fence, code })` and `diffLines(diff)`, a table-driven scanner per language (shared by browser and tests) |
 | web/_headers | Security headers for the static files, including the page's CSP |
-| wrangler.jsonc | Worker config, durable namespace, digest-pinned container image, observability; `npx wrangler deploy` |
-| runner/ | The container image (Dockerfile, prepare.cn builds and copies in the arno binary); rebuilding is in [OPERATIONS.md](OPERATIONS.md) |
+| wrangler.jsonc | Worker config, durable namespace, the runner image built from runner/Dockerfile, observability; `npx wrangler deploy` |
+| runner/ | The container image (Dockerfile, which downloads the pinned arno release); rebuilding is in [OPERATIONS.md](OPERATIONS.md) |
 | test/test.mjs | Backend and rendering regression tests; test/hooks.mjs stubs cloudflare:workers for Node |
 | test/serve-test.mjs | Runs the real `arno --serve` against Arno's stub model through server/code/serve.mjs |
 | test/design-test.cjs | Playwright browser workflow and viewport tests against the local web/ files; test/browser-test.cjs runs it against the deployed ones |

@@ -20,20 +20,20 @@ Keep UI, protocol and provider changes testable separately. Add security tests f
 
 ### Runner image
 
-runner/Dockerfile is Arch Linux because arno is built on the Arch host and is dynamically linked to its glibc, openssl, brotli and zstd. It adds base-devel, git, node, python, ripgrep, fd and w3m. Go and Rust are left out to keep the image near 1.35 GB on a 4 GB disk. Wrangler cannot build the Dockerfile at deploy: it needs a digest-pinned image in Cloudflare's registry. To rebuild after changing arno or the Dockerfile:
+runner/Dockerfile is Arch Linux because arno's release is built on Arch and is dynamically linked to its glibc, openssl, brotli and zstd. It adds base-devel, git, node, python, ripgrep, fd and w3m. Go and Rust are left out to keep the image near 1.35 GB on a 4 GB disk. `npm run deploy` builds it with Docker (wrangler.jsonc names it under `containers[].images.runner.dockerfile`) and pushes it to the account's registry; the Deploy to Cloudflare button builds it in Workers Builds. arno comes from its GitHub release, pinned with its sha256. To move to a newer arno:
 
-1. `concha runner/prepare.cn` builds `~/r/arno` and copies the binary next to the Dockerfile.
-2. `npx wrangler containers build runner -t arno-runner:vN -p --platform linux/amd64` builds and pushes it, and prints a digest.
-3. Put that digest in wrangler.jsonc (`registry.cloudflare.com/<account>/arno-runner@sha256:…`), then `npm run deploy`.
+1. In ~/r/arno, set the version in src/Arno.raz, `make check`, tag and push `vX.Y.Z`, and `gh release create vX.Y.Z build/arno#arno-linux-x86_64` with its `sha256sum` as `arno-linux-x86_64.sha256`.
+2. Set `ARNO` and `ARNO_SHA256` in runner/Dockerfile to the tag and that sum, then `npm run deploy`.
 
-Encrypted Worker secrets:
+Encrypted Worker secrets (`.dev.vars.example` lists the required ones, which the Deploy button asks for):
 
+- ALLOWED_GITHUB_LOGINS: the GitHub logins that may sign in, comma-separated. Empty or unset admits no one. Each login is its own account, with its own keys and conversations.
 - GITHUB_CLIENT_ID
 - GITHUB_CLIENT_SECRET
 - ACCOUNT_ENCRYPTION_KEY: 32 random bytes as base64; keep it, existing encrypted records need it
 - VAPID_KEY (optional; turns on push notifications): a P-256 private key as JWK JSON. Generate and store it without printing or saving it: `node -e "crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign']).then(k=>crypto.subtle.exportKey('jwk',k.privateKey)).then(j=>process.stdout.write(JSON.stringify(j)))" | npx wrangler secret put VAPID_KEY`. Never commit it. Replacing it invalidates every subscription; users turn notifications off and on again.
 
-ALLOWED_GITHUB_LOGINS is a non-secret, comma-separated allowlist, currently `ldiaz94`. Do not remove it for a public launch without entitlements and budgets. Never retrieve, print or commit a secret value.
+Every user brings their own provider keys, but the deployment pays for the containers, Browser Rendering and storage: admit only people you trust with that. Never retrieve, print or commit a secret value.
 
 The GitHub app's callback URL is /auth/callback on the deployment's host (e.g. https://<worker>.<subdomain>.workers.dev/auth/callback). Model providers need no secret: each user saves their own keys in Settings.
 

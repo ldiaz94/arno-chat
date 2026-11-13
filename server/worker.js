@@ -10,7 +10,7 @@
  * (gateways/gateways.mjs) are re-exported here because the runtime looks
  * for them in the entry module. Leaves out all route logic. */
 import { SECURITY, json, sameOrigin } from './http.mjs';
-import { currentAuth, handleOAuth, repoAccess } from './auth.mjs';
+import { currentAuth, handleOAuth, repoAccess, admitted, NOT_ADMITTED } from './auth.mjs';
 import { apiRoutes } from './api.mjs';
 import { sessionPaths } from './sessions-api.mjs';
 import { adminRoute } from './admin.mjs';
@@ -51,12 +51,7 @@ export default {
           build: { commit: env.BUILD || null, deployed: env.DEPLOYED || null },
         });
       if (!auth) return json({ error: 'Sign in required' }, 401);
-      const allowed = (env.ALLOWED_GITHUB_LOGINS || '')
-        .split(',')
-        .map(s => s.trim().toLowerCase())
-        .filter(Boolean);
-      if (allowed.length && !allowed.includes(auth.user.login?.toLowerCase()))
-        return json({ error: 'This private deployment is restricted to its owner.' }, 403);
+      if (!admitted(env, auth.user.login)) return json({ error: NOT_ADMITTED }, 403);
       const route =
         apiRoutes[request.method + ' ' + url.pathname] ?? apiRoutes['* ' + url.pathname];
       if (route) return await route(request, env, url, auth);

@@ -1,0 +1,9 @@
+# The secrets a deployment needs. The Deploy to Cloudflare button asks for
+# each; by hand, set them with `npx wrangler secret put NAME`.
+# The GitHub logins that may sign in, comma-separated (no one, if empty).
+ALLOWED_GITHUB_LOGINS=your-github-login
+# Your GitHub App's client ID and a client secret (README, "Get it").
+GITHUB_CLIENT_ID=Iv23li0000000000000
+GITHUB_CLIENT_SECRET=paste-the-client-secret
+# 32 random bytes as base64, to seal saved keys: openssl rand -base64 32
+ACCOUNT_ENCRYPTION_KEY=paste-32-random-bytes-as-base64

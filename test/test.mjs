@@ -698,11 +698,14 @@ test('publishing checks review digest and creates only a new branch from pinned 
       files: [{ path: 'demo.txt', content: 'reviewed content', mode: '100644' }],
     };
   const env = {
+    ALLOWED_GITHUB_LOGINS: 'tester',
     PROBE: {
       getByName: name => ({
         fetch: async () =>
           Response.json(
-            name.startsWith('auth:') ? { user: { id: 1 }, token: 'test-only' } : changes,
+            name.startsWith('auth:')
+              ? { user: { id: 1, login: 'tester' }, token: 'test-only' }
+              : changes,
           ),
       }),
     },
@@ -765,11 +768,12 @@ test('new session import pins the branch revision and hands over the sign-in', a
     sha = 'b'.repeat(40),
     seen = [];
   const env = {
+    ALLOWED_GITHUB_LOGINS: 'tester',
     PROBE: {
       getByName: name => ({
         fetch: async (url, opt) => {
           if (name.startsWith('auth:'))
-            return Response.json({ user: { id: 42 }, token: 'test-only' });
+            return Response.json({ user: { id: 42, login: 'tester' }, token: 'test-only' });
           if (url.endsWith('/session/init')) {
             assert.equal(opt.headers['X-Arno-Sha'], sha);
             assert.equal(JSON.parse(opt.headers['X-Arno-GitHub']).token, 'test-only');
@@ -840,9 +844,10 @@ test('code navigation rejects traversal and Git internals', () => {
 });
 test('repository visibility reports missing repo scope rather than implying all account repos', async () => {
   const env = {
+    ALLOWED_GITHUB_LOGINS: 'tester',
     PROBE: {
       getByName: () => ({
-        fetch: async () => Response.json({ user: { id: 1 }, token: 'test-only' }),
+        fetch: async () => Response.json({ user: { id: 1, login: 'tester' }, token: 'test-only' }),
       }),
     },
   };
@@ -2852,8 +2857,9 @@ test('repository access: GitHub App installations decide what is reachable', asy
       access: 'selected',
       configure: 'https://g/1',
     });
-    reply([{ account: { login: 'someone-else' }, repository_selection: 'all' }]);
+    reply([{ account: { login: 'an-org' }, repository_selection: 'all' }]);
     assert.equal((await repoAccess(auth)).access, 'public');
+    assert.deepEqual((await repoAccess(auth)).orgs, ['an-org']);
     assert.deepEqual(await repoAccess({ token: 'gho_y', githubConnected: true }), {
       app: false,
       access: 'all',
@@ -4226,4 +4232,11 @@ test('a whole conversation is kept, but the model sees only the 20 turns before 
   assert.deepEqual(ats(await f.obj.contextTurns(5)), [1, 2, 3, 4]);
   await f.obj.trimTurns();
   assert.equal((await f.obj.history(true)).length, 30, 'no longer cut to 20');
+});
+test('a deployment admits only the logins it lists, and no one when it lists none', async () => {
+  const { admitted } = await import('../server/auth.mjs');
+  assert.equal(admitted({ ALLOWED_GITHUB_LOGINS: 'ldiaz94, Luis-Tan' }, 'luis-tan'), true);
+  assert.equal(admitted({ ALLOWED_GITHUB_LOGINS: 'ldiaz94' }, 'someone'), false);
+  assert.equal(admitted({}, 'ldiaz94'), false);
+  assert.equal(admitted({ ALLOWED_GITHUB_LOGINS: ' , ' }, ''), false);
 });

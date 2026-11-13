@@ -36,26 +36,46 @@ screenshots`), so they show the app as the tests see it.
 
 ## Get it
 
-You need a Cloudflare account with Workers Paid (for Containers), Docker,
-Node 20 or later, and a GitHub App or OAuth app for signing in. Chats check
-the pages they make in Browser Rendering (the `BROWSER` binding): Workers
-Paid includes 10 browser hours a month, then $0.09 an hour.
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/ldiaz94/arno-chat)
 
-```sh
-npm install
-npx wrangler login
-npx wrangler secret put GITHUB_CLIENT_ID          # the GitHub app signing in
-npx wrangler secret put GITHUB_CLIENT_SECRET
-npx wrangler secret put ACCOUNT_ENCRYPTION_KEY    # 32 random bytes, base64
-npm test                                          # lint, format and unit tests
-npm run deploy                                    # deploys, recording the commit
-```
+Arno Chat runs on your own Cloudflare account. You need Workers Paid (for
+Containers), and each person who signs in brings their own model provider
+keys, saved in Settings. Chats check the pages they make in Browser
+Rendering: Workers Paid includes 10 browser hours a month, then $0.09 an
+hour.
 
-`wrangler.jsonc` names the Worker, its Durable Object, the pinned runner
-image and who may sign in (`ALLOWED_GITHUB_LOGINS`). The runner image is
-built from `runner/Dockerfile` with arno compiled on the host; to update
-arno in it, see [doc/OPERATIONS.md](doc/OPERATIONS.md#runner-image).
-Every secret, setting and recovery step is in that guide.
+1. **Deploy.** The button above forks the repository into your GitHub
+   account and deploys it, asking for the secrets in
+   [`.dev.vars.example`](.dev.vars.example). For the GitHub ones, deploy
+   once with placeholders, then come back after step 2. Or by hand, with
+   Docker and Node 20 or later:
+
+   ```sh
+   npm install
+   npx wrangler login
+   npx wrangler secret put ALLOWED_GITHUB_LOGINS    # who may sign in: your login
+   npx wrangler secret put GITHUB_CLIENT_ID
+   npx wrangler secret put GITHUB_CLIENT_SECRET
+   npx wrangler secret put ACCOUNT_ENCRYPTION_KEY   # openssl rand -base64 32
+   npm test                                         # lint, format and unit tests
+   npm run deploy                                   # builds the runner, deploys
+   ```
+
+2. **Make a GitHub App** (GitHub → Settings → Developer settings → GitHub
+   Apps → New), named as you like. Callback URL:
+   `https://<your worker>.workers.dev/auth/callback`; tick *Expire user
+   authorization tokens*; untick *Webhook*. Repository permissions:
+   *Contents* and *Pull requests* read and write (*Metadata* read comes
+   with them). Generate a client secret, and put the client ID and
+   secret in the Worker's secrets.
+3. **Install the app** on your account (and on any organisation whose
+   repositories you want to work on), sign in, and add your model keys in
+   Settings → Providers.
+
+The runner image is built at deploy from `runner/Dockerfile`, with arno
+from its pinned [release](https://github.com/ldiaz94/arno/releases).
+Every secret, setting and recovery step is in
+[doc/OPERATIONS.md](doc/OPERATIONS.md).
 
 ## Learn it
 

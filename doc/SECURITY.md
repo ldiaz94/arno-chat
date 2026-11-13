@@ -48,7 +48,7 @@ The gateway reaches only the session's own repository. It reads a push's command
 
 Only an explicit browser action can invoke the reviewed publication. The host re-exports and validates the reviewed files and checks their digest. Paths cannot escape the repository; symlinks, unsupported modes, and binary files are rejected. Changes are committed onto the pinned remote revision and published to a new arno/ branch. The reviewed route holds no credentials in the container; the git gateway above is the only other way to GitHub.
 
-Basic sign-in requests read:user. The separate repository connection requests repo scope because private repositories need it. A narrower managed GitHub App integration remains a future improvement. The shared-key deployment restricts sign-in and use to ALLOWED_GITHUB_LOGINS, so arbitrary GitHub users cannot spend the owner's subscriptions; see [OPERATIONS.md](OPERATIONS.md) for what removing that needs. Older accounts that already granted repo scope keep it.
+Basic sign-in requests read:user. The separate repository connection requests repo scope because private repositories need it. A narrower managed GitHub App integration remains a future improvement. A deployment restricts sign-in and use to ALLOWED_GITHUB_LOGINS (a secret; empty admits no one), so arbitrary GitHub users cannot spend its containers or storage; model calls use each user's own keys. Older accounts that already granted repo scope keep it.
 
 ## Remote tools
 

@@ -7,7 +7,6 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "preview_urls": false,
-  "vars": { "ALLOWED_GITHUB_LOGINS": "ldiaz94" },
   "durable_objects": { "bindings": [{ "name": "PROBE", "class_name": "ArnoProbe" }] },
   "exports": { "ArnoProbe": { "type": "durable-object", "storage": "sqlite" } },
   // Browser Rendering: chat turns open the pages they write to check them
@@ -20,7 +19,7 @@
       "scheduling_policy": "durable_object",
       "images": {
         "runner": {
-          "image": "registry.cloudflare.com/8186b19f2173607e1dc594e4dd579aed/arno-runner@sha256:d7b1383f3bb091b0bea748c83be90bf203aad60419bd0bf350744ea57e2eb933",
+          "dockerfile": "./runner/Dockerfile",
         },
       },
     },
